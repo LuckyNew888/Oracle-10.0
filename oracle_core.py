@@ -1,8 +1,8 @@
+# oracle_core.py (Oracle v3.7)
 from typing import List, Optional, Literal, Tuple
 
 Outcome = Literal["P", "B", "T"]
 
-# --- Modules ---
 class RuleEngine:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         if len(history) < 3:
@@ -20,8 +20,7 @@ class PatternAnalyzer:
             "PPBPP": "P", "BBPBB": "B",
             "PPBB": "P", "BBPP": "B",
             "PBPB": "P", "BPBP": "B",
-            "BBBB": "B", "PPPP": "P",
-            "PBBP": "B", "BPPB": "P"
+            "BBBB": "B", "PPPP": "P"
         }
         for pattern, pred in patterns.items():
             if last6.endswith(pattern):
@@ -30,10 +29,10 @@ class PatternAnalyzer:
 
 class TrendScanner:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
-        last_10 = history[-10:]
-        if last_10.count("P") > 6:
+        last10 = history[-10:]
+        if last10.count("P") > 6:
             return "P"
-        if last_10.count("B") > 6:
+        if last10.count("B") > 6:
             return "B"
         return None
 
@@ -74,10 +73,9 @@ class SmartPredictor:
             "PPBB": "P", "BBPP": "B",
             "PPBPP": "P", "BBPBB": "B",
             "PPPP": "P", "BBBB": "B",
-            "PBPP": "P", "BPBB": "B",
-            "PPBPBB": "B", "BBPBPP": "P",
+            "PPPPBB": "B", "BBBBPP": "P",
             "PBBP": "B", "BPPB": "P",
-            "PPPPBB": "B", "BBBBPP": "P"
+            "PPBPBB": "B", "BBPBPP": "P"
         }
 
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
@@ -88,14 +86,15 @@ class SmartPredictor:
             segment = joined[-length:]
             if segment in self.patterns:
                 return self.patterns[segment]
+
         last10 = history[-10:]
         p_count = last10.count("P")
         b_count = last10.count("B")
         if abs(p_count - b_count) >= 3:
             return "P" if p_count > b_count else "B"
+
         return history[-1] if history[-1] in ("P", "B") else None
 
-# --- Scorer ---
 class ConfidenceScorer:
     def score(self, predictions: dict, weights: dict, history: List[Outcome]) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str]]:
         total_score = {"P": 0.0, "B": 0.0}
@@ -103,10 +102,13 @@ class ConfidenceScorer:
             if pred in total_score:
                 weight = weights.get(name, 0.5)
                 total_score[pred] += weight
+
         if not any(total_score.values()):
             return None, None, 0, None
+
         best = max(total_score, key=total_score.get)
-        confidence = min(int((total_score[best] / sum(total_score.values())) * 100), 95)
+        confidence = int((total_score[best] / sum(total_score.values())) * 100)
+        confidence = min(confidence, 95)
         source_name = next((name for name, pred in predictions.items() if pred == best), None)
         pattern = self.extract_pattern(history)
         return best, source_name, confidence, pattern
@@ -120,7 +122,6 @@ class ConfidenceScorer:
                 return pat
         return None
 
-# --- Main Oracle ---
 class OracleBrain:
     def __init__(self):
         self.history: List[Outcome] = []
