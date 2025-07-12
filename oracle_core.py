@@ -1,4 +1,3 @@
-# oracle_core.py
 from typing import List, Optional, Literal, Tuple
 from collections import Counter
 
@@ -68,6 +67,7 @@ class SniperPattern:
                 return self.known_patterns[pattern]
         return None
 
+# --- SmartPredictor v3 ---
 class SmartPredictor:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         if len(history) < 6:
@@ -80,6 +80,7 @@ class SmartPredictor:
             idx = joined[:-length].rfind(recent)
             if idx != -1 and idx + length < len(joined):
                 return joined[idx + length]
+        # fallback: ทำนายตามความถี่
         count = Counter(history)
         if count["P"] > count["B"]:
             return "P"
@@ -87,6 +88,7 @@ class SmartPredictor:
             return "B"
         return None
 
+# --- ConfidenceScorer v2 ---
 class ConfidenceScorer:
     def score(self, predictions: dict, weights: dict, history: List[Outcome]) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str]]:
         total_score = {"P": 0.0, "B": 0.0}
@@ -234,6 +236,7 @@ class OracleBrain:
         weights = self.get_module_accuracy_normalized()
         result, source, confidence, pattern_code = self.scorer.score(preds, weights, self.history)
 
+        # Recovery override
         if current_miss_streak >= 2 and source == "Smart":
             best_module = self.get_best_recent_module()
             if best_module and preds.get(best_module):
