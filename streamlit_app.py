@@ -1,9 +1,9 @@
 import streamlit as st
 from oracle_core import OracleBrain, Outcome
 
-st.set_page_config(page_title="🔮 Oracle v4.4", layout="centered")
+st.set_page_config(page_title="🔮 Oracle", layout="centered")
 
-# --- CSS ---
+# --- CSS Styling ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -30,6 +30,13 @@ html, body, [class*="css"] {
     white-space: nowrap;
     scroll-behavior: smooth;
 }
+.big-road-container::-webkit-scrollbar {
+    height: 6px;
+}
+.big-road-container::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 3px;
+}
 .big-road-column {
     display: inline-block;
     vertical-align: top;
@@ -45,16 +52,6 @@ html, body, [class*="css"] {
     color: white;
     background-color: transparent !important;
     border: none !important;
-    position: relative;
-}
-.t-counter {
-    position: absolute;
-    font-size: 12px;
-    bottom: -10px;
-    left: 0;
-    width: 100%;
-    text-align: center;
-    color: white;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -75,13 +72,13 @@ if 'miss_streak' not in st.session_state:
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
 
-# --- Function ---
+# --- UI Functions ---
 def handle_click(outcome: Outcome):
     st.session_state.oracle.add_result(outcome)
     prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
-    st.session_state.confidence = confidence
+    st.session_state.confidence = min(confidence, 95) if confidence else None
     st.session_state.pattern_name = pattern_code
     st.session_state.miss_streak = current_miss_streak
     if not st.session_state.initial_shown:
@@ -92,7 +89,7 @@ def handle_remove():
     prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
-    st.session_state.confidence = confidence
+    st.session_state.confidence = min(confidence, 95) if confidence else None
     st.session_state.pattern_name = pattern_code
     st.session_state.miss_streak = current_miss_streak
 
@@ -105,7 +102,7 @@ def handle_reset():
     st.session_state.miss_streak = 0
     st.session_state.initial_shown = False
 
-# --- Pattern Map ---
+# --- Pattern Name Map ---
 pattern_name_map = {
     "PBPB": "ปิงปอง",
     "BPBP": "ปิงปอง",
@@ -118,11 +115,11 @@ pattern_name_map = {
 }
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE v4.4</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
 
-# --- Prediction Box ---
+# --- Prediction Display ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("<b>📍 คำทำนาย:</b>", unsafe_allow_html=True)
+st.markdown("**📍 คำทำนาย:**", unsafe_allow_html=True)
 
 if st.session_state.prediction:
     emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
@@ -141,8 +138,8 @@ else:
         st.info("⏳ กำลังวิเคราะห์ข้อมูล")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Miss Streak ---
-miss = st.session_state.miss_streak
+# --- Miss Streak Display ---
+miss = st.session_state.miss_streak 
 st.markdown(f"**❌ แพ้ติดกัน: {miss} ครั้ง**")
 if miss > 0:
     if miss == 3:
@@ -152,53 +149,69 @@ if miss > 0:
 
 # --- Big Road ---
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
+st.markdown("**🕒 Big Road:**", unsafe_allow_html=True)
 
-history = st.session_state.oracle.history
-max_row = 6
-columns, col, last, t_counter = [], [], None, 0
+raw_history = st.session_state.oracle.history
+history = []
+t_counters = []
 
-for result in history:
-    if result == "T":
-        t_counter += 1
-        continue
-    if result == last and len(col) < max_row:
-        col.append((result, t_counter))
-    else:
-        if col:
-            columns.append(col)
-        col = [(result, t_counter)]
-    last = result
-    t_counter = 0
-if col:
-    columns.append(col)
+for outcome in raw_history:
+    if outcome == "T":
+        if t_counters:
+            t_counters[-1] += 1
+        elif history:
+            t_counters.append(1)
+        else:
+            history.append("P")  # dummy cell
+            t_counters.append(1)
+    elif outcome in ("P", "B"):
+        history.append(outcome)
+        t_counters.append(0)
 
-scroll_html = "<div class='big-road-container' id='big-road-scroll'>"
-for col in columns:
-    scroll_html += "<div class='big-road-column'>"
-    for res, t_count in col:
-        emoji = "🔵" if res == "P" else "🔴"
-        t_html = f"<div class='t-counter'>{t_count}</div>" if t_count > 0 else ""
-        scroll_html += f"<div class='big-road-cell'>{emoji}{t_html}</div>"
-    scroll_html += "</div>"
-scroll_html += "</div>"
-scroll_html += """
-<script>
-const container = document.getElementById('big-road-scroll');
-if(container){ container.scrollLeft = container.scrollWidth; }
-</script>
-"""
-st.markdown(scroll_html, unsafe_allow_html=True)
+if history:
+    max_row = 6
+    columns, col, last = [], [], None
+    for res in history:
+        if res == last and len(col) < max_row:
+            col.append(res)
+        else:
+            if col:
+                columns.append(col)
+            col = [res]
+            last = res
+    if col:
+        columns.append(col)
 
-# --- Buttons ---
+    html = "<div class='big-road-container' id='bigroad'>"
+    for i, col in enumerate(columns):
+        html += "<div class='big-road-column'>"
+        for j, cell in enumerate(col):
+            idx = sum(len(c) for c in columns[:i]) + j
+            t = t_counters[idx] if idx < len(t_counters) else 0
+            emoji = "🔵" if cell == "P" else "🔴"
+            label = f"{emoji}{t}" if t > 0 else emoji
+            html += f"<div class='big-road-cell'>{label}</div>"
+        html += "</div>"
+    html += "</div><script>setTimeout(()=>{let el = document.getElementById('bigroad'); el.scrollLeft = el.scrollWidth;}, 100);</script>"
+    st.markdown(html, unsafe_allow_html=True)
+else:
+    st.info("🔄 ยังไม่มีข้อมูล")
+
+# --- Input Buttons ---
 col1, col2, col3 = st.columns(3)
-with col1: st.button("🔵 P", on_click=handle_click, args=("P",))
-with col2: st.button("🔴 B", on_click=handle_click, args=("B",))
-with col3: st.button("⚪ T", on_click=handle_click, args=("T",))
+with col1:
+    st.button("🔵 P", on_click=handle_click, args=("P",))
+with col2:
+    st.button("🔴 B", on_click=handle_click, args=("B",))
+with col3:
+    st.button("⚪ T", on_click=handle_click, args=("T",))
 
+# --- Control Buttons ---
 col4, col5 = st.columns(2)
-with col4: st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
-with col5: st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
+with col4:
+    st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
+with col5:
+    st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
 # --- Accuracy ---
 st.markdown("<hr>")
