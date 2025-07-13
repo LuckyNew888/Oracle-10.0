@@ -1,9 +1,9 @@
 import streamlit as st
 from oracle_core import OracleBrain, Outcome
 
-st.set_page_config(page_title="🔮 Oracle v3.8", layout="centered")
+st.set_page_config(page_title="🔮 Oracle v3.9", layout="centered")
 
-# --- CSS Styling ---
+# --- CSS ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -28,7 +28,6 @@ html, body, [class*="css"] {
     padding: 4px;
     background: #1c1c1c;
     white-space: nowrap;
-    display: flex;
     scroll-behavior: smooth;
 }
 .big-road-column {
@@ -44,19 +43,21 @@ html, body, [class*="css"] {
     font-size: 16px;
     margin-bottom: 2px;
     color: white;
+    background-color: transparent !important;
+    border: none !important;
 }
 </style>
 <script>
-setTimeout(function(){
-    const container = parent.document.querySelectorAll('.big-road-container');
-    if(container.length) {
-        container[0].scrollLeft = container[0].scrollWidth;
+setTimeout(function() {
+    var container = parent.document.querySelector('.big-road-container');
+    if (container) {
+        container.scrollLeft = container.scrollWidth;
     }
-}, 1000);
+}, 100);
 </script>
 """, unsafe_allow_html=True)
 
-# --- Session Init ---
+# --- Session State Init ---
 if 'oracle' not in st.session_state:
     st.session_state.oracle = OracleBrain()
 if 'prediction' not in st.session_state:
@@ -72,26 +73,25 @@ if 'miss_streak' not in st.session_state:
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
 
-# --- Functions ---
+# --- Function ---
 def handle_click(outcome: Outcome):
     st.session_state.oracle.add_result(outcome)
-    prediction, source, confidence, pattern_code, miss = st.session_state.oracle.predict_next()
+    prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     st.session_state.pattern_name = pattern_code
-    st.session_state.miss_streak = miss
-    if not st.session_state.initial_shown:
-        st.session_state.initial_shown = True
+    st.session_state.miss_streak = current_miss_streak
+    st.session_state.initial_shown = True
 
 def handle_remove():
     st.session_state.oracle.remove_last()
-    prediction, source, confidence, pattern_code, miss = st.session_state.oracle.predict_next()
+    prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     st.session_state.pattern_name = pattern_code
-    st.session_state.miss_streak = miss
+    st.session_state.miss_streak = current_miss_streak
 
 def handle_reset():
     st.session_state.oracle.reset()
@@ -102,32 +102,25 @@ def handle_reset():
     st.session_state.miss_streak = 0
     st.session_state.initial_shown = False
 
-# --- เค้าไพ่ Map ---
-pattern_name_map = {
-    "PBPB": "ปิงปอง",
-    "BPBP": "ปิงปอง",
-    "PPBB": "สองตัด",
-    "BBPP": "สองตัด",
-    "PPBPP": "สามตัด",
-    "BBPBB": "สามตัด",
-    "BBBB": "มังกรแดง",
-    "PPPP": "มังกรน้ำเงิน"
-}
-
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE v3.8</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">🔮 ORACLE AI v3.9</div>', unsafe_allow_html=True)
 
-# --- Prediction Box ---
+# --- Prediction Display ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("**📍 คำทำนาย:**", unsafe_allow_html=True)
-
+st.markdown("<b>📍 คำทำนาย:</b>", unsafe_allow_html=True)
 if st.session_state.prediction:
     emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
     st.markdown(f"## {emoji} <b>{st.session_state.prediction}</b>", unsafe_allow_html=True)
     if st.session_state.source:
         st.caption(f"🧠 โมดูล: {st.session_state.source}")
     if st.session_state.pattern_name:
-        name = pattern_name_map.get(st.session_state.pattern_name, st.session_state.pattern_name)
+        name_map = {
+            "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+            "PPBB": "สองตัด", "BBPP": "สองตัด",
+            "PPBPP": "สามตัด", "BBPBB": "สามตัด",
+            "PPPP": "มังกรน้ำเงิน", "BBBB": "มังกรแดง"
+        }
+        name = name_map.get(st.session_state.pattern_name, st.session_state.pattern_name)
         st.caption(f"📊 เค้าไพ่: {name}")
     if st.session_state.confidence is not None:
         st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence}%")
@@ -138,67 +131,69 @@ else:
         st.info("⏳ กำลังวิเคราะห์ข้อมูล")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Miss Streak ---
+# --- Miss Streak Display ---
 miss = st.session_state.miss_streak
 st.markdown(f"**❌ แพ้ติดกัน: {miss} ครั้ง**")
-if miss == 3:
-    st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
-elif miss >= 6:
-    st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
+if miss >= 3:
+    if miss == 3:
+        st.warning("🧪 เริ่มโหมด Recovery")
+    elif miss >= 6:
+        st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
 
 # --- Big Road ---
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("### 🕒 Big Road:")
+st.markdown("### 🕒 Big Road")
 history = st.session_state.oracle.history
-if history:
-    max_row = 6
-    columns, col, last = [], [], None
-    t_counter = 0
-    for result in history:
-        if result == "T":
-            t_counter += 1
-            continue
-        if result == last and len(col) < max_row:
-            col.append((result, t_counter))
-        else:
-            if col:
-                columns.append(col)
-            col = [(result, t_counter)]
+columns, col, last = [], [], None
+t_counter = 0
+
+for i, result in enumerate(history):
+    if result == "T":
+        t_counter += 1
+        continue
+    emoji = "🔵" if result == "P" else "🔴"
+    if i + 1 < len(history) and history[i + 1] == "T":
+        count_t = 1
+        j = i + 2
+        while j < len(history) and history[j] == "T":
+            count_t += 1
+            j += 1
+        emoji += f"{count_t}"
+    if result == last and len(col) < 6:
+        col.append(emoji)
+    else:
+        if col:
+            columns.append(col)
+        col = [emoji]
         last = result
-        t_counter = 0
-    if col:
-        columns.append(col)
+if col:
+    columns.append(col)
 
-    html = "<div class='big-road-container'>"
-    for col in columns:
-        html += "<div class='big-road-column'>"
-        for cell, t_count in col:
-            emoji = "🔵" if cell == "P" else "🔴"
-            display = f"{emoji}<sub style='font-size:10px;color:#fff'>{t_count}</sub>" if t_count else emoji
-            html += f"<div class='big-road-cell'>{display}</div>"
-        html += "</div>"
+html = "<div class='big-road-container'>"
+for col in columns:
+    html += "<div class='big-road-column'>"
+    for cell in col:
+        html += f"<div class='big-road-cell'>{cell}</div>"
     html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
-else:
-    st.info("🔄 ยังไม่มีข้อมูล")
-
-# --- Input Buttons ---
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
-with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
-with col3:
-    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
+html += "</div>"
+st.markdown(html, unsafe_allow_html=True)
 
 # --- Control Buttons ---
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.button("🔵 P", on_click=handle_click, args=("P",))
+with col2:
+    st.button("🔴 B", on_click=handle_click, args=("B",))
+with col3:
+    st.button("⚪ T", on_click=handle_click, args=("T",))
+
 col4, col5 = st.columns(2)
 with col4:
-    st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
+    st.button("↩️ ลบล่าสุด", on_click=handle_remove)
 with col5:
-    st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
+    st.button("🔄 เริ่มใหม่", on_click=handle_reset)
 
-# --- Accuracy Display ---
+# --- Accuracy Report ---
 st.markdown("<hr>")
 st.markdown("### 📈 ความแม่นยำรายโมดูล")
 modules = st.session_state.oracle.get_module_accuracy()
