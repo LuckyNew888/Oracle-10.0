@@ -2,7 +2,7 @@ import streamlit as st
 from oracle_core import OracleBrain, Outcome
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle v3.x", layout="centered")
+st.set_page_config(page_title="🔮 Oracle v3.8", layout="centered")
 
 st.markdown("""
 <style>
@@ -127,7 +127,7 @@ else:
     if st.session_state.oracle.show_initial_wait_message and not st.session_state.initial_shown:
         st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย")
     else:
-        st.info("⏳ กำลังวิเคราะห์ข้อมูล")
+        st.info("⏳ กำลังวิเคราะเบี่ยน")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -143,53 +143,44 @@ if miss > 0:
 # --- Big Road ---
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
-
-raw_history = st.session_state.oracle.history
-display_history = []
-t_count = 0
-
-for h in raw_history:
-    if h == "T":
-        if display_history:
-            t_count += 1
-    else:
-        if t_count > 0:
-            display_history[-1] += f"<sup style='color:white'>{t_count}</sup>"
-            t_count = 0
-        display_history.append(h)
-
-if display_history:
+history = st.session_state.oracle.history
+if history:
     max_row = 6
     columns, col, last = [], [], None
-    for result in display_history:
-        char = result[0] if isinstance(result, str) else result
-        if char == last and len(col) < max_row:
-            col.append(result)
+    t_count = 0
+    for result in history:
+        if result == "T":
+            t_count += 1
+            continue
+        label = "🔵" if result == "P" else "🔴"
+        if t_count > 0:
+            label += f"<span style='font-size:10px;color:white'> {t_count}</span>"
+            t_count = 0
+        if result == last and len(col) < max_row:
+            col.append(label)
         else:
             if col:
                 columns.append(col)
-            col = [result]
-            last = char
+            col = [label]
+            last = result
     if col:
         columns.append(col)
 
-    html = "<div id='big-road-scroll' class='big-road-container'>"
+    html = "<div class='big-road-container'>"
     for col in columns:
         html += "<div class='big-road-column'>"
         for cell in col:
-            emoji = "🔵" if "P" in cell else "🔴"
-            sup = ""
-            if "<sup" in cell:
-                sup = cell[cell.find("<sup"):]
-            html += f"<div class='big-road-cell'>{emoji}{sup}</div>"
+            html += f"<div class='big-road-cell'>{cell}</div>"
         html += "</div>"
     html += "</div>"
     html += """
     <script>
-    const el = document.getElementById("big-road-scroll");
-    if (el) {
-        el.scrollLeft = el.scrollWidth;
-    }
+    setTimeout(function() {
+        const el = window.parent.document.querySelectorAll('section.main div.block-container div[data-testid="stHorizontalBlock"] > div')[0];
+        if (el) {
+            el.scrollLeft = el.scrollWidth;
+        }
+    }, 300);
     </script>
     """
     st.markdown(html, unsafe_allow_html=True)
