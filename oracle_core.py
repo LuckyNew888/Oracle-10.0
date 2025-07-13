@@ -2,7 +2,7 @@ from typing import List, Optional, Literal, Tuple
 
 Outcome = Literal["P", "B", "T"]
 
-# --- RuleEngine ---
+# --- โมดูลทำนาย ---
 class RuleEngine:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         if len(history) < 3:
@@ -13,7 +13,6 @@ class RuleEngine:
             return history[-1]
         return None
 
-# --- PatternAnalyzer ---
 class PatternAnalyzer:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         last6 = "".join(history[-6:])
@@ -28,7 +27,6 @@ class PatternAnalyzer:
                 return pred
         return None
 
-# --- TrendScanner ---
 class TrendScanner:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         last_10 = history[-10:]
@@ -38,7 +36,6 @@ class TrendScanner:
             return "B"
         return None
 
-# --- TwoTwoPattern ---
 class TwoTwoPattern:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         if len(history) < 4:
@@ -48,7 +45,6 @@ class TwoTwoPattern:
             return last4[0]
         return None
 
-# --- SniperPattern ---
 class SniperPattern:
     def __init__(self):
         self.known_patterns = {
@@ -70,7 +66,7 @@ class SniperPattern:
                 return self.known_patterns[pattern]
         return None
 
-# --- ConfidenceScorer ---
+# --- Confidence Scorer ---
 class ConfidenceScorer:
     def score(self, predictions: dict, weights: dict, history: List[Outcome]) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str]]:
         total_score = {"P": 0.0, "B": 0.0}
@@ -83,8 +79,8 @@ class ConfidenceScorer:
             return None, None, 0, None
 
         best = max(total_score, key=total_score.get)
-        raw_conf = total_score[best] / sum(total_score.values())
-        confidence = min(int(raw_conf * 100), 95)  # 🔒 ไม่เกิน 95%
+        raw_confidence = (total_score[best] / sum(total_score.values())) * 100
+        confidence = min(int(raw_confidence), 95)
         source_name = next((name for name, pred in predictions.items() if pred == best), None)
         pattern = self.extract_pattern(history)
         return best, source_name, confidence, pattern
@@ -98,13 +94,14 @@ class ConfidenceScorer:
                 return pat
         return None
 
-# --- OracleBrain ---
+# --- Oracle Brain ---
 class OracleBrain:
     def __init__(self):
         self.history: List[Outcome] = []
         self.last_prediction: Optional[Outcome] = None
         self.prediction_log: List[Optional[Outcome]] = []
         self.result_log: List[Outcome] = []
+        self.show_initial_wait_message = True
 
         self.rule = RuleEngine()
         self.pattern = PatternAnalyzer()
@@ -112,15 +109,12 @@ class OracleBrain:
         self.two_two = TwoTwoPattern()
         self.sniper = SniperPattern()
         self.scorer = ConfidenceScorer()
-        self.show_initial_wait_message = True
 
     def add_result(self, outcome: Outcome):
         self.history.append(outcome)
         self.result_log.append(outcome)
         self.prediction_log.append(self.last_prediction)
-        self.history = self.history[-100:]
-        self.result_log = self.result_log[-100:]
-        self.prediction_log = self.prediction_log[-100:]
+        self._trim_logs()
 
     def remove_last(self):
         if self.history: self.history.pop()
@@ -129,10 +123,15 @@ class OracleBrain:
 
     def reset(self):
         self.history.clear()
-        self.last_prediction = None
-        self.prediction_log.clear()
         self.result_log.clear()
+        self.prediction_log.clear()
+        self.last_prediction = None
         self.show_initial_wait_message = True
+
+    def _trim_logs(self):
+        for log in [self.history, self.result_log, self.prediction_log]:
+            if len(log) > 100:
+                log.pop(0)
 
     def calculate_miss_streak(self) -> int:
         streak = 0
@@ -212,7 +211,8 @@ class OracleBrain:
         weights = self.get_module_accuracy_normalized()
         result, source, confidence, pattern_code = self.scorer.score(preds, weights, self.history)
 
-        if current_miss_streak in [3, 4, 5]:
+        # Recovery
+        if current_miss_streak in [3, 4]:
             best_module = self.get_best_recent_module()
             if best_module and preds.get(best_module):
                 result = preds[best_module]
