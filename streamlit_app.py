@@ -1,7 +1,7 @@
 import streamlit as st
 from oracle_core import OracleBrain, Outcome
 
-st.set_page_config(page_title="🔮 Oracle v3.9", layout="centered")
+st.set_page_config(page_title="🔮 Oracle v4.0", layout="centered")
 
 # --- CSS ---
 st.markdown("""
