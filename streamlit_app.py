@@ -1,10 +1,9 @@
-# app.py
 import streamlit as st
 from oracle_core import OracleBrain, Outcome
 
-st.set_page_config(page_title="🔮 Oracle", layout="centered")
+# --- Setup Page ---
+st.set_page_config(page_title="🔮 Oracle v3.x", layout="centered")
 
-# --- Custom Style ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -65,7 +64,7 @@ if 'miss_streak' not in st.session_state:
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
 
-# --- UI Logic ---
+# --- UI Functions ---
 def handle_click(outcome: Outcome):
     st.session_state.oracle.add_result(outcome)
     prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
@@ -95,6 +94,7 @@ def handle_reset():
     st.session_state.miss_streak = 0
     st.session_state.initial_shown = False
 
+# --- Pattern Name Mapping ---
 pattern_name_map = {
     "PBPB": "ปิงปอง",
     "BPBP": "ปิงปอง",
@@ -106,11 +106,13 @@ pattern_name_map = {
     "PPPP": "มังกรน้ำเงิน"
 }
 
+# --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
 
-# --- Prediction Display ---
+# --- Prediction Output Box ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
 st.markdown("<b>📍 คำทำนาย:</b>", unsafe_allow_html=True)
+
 if st.session_state.prediction:
     emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
     st.markdown(f"## {emoji} <b>{st.session_state.prediction}</b>", unsafe_allow_html=True)
@@ -126,6 +128,7 @@ else:
         st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย")
     else:
         st.info("⏳ กำลังวิเคราะห์ข้อมูล")
+
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Miss Streak ---
@@ -140,29 +143,55 @@ if miss > 0:
 # --- Big Road ---
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
-history = [h for h in st.session_state.oracle.history if h in ("P", "B")]
-if history:
+
+raw_history = st.session_state.oracle.history
+display_history = []
+t_count = 0
+
+for h in raw_history:
+    if h == "T":
+        if display_history:
+            t_count += 1
+    else:
+        if t_count > 0:
+            display_history[-1] += f"<sup style='color:white'>{t_count}</sup>"
+            t_count = 0
+        display_history.append(h)
+
+if display_history:
     max_row = 6
     columns, col, last = [], [], None
-    for result in history:
-        if result == last and len(col) < max_row:
+    for result in display_history:
+        char = result[0] if isinstance(result, str) else result
+        if char == last and len(col) < max_row:
             col.append(result)
         else:
             if col:
                 columns.append(col)
             col = [result]
-            last = result
+            last = char
     if col:
         columns.append(col)
 
-    html = "<div class='big-road-container'>"
+    html = "<div id='big-road-scroll' class='big-road-container'>"
     for col in columns:
         html += "<div class='big-road-column'>"
         for cell in col:
-            emoji = "🔵" if cell == "P" else "🔴"
-            html += f"<div class='big-road-cell'>{emoji}</div>"
+            emoji = "🔵" if "P" in cell else "🔴"
+            sup = ""
+            if "<sup" in cell:
+                sup = cell[cell.find("<sup"):]
+            html += f"<div class='big-road-cell'>{emoji}{sup}</div>"
         html += "</div>"
     html += "</div>"
+    html += """
+    <script>
+    const el = document.getElementById("big-road-scroll");
+    if (el) {
+        el.scrollLeft = el.scrollWidth;
+    }
+    </script>
+    """
     st.markdown(html, unsafe_allow_html=True)
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
