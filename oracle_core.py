@@ -1,8 +1,8 @@
-# oracle_core.py (Oracle v3.7)
 from typing import List, Optional, Literal, Tuple
 
 Outcome = Literal["P", "B", "T"]
 
+# --- Predictors ---
 class RuleEngine:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         if len(history) < 3:
@@ -15,10 +15,12 @@ class RuleEngine:
 
 class PatternAnalyzer:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
+        if len(history) < 4:
+            return None
         last6 = "".join(history[-6:])
         patterns = {
-            "PPBPP": "P", "BBPBB": "B",
             "PPBB": "P", "BBPP": "B",
+            "PPBPP": "P", "BBPBB": "B",
             "PBPB": "P", "BPBP": "B",
             "BBBB": "B", "PPPP": "P"
         }
@@ -29,10 +31,12 @@ class PatternAnalyzer:
 
 class TrendScanner:
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
-        last10 = history[-10:]
-        if last10.count("P") > 6:
+        if len(history) < 10:
+            return None
+        last_10 = history[-10:]
+        if last_10.count("P") > 6:
             return "P"
-        if last10.count("B") > 6:
+        if last_10.count("B") > 6:
             return "B"
         return None
 
@@ -73,9 +77,10 @@ class SmartPredictor:
             "PPBB": "P", "BBPP": "B",
             "PPBPP": "P", "BBPBB": "B",
             "PPPP": "P", "BBBB": "B",
-            "PPPPBB": "B", "BBBBPP": "P",
+            "PBPP": "P", "BPBB": "B",
+            "PPBPBB": "B", "BBPBPP": "P",
             "PBBP": "B", "BPPB": "P",
-            "PPBPBB": "B", "BBPBPP": "P"
+            "PPPPBB": "B", "BBBBPP": "P"
         }
 
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
@@ -86,15 +91,14 @@ class SmartPredictor:
             segment = joined[-length:]
             if segment in self.patterns:
                 return self.patterns[segment]
-
         last10 = history[-10:]
         p_count = last10.count("P")
         b_count = last10.count("B")
         if abs(p_count - b_count) >= 3:
             return "P" if p_count > b_count else "B"
-
         return history[-1] if history[-1] in ("P", "B") else None
 
+# --- Scorer ---
 class ConfidenceScorer:
     def score(self, predictions: dict, weights: dict, history: List[Outcome]) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str]]:
         total_score = {"P": 0.0, "B": 0.0}
@@ -102,13 +106,11 @@ class ConfidenceScorer:
             if pred in total_score:
                 weight = weights.get(name, 0.5)
                 total_score[pred] += weight
-
         if not any(total_score.values()):
             return None, None, 0, None
-
         best = max(total_score, key=total_score.get)
         confidence = int((total_score[best] / sum(total_score.values())) * 100)
-        confidence = min(confidence, 95)
+        confidence = min(confidence, 95)  # ✳️ Limit max confidence
         source_name = next((name for name, pred in predictions.items() if pred == best), None)
         pattern = self.extract_pattern(history)
         return best, source_name, confidence, pattern
@@ -117,11 +119,15 @@ class ConfidenceScorer:
         if len(history) < 6:
             return None
         last6 = "".join(history[-6:])
-        for pat in ["PBPB", "BPBP", "PPBB", "BBPP", "PPBPP", "BBPBB", "BBBB", "PPPP"]:
+        for pat in [
+            "PBPB", "BPBP", "PPBB", "BBPP",
+            "PPBPP", "BBPBB", "BBBB", "PPPP"
+        ]:
             if last6.endswith(pat):
                 return pat
         return None
 
+# --- OracleBrain ---
 class OracleBrain:
     def __init__(self):
         self.history: List[Outcome] = []
@@ -243,10 +249,11 @@ class OracleBrain:
         result, source, confidence, pattern_code = self.scorer.score(preds, weights, self.history)
 
         if current_miss_streak in [3, 4, 5]:
-            best_module = self.get_best_recent_module()
-            if best_module and preds.get(best_module):
-                result = preds[best_module]
-                source = f"{best_module}-Recovery"
+            for mod in ["Smart", "Sniper", "Trend"]:
+                if preds.get(mod):
+                    result = preds[mod]
+                    source = f"{mod}-Recovery"
+                    break
 
         self.last_prediction = result
         return result, source, confidence, pattern_code, current_miss_streak
