@@ -52,15 +52,13 @@ class SniperPattern:
             "PPBPP": "P", "BBPBB": "B",
             "PPPBBB": "B", "BBBPBB": "P",
             "PPPP": "P", "BBBB": "B",
-            "PBBP": "B", "BPPB": "P",
-            "PBBBP": "P", "BBPPP": "P",
-            "PBPBBP": "B", "BPBPPB": "P"
+            "PBBP": "B", "BPPB": "P"
         }
 
     def predict(self, history: List[Outcome]) -> Optional[Outcome]:
         if len(history) < 4:
             return None
-        joined = "".join(history[-7:])
+        joined = "".join(history[-6:])
         for length in range(6, 3, -1):
             pattern = joined[-length:]
             if pattern in self.known_patterns:
@@ -68,24 +66,19 @@ class SniperPattern:
         return None
 
 class ConfidenceScorer:
-    def score(self, predictions: dict, weights: dict, history: List[Outcome], miss_streak: int = 0) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str]]:
+    def score(self, predictions: dict, weights: dict, history: List[Outcome]) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str]]:
         total_score = {"P": 0.0, "B": 0.0}
         for name, pred in predictions.items():
             if pred in total_score:
                 weight = weights.get(name, 0.5)
-                # ปรับ weight ตาม miss streak
-                if miss_streak >= 3 and name == "Sniper":
-                    weight *= 1.2
-                if miss_streak >= 4 and name == "Rule":
-                    weight *= 0.7
                 total_score[pred] += weight
 
         if not any(total_score.values()):
             return None, None, 0, None
 
         best = max(total_score, key=total_score.get)
-        confidence = int((total_score[best] / sum(total_score.values())) * 100)
-        confidence = min(confidence, 95)  # ปรับไม่ให้เกิน 95%
+        raw_confidence = (total_score[best] / sum(total_score.values())) * 100
+        confidence = min(int(raw_confidence), 95)  # 🔒 จำกัดที่ 95%
         source_name = next((name for name, pred in predictions.items() if pred == best), None)
         pattern = self.extract_pattern(history)
         return best, source_name, confidence, pattern
@@ -94,10 +87,7 @@ class ConfidenceScorer:
         if len(history) < 6:
             return None
         last6 = "".join(history[-6:])
-        for pat in [
-            "PBPB", "BPBP", "PPBB", "BBPP", "PPBPP", "BBPBB", "BBBB", "PPPP",
-            "PBBP", "BPPB"
-        ]:
+        for pat in ["PBPB", "BPBP", "PPBB", "BBPP", "PPBPP", "BBPBB", "BBBB", "PPPP"]:
             if last6.endswith(pat):
                 return pat
         return None
@@ -121,12 +111,7 @@ class OracleBrain:
         self.history.append(outcome)
         self.result_log.append(outcome)
         self.prediction_log.append(self.last_prediction)
-        if len(self.history) > 100:
-            self.history.pop(0)
-        if len(self.result_log) > 100:
-            self.result_log.pop(0)
-        if len(self.prediction_log) > 100:
-            self.prediction_log.pop(0)
+        self._trim_logs()
 
     def remove_last(self):
         if self.history: self.history.pop()
@@ -139,6 +124,11 @@ class OracleBrain:
         self.prediction_log.clear()
         self.result_log.clear()
         self.show_initial_wait_message = True
+
+    def _trim_logs(self, max_length=100):
+        self.history = self.history[-max_length:]
+        self.result_log = self.result_log[-max_length:]
+        self.prediction_log = self.prediction_log[-max_length:]
 
     def calculate_miss_streak(self) -> int:
         streak = 0
@@ -216,7 +206,7 @@ class OracleBrain:
         }
 
         weights = self.get_module_accuracy_normalized()
-        result, source, confidence, pattern_code = self.scorer.score(preds, weights, self.history, current_miss_streak)
+        result, source, confidence, pattern_code = self.scorer.score(preds, weights, self.history)
 
         if current_miss_streak in [3, 4]:
             best_module = self.get_best_recent_module()
