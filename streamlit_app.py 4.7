@@ -1,9 +1,8 @@
 import streamlit as st
 from oracle_core import OracleBrain, Outcome
 
-st.set_page_config(page_title="🔮 Oracle", layout="centered")
+st.set_page_config(page_title="🔮 Oracle v4.7", layout="centered")
 
-# --- CSS Styling ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -28,14 +27,6 @@ html, body, [class*="css"] {
     padding: 4px;
     background: #1c1c1c;
     white-space: nowrap;
-    scroll-behavior: smooth;
-}
-.big-road-container::-webkit-scrollbar {
-    height: 6px;
-}
-.big-road-container::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 3px;
 }
 .big-road-column {
     display: inline-block;
@@ -43,10 +34,10 @@ html, body, [class*="css"] {
     margin-right: 4px;
 }
 .big-road-cell {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     text-align: center;
-    line-height: 26px;
+    line-height: 22px;
     font-size: 16px;
     margin-bottom: 2px;
     color: white;
@@ -54,6 +45,15 @@ html, body, [class*="css"] {
     border: none !important;
 }
 </style>
+<script>
+window.addEventListener('load', function() {
+    var container = window.parent.document.querySelectorAll('[data-testid="stMarkdownContainer"]');
+    if (container.length > 0) {
+        var last = container[container.length - 1];
+        last.scrollIntoView({ behavior: "smooth", inline: "end" });
+    }
+});
+</script>
 """, unsafe_allow_html=True)
 
 # --- Session Init ---
@@ -71,27 +71,32 @@ if 'miss_streak' not in st.session_state:
     st.session_state.miss_streak = 0
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
+if 'tie_count' not in st.session_state:
+    st.session_state.tie_count = 0
 
-# --- UI Functions ---
+# --- UI Logic ---
 def handle_click(outcome: Outcome):
     st.session_state.oracle.add_result(outcome)
-    prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
+    prediction, source, confidence, pattern_code, miss = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
-    st.session_state.confidence = min(confidence, 95) if confidence else None
+    st.session_state.confidence = confidence
     st.session_state.pattern_name = pattern_code
-    st.session_state.miss_streak = current_miss_streak
-    if not st.session_state.initial_shown:
-        st.session_state.initial_shown = True
+    st.session_state.miss_streak = miss
+    st.session_state.initial_shown = True
+    if outcome == "T":
+        st.session_state.tie_count += 1
+    else:
+        st.session_state.tie_count = 0
 
 def handle_remove():
     st.session_state.oracle.remove_last()
-    prediction, source, confidence, pattern_code, current_miss_streak = st.session_state.oracle.predict_next()
+    prediction, source, confidence, pattern_code, miss = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
-    st.session_state.confidence = min(confidence, 95) if confidence else None
+    st.session_state.confidence = confidence
     st.session_state.pattern_name = pattern_code
-    st.session_state.miss_streak = current_miss_streak
+    st.session_state.miss_streak = miss
 
 def handle_reset():
     st.session_state.oracle.reset()
@@ -101,8 +106,9 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.miss_streak = 0
     st.session_state.initial_shown = False
+    st.session_state.tie_count = 0
 
-# --- Pattern Name Map ---
+# --- Pattern Name Mapping ---
 pattern_name_map = {
     "PBPB": "ปิงปอง",
     "BPBP": "ปิงปอง",
@@ -117,10 +123,9 @@ pattern_name_map = {
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
 
-# --- Prediction Display ---
+# --- Prediction Box ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("**📍 คำทำนาย:**", unsafe_allow_html=True)
-
+st.markdown("<b>📍 คำทำนาย:</b>", unsafe_allow_html=True)
 if st.session_state.prediction:
     emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
     st.markdown(f"## {emoji} <b>{st.session_state.prediction}</b>", unsafe_allow_html=True)
@@ -138,75 +143,63 @@ else:
         st.info("⏳ กำลังวิเคราะห์ข้อมูล")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Miss Streak Display ---
+# --- Miss Streak ---
 miss = st.session_state.miss_streak 
 st.markdown(f"**❌ แพ้ติดกัน: {miss} ครั้ง**")
-if miss > 0:
-    if miss == 3:
-        st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
-    elif miss >= 6:
-        st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
+if miss == 3:
+    st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
+elif miss >= 6:
+    st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
 
 # --- Big Road ---
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("**🕒 Big Road:**", unsafe_allow_html=True)
-
-raw_history = st.session_state.oracle.history
-history = []
-t_counters = []
-
-for outcome in raw_history:
-    if outcome == "T":
-        if t_counters:
-            t_counters[-1] += 1
-        elif history:
-            t_counters.append(1)
-        else:
-            history.append("P")  # dummy cell
-            t_counters.append(1)
-    elif outcome in ("P", "B"):
-        history.append(outcome)
-        t_counters.append(0)
-
+st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
+history = st.session_state.oracle.history
 if history:
     max_row = 6
     columns, col, last = [], [], None
-    for res in history:
-        if res == last and len(col) < max_row:
-            col.append(res)
-        else:
-            if col:
-                columns.append(col)
-            col = [res]
-            last = res
+    for i, result in enumerate(history):
+        if result in ("P", "B"):
+            if result == last and len(col) < max_row:
+                col.append(result)
+            else:
+                if col:
+                    columns.append(col)
+                col = [result]
+                last = result
+        elif result == "T" and columns:
+            # Append Tie count to last column if possible
+            if isinstance(columns[-1], list) and columns[-1]:
+                columns[-1][-1] += f"{st.session_state.tie_count}"
+
     if col:
         columns.append(col)
 
-    html = "<div class='big-road-container' id='bigroad'>"
-    for i, col in enumerate(columns):
+    html = "<div class='big-road-container'>"
+    for col in columns:
         html += "<div class='big-road-column'>"
-        for j, cell in enumerate(col):
-            idx = sum(len(c) for c in columns[:i]) + j
-            t = t_counters[idx] if idx < len(t_counters) else 0
-            emoji = "🔵" if cell == "P" else "🔴"
-            label = f"{emoji}{t}" if t > 0 else emoji
-            html += f"<div class='big-road-cell'>{label}</div>"
+        for cell in col:
+            if isinstance(cell, str) and "P" in cell:
+                count = "".join(filter(str.isdigit, cell))
+                html += f"<div class='big-road-cell'>🔵{count}</div>" if count else "<div class='big-road-cell'>🔵</div>"
+            elif isinstance(cell, str) and "B" in cell:
+                count = "".join(filter(str.isdigit, cell))
+                html += f"<div class='big-road-cell'>🔴{count}</div>" if count else "<div class='big-road-cell'>🔴</div>"
         html += "</div>"
-    html += "</div><script>setTimeout(()=>{let el = document.getElementById('bigroad'); el.scrollLeft = el.scrollWidth;}, 100);</script>"
+    html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
-# --- Input Buttons ---
+# --- Buttons ---
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.button("🔵 P", on_click=handle_click, args=("P",))
+    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
 with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",))
+    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
 with col3:
-    st.button("⚪ T", on_click=handle_click, args=("T",))
+    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
-# --- Control Buttons ---
 col4, col5 = st.columns(2)
 with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
