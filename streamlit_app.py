@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 12px; /* Readable size */
+    font-size: 14px; /* Slightly larger, more readable for a header */
     margin-top: 15px; 
     margin-bottom: 5px; 
 }
-/* Target for st.write output, which renders as <p> tags with a specific class */
-.accuracy-item { /* Using the custom class defined in st.markdown */
-    font-size: 10px; /* Readable size */
+/* Target for the custom class used for accuracy items */
+.accuracy-item { 
+    font-size: 12px; /* Smaller than header, but still readable */
     margin-bottom: 2px; 
 }
 
@@ -355,18 +355,27 @@ if history:
     st.markdown(big_road_html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # This script will be re-executed on every Streamlit rerun.
+    # Using a polling mechanism with setTimeout to ensure element is ready and then scrolls
     st.markdown(
         """
         <script>
-            function scrollToRight() {
+            function tryScrollToRight(attempts) {
                 var container = document.getElementById('big-road-container-unique');
                 if (container) {
-                    container.scrollLeft = container.scrollWidth;
+                    // Only scroll if there's actual overflow
+                    if (container.scrollWidth > container.clientWidth) {
+                        container.scrollLeft = container.scrollWidth;
+                    }
+                }
+                // Try again if not scrolled and attempts remain (or if container not found yet)
+                if (attempts > 0 && (container === null || container.scrollLeft < container.scrollWidth)) {
+                    setTimeout(function() {
+                        tryScrollToRight(attempts - 1);
+                    }, 50); // Shorter delay for polling
                 }
             }
-            // Use a slight delay to ensure rendering is fully complete and stable
-            setTimeout(scrollToRight, 100); 
+            // Initial call with a few attempts
+            tryScrollToRight(10); // Try up to 10 times with 50ms interval = 500ms total
         </script>
         """,
         unsafe_allow_html=True
