@@ -152,12 +152,12 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 8px; /* Further reduced font size */
-    margin-top: 8px; /* Reduced margin */
-    margin-bottom: 2px; /* Reduced margin */
+    font-size: 7px; /* Further reduced font size */
+    margin-top: 5px; /* Reduced margin */
+    margin-bottom: 1px; /* Reduced margin */
 }
 .st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 7px; /* Further reduced font size for accuracy lines */
+    font-size: 6px; /* Further reduced font size for accuracy lines */
     margin-bottom: 0px; /* Reduced margin between lines */
 }
 
@@ -216,9 +216,6 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # No need to update scroll_trigger query param here anymore
-    # The script will be re-executed on every rerun anyway.
-
 
 def handle_remove():
     """
@@ -247,8 +244,6 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # No need to update scroll_trigger query param here anymore
-
 
 def handle_reset():
     """
@@ -261,7 +256,6 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # No need to update scroll_trigger query param here anymore
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -374,8 +368,7 @@ if history:
     st.markdown(html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # Removed the dynamic key, as it was causing TypeError.
-    # The script should re-execute on every Streamlit rerun.
+    # This script will run every time Streamlit re-renders this section.
     st.markdown(
         """
         <script>
@@ -385,9 +378,8 @@ if history:
                     container.scrollLeft = container.scrollWidth;
                 }
             }
-            // Call on load and on subsequent updates
-            // Use a slight delay to ensure rendering is complete
-            setTimeout(scrollToRight, 50); 
+            // Use a slightly longer delay to ensure rendering is complete
+            setTimeout(scrollToRight, 200); 
         </script>
         """,
         unsafe_allow_html=True
