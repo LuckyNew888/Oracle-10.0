@@ -40,7 +40,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 14px;
+    font-size: 14px; /* This is the target size for module/pattern/confidence */
     color: #BBBBBB;
 }
 
@@ -137,31 +137,28 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-left: 5px solid #FFC107;
     color: #FFC107;
 }
-/* .st-emotion-cache-1f1d6zpt p { color: #FFC107; } */ /* Handled by general p selector */
 
 .st-emotion-cache-1s04v0m { /* Target Streamlit error box */
     background-color: #DC354520; /* Light red with transparency */
     border-left: 5px solid #DC3545;
     color: #DC3545;
 }
-/* .st-emotion-cache-1s04v0m p { color: #DC3545; } */ /* Handled by general p selector */
 
 .st-emotion-cache-13ln4z2 { /* Target Streamlit info box */
     background-color: #17A2B820; /* Light blue with transparency */
     border-left: 5px solid #17A2B8;
     color: #17A2B8;
 }
-/* .st-emotion-cache-13ln4z2 p { color: #17A2B8; } */ /* Handled by general p selector */
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 18px; /* Reduced font size for section header */
+    font-size: 14px; /* Reduced font size to match captions */
     margin-top: 20px;
-    margin-bottom: 10px;
+    margin-bottom: 8px; /* Slightly reduced margin */
 }
 .st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 14px; /* Reduced font size for accuracy lines */
-    margin-bottom: 5px;
+    font-size: 12px; /* Further reduced font size for accuracy lines */
+    margin-bottom: 3px; /* Reduced margin between lines */
 }
 
 hr {
@@ -366,6 +363,21 @@ if history:
         html += "</div>"
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
+
+    # JavaScript to scroll the big-road-container to the end
+    # This script will run every time Streamlit re-renders this section.
+    st.markdown(
+        """
+        <script>
+            var container = document.querySelector('.big-road-container');
+            if (container) {
+                container.scrollLeft = container.scrollWidth;
+            }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
