@@ -60,26 +60,23 @@ if 'initial_shown' not in st.session_state:
 
 # --- UI Functions ---
 def handle_click(outcome: Outcome):
-    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.oracle.add_result(outcome)
+    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     pattern_names = {
-        "PBPB": "ปิงปอง",
-        "BPBP": "ปิงปอง",
-        "PPBB": "สองตัวติด",
-        "BBPP": "สองตัวติด",
-        "PPPP": "มังกร P",
-        "BBBB": "มังกร B"
+        "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+        "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+        "PPPP": "มังกร P", "BBBB": "มังกร B"
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
 def handle_remove():
-    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.oracle.remove_last()
+    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
@@ -117,7 +114,7 @@ else:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Miss Streak ---
+# --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
 st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
 if miss == 3:
@@ -185,7 +182,7 @@ with col4:
 with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
-# --- Accuracy ---
+# --- Accuracy by Module ---
 st.markdown("<hr>")
 st.markdown("### 📈 ความแม่นยำรายโมดูล")
 modules = st.session_state.oracle.get_module_accuracy()
