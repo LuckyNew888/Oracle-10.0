@@ -158,7 +158,7 @@ h3 { /* Target h3 for "ความแม่นยำรายโมดูล" *
 }
 /* Target for the custom class used for accuracy items */
 .accuracy-item { 
-    font-size: 12px; /* Smaller than header, but still readable */
+    font-size: 11px; /* Smaller than header, but still readable */
     margin-bottom: 2px; 
 }
 
@@ -355,7 +355,7 @@ if history:
     st.markdown(big_road_html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # Using a polling mechanism with setTimeout to ensure element is ready and then scrolls
+    # Using a more robust polling mechanism with setTimeout
     st.markdown(
         """
         <script>
@@ -365,17 +365,19 @@ if history:
                     // Only scroll if there's actual overflow
                     if (container.scrollWidth > container.clientWidth) {
                         container.scrollLeft = container.scrollWidth;
+                        // console.log('Scrolled! attempts left: ' + attempts); // For debugging
+                        return; // Exit if scrolled successfully
                     }
                 }
-                // Try again if not scrolled and attempts remain (or if container not found yet)
-                if (attempts > 0 && (container === null || container.scrollLeft < container.scrollWidth)) {
+                // If not scrolled and attempts remain, try again
+                if (attempts > 0) {
                     setTimeout(function() {
                         tryScrollToRight(attempts - 1);
-                    }, 50); // Shorter delay for polling
+                    }, 20); // Even shorter delay for polling
                 }
             }
-            // Initial call with a few attempts
-            tryScrollToRight(10); // Try up to 10 times with 50ms interval = 500ms total
+            // Initial call with more attempts
+            tryScrollToRight(20); // Try up to 20 times with 20ms interval = 400ms total
         </script>
         """,
         unsafe_allow_html=True
