@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 10px; /* Further reduced font size */
-    margin-top: 10px; /* Reduced margin */
-    margin-bottom: 3px; /* Reduced margin */
+    font-size: 8px; /* Further reduced font size */
+    margin-top: 8px; /* Reduced margin */
+    margin-bottom: 2px; /* Reduced margin */
 }
 .st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 9px; /* Further reduced font size for accuracy lines */
-    margin-bottom: 1px; /* Reduced margin between lines */
+    font-size: 7px; /* Further reduced font size for accuracy lines */
+    margin-bottom: 0px; /* Reduced margin between lines */
 }
 
 hr {
@@ -216,10 +216,8 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Update a dummy query param to force Streamlit to re-render and re-run the scroll script
-    # This is a common workaround for persistent JS effects in Streamlit.
-    st.session_state['scroll_trigger'] = st.session_state.get('scroll_trigger', 0) + 1
-    st.experimental_set_query_params(scroll_trigger=st.session_state['scroll_trigger'])
+    # No need to update scroll_trigger query param here anymore
+    # The script will be re-executed on every rerun anyway.
 
 
 def handle_remove():
@@ -249,9 +247,7 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Update a dummy query param to force Streamlit to re-render and re-run the scroll script
-    st.session_state['scroll_trigger'] = st.session_state.get('scroll_trigger', 0) + 1
-    st.experimental_set_query_params(scroll_trigger=st.session_state['scroll_trigger'])
+    # No need to update scroll_trigger query param here anymore
 
 
 def handle_reset():
@@ -265,9 +261,7 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # Reset scroll trigger
-    st.session_state['scroll_trigger'] = 0
-    st.experimental_set_query_params(scroll_trigger=st.session_state['scroll_trigger'])
+    # No need to update scroll_trigger query param here anymore
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -380,25 +374,23 @@ if history:
     st.markdown(html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # This script will run every time Streamlit re-renders this section.
-    # We use a unique key for the script to ensure it re-runs on every update.
+    # Removed the dynamic key, as it was causing TypeError.
+    # The script should re-execute on every Streamlit rerun.
     st.markdown(
-        f"""
+        """
         <script>
-            function scrollToRight() {{
+            function scrollToRight() {
                 var container = document.getElementById('big-road-container');
-                if (container) {{
+                if (container) {
                     container.scrollLeft = container.scrollWidth;
-                }}
-            }}
+                }
+            }
             // Call on load and on subsequent updates
-            scrollToRight();
-            // Also add a slight delay to ensure rendering is complete
+            // Use a slight delay to ensure rendering is complete
             setTimeout(scrollToRight, 50); 
         </script>
         """,
-        unsafe_allow_html=True,
-        key=f"big_road_scroll_script_{st.session_state.get('scroll_trigger', 0)}" # Unique key
+        unsafe_allow_html=True
     )
 
 else:
