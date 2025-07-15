@@ -210,10 +210,9 @@ def handle_click(outcome_str: str):
     
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
-
-    # Use st.query_params to trigger scroll via URL
-    st.query_params["scroll_to_end"] = f"{time.time()}"
-    st.query_params["_t"] = f"{time.time()}" # Additional param to ensure change
+    
+    # st.query_params will trigger a rerun automatically
+    st.query_params["_t"] = f"{time.time()}" # Simply update a dummy param to force a rerun
 
 
 def handle_remove():
@@ -241,9 +240,8 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Use st.query_params to trigger scroll via URL
-    st.query_params["scroll_to_end"] = f"{time.time()}"
-    st.query_params["_t"] = f"{time.time()}" # Additional param to ensure change
+    # st.query_params will trigger a rerun automatically
+    st.query_params["_t"] = f"{time.time()}"
 
 
 def handle_reset():
@@ -257,9 +255,8 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # Use st.query_params to trigger scroll via URL
-    st.query_params["scroll_to_end"] = f"{time.time()}"
-    st.query_params["_t"] = f"{time.time()}" # Additional param to ensure change
+    # st.query_params will trigger a rerun automatically
+    st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -343,6 +340,14 @@ if history:
     if current_col:
         columns.append(current_col)
 
+    # NEW: Limit columns to display only the most recent ones
+    # Adjust this number based on desired visible width on mobile
+    # A column is about 20px wide + margin. 20 columns * 20px = 400px.
+    # This should fit most mobile screens without requiring manual scroll.
+    MAX_DISPLAY_COLUMNS = 20 
+    if len(columns) > MAX_DISPLAY_COLUMNS:
+        columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last N columns
+
     # Generate the full HTML string for Big Road
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
     for col in columns:
@@ -357,48 +362,10 @@ if history:
     # Display the Big Road HTML
     st.markdown(big_road_html, unsafe_allow_html=True)
 
-    # JavaScript to scroll the big-road-container to the end using query params
-    st.markdown(
-        """
-        <script>
-            function getQueryParam(name) {
-                name = name.replace(/[\[\]]/g, '\\$&');
-                var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
-                    results = regex.exec(window.location.search);
-                if (!results) return null;
-                if (!results[2]) return '';
-                return decodeURIComponent(results[2].replace(/\+/g, ' '));
-            }
-
-            function tryScrollToRightWithDelay(initialDelay, attempts, delayBetweenAttempts) {
-                var container = document.getElementById('big-road-container-unique');
-                var scrollParam = getQueryParam('scroll_to_end');
-                
-                if (container && scrollParam) {
-                    setTimeout(function() {
-                        var currentAttempt = 0;
-                        function pollScroll() {
-                            if (container.scrollWidth > container.clientWidth) {
-                                container.scrollLeft = container.scrollWidth;
-                                // console.log('Scrolled! Attempt: ' + currentAttempt); // For debugging
-                                return; // Exit if scrolled successfully
-                            }
-                            currentAttempt++;
-                            if (currentAttempt < attempts) {
-                                setTimeout(pollScroll, delayBetweenAttempts);
-                            }
-                        }
-                        pollScroll(); // Start polling
-                    }, initialDelay); // Initial delay before starting to poll
-                }
-            }
-            // Execute the scroll function when the script loads (on page load/reload)
-            // Initial delay of 100ms, then try 50 times with 10ms intervals
-            tryScrollToRightWithDelay(100, 50, 10);
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
+    # Removed all JavaScript scrolling. The Big Road will now always display
+    # the last MAX_DISPLAY_COLUMNS, effectively keeping the latest results in view.
+    # The overflow-x: auto still allows manual scrolling if MAX_DISPLAY_COLUMNS
+    # is set too high for the screen size.
 
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
