@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 14px; /* Adjusted to a more readable size */
+    font-size: 12px; /* Readable size */
     margin-top: 15px; 
     margin-bottom: 5px; 
 }
 /* Target for st.write output, which renders as <p> tags with a specific class */
-.st-emotion-cache-1kyxreq p { /* Target the p tag directly within the Streamlit class */
-    font-size: 12px; /* Adjusted to a more readable size */
+.accuracy-item { /* Using the custom class defined in st.markdown */
+    font-size: 11px; /* Readable size */
     margin-bottom: 2px; 
 }
 
@@ -211,8 +211,8 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Store current history length to trigger scroll script
-    st.session_state['current_history_len'] = len(st.session_state.oracle.history)
+    # No need for dummy state variable or query params for scroll anymore.
+    # The script will run on every rerun.
 
 
 def handle_remove():
@@ -240,9 +240,6 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Store current history length to trigger scroll script
-    st.session_state['current_history_len'] = len(st.session_state.oracle.history)
-
 
 def handle_reset():
     """
@@ -255,8 +252,6 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # Reset history length for scroll trigger
-    st.session_state['current_history_len'] = 0
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -355,23 +350,22 @@ if history:
     st.markdown(big_road_html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # This script will run every time the Streamlit app reruns.
-    # We use st.session_state to ensure the script reruns when history changes.
+    # Removed the dynamic key. This script will be re-executed on every Streamlit rerun.
     st.markdown(
-        f"""
+        """
         <script>
-            function scrollToRight() {{
+            function scrollToRight() {
                 var container = document.getElementById('big-road-container-unique');
-                if (container) {{
+                if (container) {
                     container.scrollLeft = container.scrollWidth;
-                }}
-            }}
+                }
+            }
             // Use a slight delay to ensure rendering is fully complete and stable
+            // This delay might need to be adjusted based on performance.
             setTimeout(scrollToRight, 100); 
         </script>
         """,
-        unsafe_allow_html=True,
-        key=f"big_road_scroll_script_{st.session_state.get('current_history_len', 0)}" # Unique key based on history length
+        unsafe_allow_html=True
     )
 
 else:
@@ -382,7 +376,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
 with col2:
-    st.button("🔴 B", on_on_click=handle_click, args=("B",), key="btn_B") # Corrected typo: on_on_click -> on_click
+    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B") # Corrected from on_on_click
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
