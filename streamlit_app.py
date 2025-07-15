@@ -60,7 +60,7 @@ if 'initial_shown' not in st.session_state:
 
 # --- UI Functions ---
 def handle_click(outcome: Outcome):
-    prediction, source, confidence, pattern_code = st.session_state.oracle.predict_next()
+    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.oracle.add_result(outcome)
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -78,8 +78,8 @@ def handle_click(outcome: Outcome):
         st.session_state.initial_shown = True
 
 def handle_remove():
+    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.oracle.remove_last()
-    prediction, source, confidence, pattern_code = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
@@ -117,7 +117,7 @@ else:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Miss Streak Warning ---
+# --- Miss Streak ---
 miss = st.session_state.oracle.calculate_miss_streak()
 st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
 if miss == 3:
@@ -185,7 +185,7 @@ with col4:
 with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
-# --- Accuracy by Module ---
+# --- Accuracy ---
 st.markdown("<hr>")
 st.markdown("### 📈 ความแม่นยำรายโมดูล")
 modules = st.session_state.oracle.get_module_accuracy()
