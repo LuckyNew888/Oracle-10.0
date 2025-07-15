@@ -44,6 +44,12 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     color: #BBBBBB;
 }
 
+/* Miss Streak warning text */
+.st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
+    font-size: 14px; /* Reduced font size for miss streak text */
+}
+
+
 .big-road-container {
     width: 100%;
     overflow-x: auto; /* Allows horizontal scrolling if many columns */
@@ -53,23 +59,23 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 160px; /* Ensure a minimum height for the road */
+    min-height: 140px; /* Adjusted minimum height for the road */
     box-shadow: inset 0 2px 5px rgba(0,0,0,0.3);
 }
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 4px;
+    margin-right: 2px; /* Reduced margin between columns */
     border-right: 1px solid rgba(255,255,255,0.1); /* Separator between columns */
-    padding-right: 4px;
+    padding-right: 2px; /* Reduced padding */
 }
 .big-road-cell {
-    width: 25px; /* Reduced size for smaller emoji */
-    height: 25px; /* Reduced size for smaller emoji */
+    width: 20px; /* Further reduced size for smaller emoji */
+    height: 20px; /* Further reduced size for smaller emoji */
     text-align: center;
-    line-height: 25px; /* Adjusted line-height for new size */
-    font-size: 16px; /* Smaller font for emojis */
-    margin-bottom: 2px;
+    line-height: 20px; /* Adjusted line-height for new size */
+    font-size: 14px; /* Smaller font for emojis */
+    margin-bottom: 1px; /* Reduced margin between cells */
     border-radius: 50%; /* Make cells round */
     display: flex;
     justify-content: center;
@@ -83,18 +89,18 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 10px; /* Smaller font for tie count */
+    font-size: 9px; /* Slightly smaller font for tie count */
     position: absolute;
-    bottom: -2px; /* Adjusted position */
-    right: -2px; /* Adjusted position */
+    bottom: -1px; /* Adjusted position */
+    right: -1px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 2px 4px; /* Increased padding */
+    padding: 1px 3px; /* Reduced padding */
     line-height: 1;
-    min-width: 16px; /* Ensure minimum width for single digit */
+    min-width: 14px; /* Ensure minimum width for single digit */
     text-align: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
 
 /* Button styling */
@@ -131,21 +137,32 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-left: 5px solid #FFC107;
     color: #FFC107;
 }
-.st-emotion-cache-1f1d6zpt p { color: #FFC107; }
+/* .st-emotion-cache-1f1d6zpt p { color: #FFC107; } */ /* Handled by general p selector */
 
 .st-emotion-cache-1s04v0m { /* Target Streamlit error box */
     background-color: #DC354520; /* Light red with transparency */
     border-left: 5px solid #DC3545;
     color: #DC3545;
 }
-.st-emotion-cache-1s04v0m p { color: #DC3545; }
+/* .st-emotion-cache-1s04v0m p { color: #DC3545; } */ /* Handled by general p selector */
 
 .st-emotion-cache-13ln4z2 { /* Target Streamlit info box */
     background-color: #17A2B820; /* Light blue with transparency */
     border-left: 5px solid #17A2B8;
     color: #17A2B8;
 }
-.st-emotion-cache-13ln4z2 p { color: #17A2B8; }
+/* .st-emotion-cache-13ln4z2 p { color: #17A2B8; } */ /* Handled by general p selector */
+
+/* Accuracy by Module section */
+h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
+    font-size: 18px; /* Reduced font size for section header */
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+.st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
+    font-size: 14px; /* Reduced font size for accuracy lines */
+    margin-bottom: 5px;
+}
 
 hr {
     border-top: 1px solid rgba(255,255,255,0.1);
@@ -277,6 +294,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
+# Apply CSS class to warning/error messages for smaller text
 st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
 if miss == 3:
     st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
@@ -286,7 +304,6 @@ elif miss >= 6:
 # --- Big Road Display ---
 st.markdown("<hr>", unsafe_allow_html=True) # Keep this HR for separation from prediction box
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
-# Removed: st.info("💡 ผลเสมอ (⚪) จะแสดงเป็นตัวเลขกำกับบนผลลัพธ์ P (🔵) หรือ B (🔴) ล่าสุด")
 
 history = st.session_state.oracle.history
 
@@ -370,7 +387,6 @@ with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
 # --- Accuracy by Module ---
-# Removed: st.markdown("<hr>")
 st.markdown("### 📈 ความแม่นยำรายโมดูล")
 modules = st.session_state.oracle.get_module_accuracy()
 if modules:
