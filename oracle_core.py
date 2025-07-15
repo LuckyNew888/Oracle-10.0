@@ -1,8 +1,8 @@
 # oracle_core.py (Oracle v5.0)
 from typing import List, Optional, Tuple, Literal
+
 Outcome = Literal["P", "B", "T"]
 
-# -- Example structure of modules --
 class OracleBrain:
     def __init__(self):
         self.history: List[Outcome] = []
@@ -16,13 +16,19 @@ class OracleBrain:
         self.prediction_log.append(self.last_prediction)
 
     def predict_next(self) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str], int]:
-        # This is a mock return for demo
+        # Mock data (ตัวอย่างผลลัพธ์)
         return "P", "Sniper", 93, "PBPB", 2
 
+    def predict(self):  # ✅ เพิ่ม method นี้ให้รองรับ app.py
+        return self.predict_next()
+
     def remove_last(self):
-        if self.history: self.history.pop()
-        if self.result_log: self.result_log.pop()
-        if self.prediction_log: self.prediction_log.pop()
+        if self.history:
+            self.history.pop()
+        if self.result_log:
+            self.result_log.pop()
+        if self.prediction_log:
+            self.prediction_log.pop()
 
     def reset(self):
         self.history.clear()
