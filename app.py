@@ -1,90 +1,64 @@
 import streamlit as st
 from oracle_core import OracleBrain
 
-st.set_page_config(page_title="🔮 ORACLE v5", layout="centered")
-st.title("🔮 ORACLE v5")
-
-# Initialize session state
+st.set_page_config(layout="wide")
 if "oracle" not in st.session_state:
     st.session_state.oracle = OracleBrain()
 if "initial_shown" not in st.session_state:
     st.session_state.initial_shown = False
 
-oracle: OracleBrain = st.session_state.oracle
+oracle = st.session_state.oracle
 
-# --- Function: Convert outcome to emoji
-def outcome_to_emoji(outcome):
-    return "🔵" if outcome == "P" else "🔴" if outcome == "B" else "⚪"
+st.markdown("## 🔮 ORACLE v5")
 
-# --- Display prediction
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("🔵 P"):
+        oracle.add_result("P")
+with col2:
+    if st.button("🔴 B"):
+        oracle.add_result("B")
+with col3:
+    if st.button("⚪️ T"):
+        oracle.add_result("T")
+
 if st.button("🔮 ทำนายผลลัพธ์ถัดไป"):
     result = oracle.predict_next()
-    if result:
-        predict, module, confidence, pattern, miss_streak = result
-        oracle.last_prediction = predict
-        st.session_state.initial_shown = True
+    st.session_state.initial_shown = True
+    st.session_state.prediction = result
 
-# --- Show prediction info
-if oracle.last_prediction:
-    st.subheader("📍 คำทำนาย:")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"<h1 style='color:#00BFFF'>{outcome_to_emoji(oracle.last_prediction)} {oracle.last_prediction}</h1>", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"🧠 โมดูล: **{module}**")
-        st.markdown(f"📊 เค้าไพ่: **{pattern}**")
-        st.markdown(f"🔎 ความมั่นใจ: **{confidence}%**")
-        st.markdown(f"❌ แพ้ติดกัน: **{miss_streak} ครั้ง**")
-
-# --- Add outcome
-cols = st.columns(3)
-if cols[0].button("🔵 P"):
-    oracle.add_result("P")
-if cols[1].button("🔴 B"):
-    oracle.add_result("B")
-if cols[2].button("⚪ T"):
-    oracle.add_result("T")
-
-# --- Control buttons
-control_cols = st.columns(3)
-if control_cols[0].button("🔄 ลบรายการล่าสุด"):
+if st.button("🅿️ ลบรายการล่าสุด"):
     oracle.remove_last()
-if control_cols[1].button("🧹 เริ่มใหม่ทั้งหมด"):
+
+if st.button("🧹 เริ่มใหม่ทั้งหมด"):
     oracle.reset()
-if control_cols[2].button("📋 แสดงรายการทั้งหมด"):
-    st.write("ผลย้อนหลัง:", oracle.result_log)
+    st.session_state.initial_shown = False
+    st.session_state.prediction = None
 
-# --- Big Road Display
-st.subheader("🕒 Big Road:")
-br_cols = st.columns(20)
-row = 0
-col = 0
-max_rows = 6
+if hasattr(st.session_state, "prediction") and st.session_state.prediction:
+    pred, module, conf, pattern, miss_streak = st.session_state.prediction
+    st.subheader("📍 คำทำนาย:")
+    st.write(f"ผลลัพธ์ที่คาดการณ์: {pred}")
+    st.write(f"โมดูล: {module}")
+    st.write(f"เค้าไพ่: {pattern}")
+    st.write(f"ความมั่นใจ: {conf}%")
+    st.write(f"❌ แพ้ติดกัน: {miss_streak} ครั้ง")
 
-for i, outcome in enumerate(oracle.result_log):
-    if outcome == "T":
-        # Add white number inside previous circle
-        continue
+# แสดง Big Road
+st.markdown("### 🕒 Big Road:")
+grid = []
+for outcome in oracle.result_log:
+    grid.append(outcome)
 
-    emoji = outcome_to_emoji(outcome)
-    label = ""
-
-    # Count Ts before this point
-    t_count = 0
-    for j in range(i+1, len(oracle.result_log)):
-        if oracle.result_log[j] == "T":
-            t_count += 1
-        else:
-            break
-    if t_count > 0:
-        label = f"{t_count}"
-
-    with br_cols[col]:
-        st.markdown(f"<div style='font-size:30px;text-align:center'>{emoji}<sub style='color:white'>{label}</sub></div>", unsafe_allow_html=True)
-
-    row += 1
-    if row >= max_rows:
-        row = 0
-        col += 1
-
-# Auto scroll (visually mimicked by showing last 20 columns)
+# แสดงผลแบบตาราง
+for i in range(0, len(grid), 6):
+    row = grid[i:i+6]
+    cols = st.columns(len(row))
+    for j, val in enumerate(row):
+        with cols[j]:
+            if val == "P":
+                st.markdown("🔵")
+            elif val == "B":
+                st.markdown("🔴")
+            else:
+                st.markdown("⚪️")
