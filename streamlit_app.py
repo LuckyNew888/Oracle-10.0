@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 7px; /* Further reduced font size */
-    margin-top: 5px; /* Reduced margin */
-    margin-bottom: 1px; /* Reduced margin */
+    font-size: 4px !important; /* Extremely reduced font size */
+    margin-top: 5px !important; 
+    margin-bottom: 1px !important; 
 }
 .st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 6px; /* Further reduced font size for accuracy lines */
-    margin-bottom: 0px; /* Reduced margin between lines */
+    font-size: 3px !important; /* Extremely reduced font size for accuracy lines */
+    margin-bottom: 0px !important; 
 }
 
 hr {
@@ -368,7 +368,6 @@ if history:
     st.markdown(html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # This script will run every time Streamlit re-renders this section.
     st.markdown(
         """
         <script>
@@ -378,8 +377,8 @@ if history:
                     container.scrollLeft = container.scrollWidth;
                 }
             }
-            // Use a slightly longer delay to ensure rendering is complete
-            setTimeout(scrollToRight, 200); 
+            // Use a longer delay to ensure rendering is fully complete and stable
+            setTimeout(scrollToRight, 500); 
         </script>
         """,
         unsafe_allow_html=True
@@ -406,7 +405,7 @@ with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
 # --- Accuracy by Module ---
-st.markdown("### 📈 ความแม่นยำรายโมดูล")
+st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) # Changed to use h3 directly in markdown
 modules = st.session_state.oracle.get_module_accuracy()
 if modules:
     for name, acc in modules.items():
