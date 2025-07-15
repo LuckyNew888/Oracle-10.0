@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 14px; /* Reduced font size to match captions */
-    margin-top: 20px;
-    margin-bottom: 8px; /* Slightly reduced margin */
+    font-size: 12px; /* Further reduced font size to match captions */
+    margin-top: 15px; /* Reduced margin */
+    margin-bottom: 5px; /* Reduced margin */
 }
 .st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 12px; /* Further reduced font size for accuracy lines */
-    margin-bottom: 3px; /* Reduced margin between lines */
+    font-size: 11px; /* Further reduced font size for accuracy lines */
+    margin-bottom: 2px; /* Reduced margin between lines */
 }
 
 hr {
@@ -365,14 +365,16 @@ if history:
     st.markdown(html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # This script will run every time Streamlit re-renders this section.
+    # Use a small timeout to ensure the DOM is rendered before scrolling
     st.markdown(
         """
         <script>
-            var container = document.querySelector('.big-road-container');
-            if (container) {
-                container.scrollLeft = container.scrollWidth;
-            }
+            setTimeout(function() {
+                var container = document.querySelector('.big-road-container');
+                if (container) {
+                    container.scrollLeft = container.scrollWidth;
+                }
+            }, 100); // 100ms delay
         </script>
         """,
         unsafe_allow_html=True
