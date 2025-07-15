@@ -1,6 +1,4 @@
-# oracle_core.py (Oracle v5.0)
 from typing import List, Optional, Tuple, Literal
-
 Outcome = Literal["P", "B", "T"]
 
 class OracleBrain:
@@ -16,11 +14,9 @@ class OracleBrain:
         self.prediction_log.append(self.last_prediction)
 
     def predict_next(self) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[str], int]:
-        # Mock data (ตัวอย่างผลลัพธ์)
-        return "P", "Sniper", 93, "PBPB", 2
-
-    def predict(self):  # ✅ เพิ่ม method นี้ให้รองรับ app.py
-        return self.predict_next()
+        result = ("P", "Sniper", 93, "PBPB", 2)
+        self.last_prediction = result[0]
+        return result
 
     def remove_last(self):
         if self.history:
