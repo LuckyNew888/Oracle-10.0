@@ -64,11 +64,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding-right: 4px;
 }
 .big-road-cell {
-    width: 30px; /* Increased size for better visibility */
-    height: 30px;
+    width: 25px; /* Reduced size for smaller emoji */
+    height: 25px; /* Reduced size for smaller emoji */
     text-align: center;
-    line-height: 30px;
-    font-size: 18px; /* Larger font for emojis */
+    line-height: 25px; /* Adjusted line-height for new size */
+    font-size: 16px; /* Smaller font for emojis */
     margin-bottom: 2px;
     border-radius: 50%; /* Make cells round */
     display: flex;
@@ -284,9 +284,9 @@ elif miss >= 6:
     st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
 
 # --- Big Road Display ---
-st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<hr>", unsafe_allow_html=True) # Keep this HR for separation from prediction box
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
-st.info("💡 ผลเสมอ (⚪) จะแสดงเป็นตัวเลขกำกับบนผลลัพธ์ P (🔵) หรือ B (🔴) ล่าสุด")
+# Removed: st.info("💡 ผลเสมอ (⚪) จะแสดงเป็นตัวเลขกำกับบนผลลัพธ์ P (🔵) หรือ B (🔴) ล่าสุด")
 
 history = st.session_state.oracle.history
 
@@ -370,7 +370,7 @@ with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
 # --- Accuracy by Module ---
-st.markdown("<hr>")
+# Removed: st.markdown("<hr>")
 st.markdown("### 📈 ความแม่นยำรายโมดูล")
 modules = st.session_state.oracle.get_module_accuracy()
 if modules:
