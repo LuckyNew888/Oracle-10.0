@@ -211,8 +211,9 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Use st.experimental_set_query_params to trigger scroll via URL
-    st.experimental_set_query_params(scroll_to_end=f"{time.time()}", _t=f"{time.time()}")
+    # Use st.query_params to trigger scroll via URL
+    st.query_params["scroll_to_end"] = f"{time.time()}"
+    st.query_params["_t"] = f"{time.time()}" # Additional param to ensure change
 
 
 def handle_remove():
@@ -240,8 +241,9 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Use st.experimental_set_query_params to trigger scroll via URL
-    st.experimental_set_query_params(scroll_to_end=f"{time.time()}", _t=f"{time.time()}")
+    # Use st.query_params to trigger scroll via URL
+    st.query_params["scroll_to_end"] = f"{time.time()}"
+    st.query_params["_t"] = f"{time.time()}" # Additional param to ensure change
 
 
 def handle_reset():
@@ -255,8 +257,9 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # Use st.experimental_set_query_params to trigger scroll via URL
-    st.experimental_set_query_params(scroll_to_end=f"{time.time()}", _t=f"{time.time()}")
+    # Use st.query_params to trigger scroll via URL
+    st.query_params["scroll_to_end"] = f"{time.time()}"
+    st.query_params["_t"] = f"{time.time()}" # Additional param to ensure change
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -367,21 +370,31 @@ if history:
                 return decodeURIComponent(results[2].replace(/\+/g, ' '));
             }
 
-            function scrollToRightOnLoad() {
+            function tryScrollToRightWithDelay(initialDelay, attempts, delayBetweenAttempts) {
                 var container = document.getElementById('big-road-container-unique');
                 var scrollParam = getQueryParam('scroll_to_end');
                 
                 if (container && scrollParam) {
-                    // Use a short delay to ensure rendering is complete
                     setTimeout(function() {
-                        if (container.scrollWidth > container.clientWidth) {
-                            container.scrollLeft = container.scrollWidth;
+                        var currentAttempt = 0;
+                        function pollScroll() {
+                            if (container.scrollWidth > container.clientWidth) {
+                                container.scrollLeft = container.scrollWidth;
+                                // console.log('Scrolled! Attempt: ' + currentAttempt); // For debugging
+                                return; // Exit if scrolled successfully
+                            }
+                            currentAttempt++;
+                            if (currentAttempt < attempts) {
+                                setTimeout(pollScroll, delayBetweenAttempts);
+                            }
                         }
-                    }, 50); // Small delay
+                        pollScroll(); // Start polling
+                    }, initialDelay); // Initial delay before starting to poll
                 }
             }
             // Execute the scroll function when the script loads (on page load/reload)
-            scrollToRightOnLoad();
+            // Initial delay of 100ms, then try 50 times with 10ms intervals
+            tryScrollToRightWithDelay(100, 50, 10);
         </script>
         """,
         unsafe_allow_html=True
