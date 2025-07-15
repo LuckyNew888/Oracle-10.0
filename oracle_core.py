@@ -1,4 +1,4 @@
-# oracle_core.py (เพิ่ม Sniper Opportunity)
+# oracle_core.py (Oracle V5.1 - Enhanced Accuracy Display)
 from typing import List, Optional, Literal, Tuple, Dict
 import random
 
@@ -265,26 +265,52 @@ class OracleBrain:
                 break 
         return streak
 
-    def get_module_accuracy(self) -> Dict[str, float]:
+    def _calculate_module_accuracy_for_period(self, module_name: str, lookback: Optional[int] = None) -> float:
+        """
+        Calculates accuracy for a specific module over a given lookback period.
+        If lookback is None, calculates all-time accuracy.
+        """
+        results = self.modules_accuracy_log.get(module_name, [])
+        
+        if lookback is not None:
+            results = results[-lookback:] # Take only the last 'lookback' results
+
+        if results:
+            wins = sum(results) 
+            total = len(results)
+            return (wins / total) * 100
+        return 0.0
+
+    def get_module_accuracy_all_time(self) -> Dict[str, float]:
+        """Returns all-time accuracy for all modules."""
         accuracy_results = {}
-        for module_name, results in self.modules_accuracy_log.items():
-            if results:
-                wins = sum(results) 
-                total = len(results)
-                accuracy_results[module_name] = (wins / total) * 100
-            else:
-                accuracy_results[module_name] = 0.0
+        for module_name in self.modules_accuracy_log.keys():
+            accuracy_results[module_name] = self._calculate_module_accuracy_for_period(module_name, lookback=None)
+        return accuracy_results
+
+    def get_module_accuracy_recent(self, lookback: int) -> Dict[str, float]:
+        """Returns accuracy for all modules over the last 'lookback' predictions."""
+        accuracy_results = {}
+        for module_name in self.modules_accuracy_log.keys():
+            accuracy_results[module_name] = self._calculate_module_accuracy_for_period(module_name, lookback)
         return accuracy_results
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
-        acc = self.get_module_accuracy()
+        """
+        Returns normalized accuracy (0-1 scale) for each module (all-time),
+        used as weights in ConfidenceScorer.
+        """
+        acc = self.get_module_accuracy_all_time() # Use all-time accuracy for normalization
         if not acc:
             return {} 
         
         active_accuracies = {k: v for k, v in acc.items() if v > 0} 
         
         if not active_accuracies:
-            return {name: 0.5 for name in acc.keys()}
+            # If all are 0 or no active modules, return default neutral weights
+            # Ensure all known module names are covered, even if their accuracy is 0
+            all_known_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "NoPrediction"]
+            return {name: 0.5 for name in all_known_modules if name in acc or name == "NoPrediction"}
             
         max_val = max(active_accuracies.values()) 
         if max_val == 0: 
@@ -355,7 +381,7 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history) 
         }
         
-        module_accuracies_for_weights = self.get_module_accuracy()
+        module_accuracies_for_weights = self.get_module_accuracy_all_time() # Use all-time accuracy for weights
 
         final_prediction, source_module_name, confidence, pattern_code = \
             self.scorer.score(predictions_from_modules, module_accuracies_for_weights, self.history)
@@ -367,14 +393,35 @@ class OracleBrain:
                 final_prediction = predictions_from_modules[best_module_for_recovery]
                 source_module_name = f"{best_module_for_recovery}-Recovery"
 
-        # --- NEW: Sniper Opportunity Logic ---
+        # --- Sniper Opportunity Logic (Stricter) ---
         is_sniper_opportunity = False
         if final_prediction in ("P", "B") and confidence is not None:
-            # Condition 1: High confidence
-            # Condition 2: Low miss streak (0 or 1)
-            # Condition 3: Prediction is not a Tie
-            if confidence >= 90 and current_miss_streak <= 1: # Thresholds can be adjusted
-                is_sniper_opportunity = True
+            # Condition 1: Overall confidence is at its maximum
+            # Condition 2: No recent miss streak
+            if confidence == 95 and current_miss_streak == 0:
+                # Condition 3: All contributing modules must have high individual accuracy
+                contributing_modules = [m.strip() for m in source_module_name.split(',')]
+                all_contributing_modules_high_accuracy = True
+                
+                SNIPER_MODULE_ACCURACY_THRESHOLD = 85 # 85% or higher for contributing modules
+
+                if not contributing_modules: 
+                    all_contributing_modules_high_accuracy = False
+                else:
+                    for module_name in contributing_modules:
+                        # Exclude "NoPrediction" or "Fallback" if they are the sole source
+                        if module_name == "NoPrediction" or module_name == "Fallback":
+                            all_contributing_modules_high_accuracy = False
+                            break
+                        
+                        # Check if the module's individual all-time accuracy meets the high threshold
+                        mod_acc = self._calculate_module_accuracy_for_period(module_name, lookback=None) # Use all-time accuracy
+                        if mod_acc < SNIPER_MODULE_ACCURACY_THRESHOLD:
+                            all_contributing_modules_high_accuracy = False
+                            break
+                
+                if all_contributing_modules_high_accuracy:
+                    is_sniper_opportunity = True
         # --- END NEW Sniper Opportunity Logic ---
 
         self.last_prediction = final_prediction
