@@ -152,14 +152,14 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 14px; /* Slightly larger, more readable for a header */
-    margin-top: 15px; 
-    margin-bottom: 5px; 
+    font-size: 12px !important; /* Force this size */
+    margin-top: 10px !important; 
+    margin-bottom: 3px !important; 
 }
 /* Target for the custom class used for accuracy items */
 .accuracy-item { 
-    font-size: 11px; /* Smaller than header, but still readable */
-    margin-bottom: 2px; 
+    font-size: 10px !important; /* Force this size */
+    margin-bottom: 1px !important; 
 }
 
 hr {
@@ -373,11 +373,11 @@ if history:
                 if (attempts > 0) {
                     setTimeout(function() {
                         tryScrollToRight(attempts - 1);
-                    }, 20); // Even shorter delay for polling
+                    }, 10); // Very short delay for aggressive polling
                 }
             }
-            // Initial call with more attempts
-            tryScrollToRight(20); // Try up to 20 times with 20ms interval = 400ms total
+            // Initial call with many attempts
+            tryScrollToRight(50); // Try up to 50 times with 10ms interval = 500ms total
         </script>
         """,
         unsafe_allow_html=True
