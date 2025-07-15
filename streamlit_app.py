@@ -152,13 +152,14 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 4px !important; /* Extremely reduced font size */
-    margin-top: 5px !important; 
-    margin-bottom: 1px !important; 
+    font-size: 12px; /* Reverted to a more readable size */
+    margin-top: 15px; 
+    margin-bottom: 5px; 
 }
-.st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 3px !important; /* Extremely reduced font size for accuracy lines */
-    margin-bottom: 0px !important; 
+/* Target for st.write output, which renders as <p> tags with a specific class */
+.st-emotion-cache-1kyxreq p { /* Target the p tag directly within the Streamlit class */
+    font-size: 11px; /* Reverted to a more readable size */
+    margin-bottom: 2px; 
 }
 
 hr {
@@ -189,18 +190,14 @@ def handle_click(outcome_str: str):
     Handles button clicks for P, B, T outcomes.
     Adds the result to OracleBrain and updates the prediction.
     """
-    # Pass the string directly, as Outcome is a Literal type in oracle_core.py
     st.session_state.oracle.add_result(outcome_str)
     
-    # Get new prediction after adding result
-    # The last return value from predict_next is miss_streak, which we don't need here directly
     prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     
-    # Map pattern codes to Thai names
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
@@ -209,12 +206,13 @@ def handle_click(outcome_str: str):
         "PPPBBB": "สามตัวตัด B", "BBBPBB": "สามตัวตัด P",
         "PBBP": "คู่สลับ P", "BPPB": "คู่สลับ B"
     }
-    # Get pattern name, default to pattern_code if not found, or None if no pattern_code
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
-    # Mark that initial message has been shown (or bypassed)
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
+
+    # Update a dummy state variable to trigger rerender and scroll
+    st.session_state['last_history_len'] = len(st.session_state.oracle.history)
 
 
 def handle_remove():
@@ -222,7 +220,6 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # Re-predict after removal
     prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -238,12 +235,14 @@ def handle_remove():
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
-    # If history becomes too short for prediction, reset initial_shown flag
     p_count = st.session_state.oracle.history.count("P")
     b_count = st.session_state.oracle.history.count("B")
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
+    # Update a dummy state variable to trigger rerender and scroll
+    st.session_state['last_history_len'] = len(st.session_state.oracle.history)
+
 
 def handle_reset():
     """
@@ -256,6 +255,8 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
+    # Reset dummy state variable
+    st.session_state['last_history_len'] = 0
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -275,15 +276,11 @@ if st.session_state.prediction:
     if st.session_state.confidence is not None:
         st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") # Format confidence to 1 decimal place
 else:
-    # Check if we are waiting for initial data (history < 20 non-ties)
-    # and if the initial message hasn't been bypassed yet
     p_count = st.session_state.oracle.history.count("P")
     b_count = st.session_state.oracle.history.count("B")
     if (p_count + b_count) < 20 and not st.session_state.initial_shown:
         st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย")
     else:
-        # This state means history is >= 20 non-ties, but predict_next returned None
-        # (e.g., due to miss streak >= 6)
         miss = st.session_state.oracle.calculate_miss_streak()
         if miss >= 6:
             st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
@@ -294,7 +291,6 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
-# Apply CSS class to warning/error messages for smaller text
 st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
 if miss == 3:
     st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
@@ -302,7 +298,7 @@ elif miss >= 6:
     st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
 
 # --- Big Road Display ---
-st.markdown("<hr>", unsafe_allow_html=True) # Keep this HR for separation from prediction box
+st.markdown("<hr>", unsafe_allow_html=True) 
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
 history = st.session_state.oracle.history
@@ -315,70 +311,65 @@ if history:
     
     for i, result in enumerate(history):
         if result == "T":
-            # Add tie count to the *last* non-tie cell in the current_col or previous column
-            # This logic assumes ties are attached to the preceding non-tie result.
             if current_col:
-                # Increment tie count for the last cell in the current column
-                # (result, tie_count)
                 last_cell_idx = len(current_col) - 1
                 current_col[last_cell_idx] = (current_col[last_cell_idx][0], current_col[last_cell_idx][1] + 1)
             elif columns:
-                # If current_col is empty, it means the tie is for the last cell of the *previous* column
                 last_col_idx = len(columns) - 1
-                # Ensure there's at least one cell in the last column of columns
                 if columns[last_col_idx]:
                     last_cell_in_prev_col_idx = len(columns[last_col_idx]) - 1
                     columns[last_col_idx][last_cell_in_prev_col_idx] = (
                         columns[last_col_idx][last_cell_in_prev_col_idx][0],
                         columns[last_col_idx][last_cell_in_prev_col_idx][1] + 1
                     )
-                # If previous column is also empty, this tie is at the very beginning without a preceding P/B
-                # In such a case, we'll effectively ignore it for Big Road display as per standard practice.
-            continue # Continue to next history item after handling tie
+            continue
         
-        # Handle non-tie results (P or B)
         if result == last_non_tie_result:
-            # Same result, continue current column
             if len(current_col) < max_row:
-                current_col.append((result, 0)) # Add new cell, tie count starts at 0
+                current_col.append((result, 0))
             else:
-                # Column is full, start a new column
                 columns.append(current_col)
                 current_col = [(result, 0)]
         else:
-            # Different result, start a new column
-            if current_col: # Only append if the current_col has elements
+            if current_col:
                 columns.append(current_col)
             current_col = [(result, 0)]
             last_non_tie_result = result
             
-    if current_col: # Add the last column if it's not empty
+    if current_col:
         columns.append(current_col)
 
     # Generate HTML for Big Road
-    html = "<div class='big-road-container' id='big-road-container'>" # Added ID here
+    # Use a key based on history length to force rerender of this markdown block
+    st.markdown(
+        f"<div class='big-road-container' id='big-road-container-unique-{len(history)}'>", 
+        unsafe_allow_html=True
+    )
     for col in columns:
-        html += "<div class='big-road-column'>"
+        st.markdown(f"<div class='big-road-column'>", unsafe_allow_html=True)
         for cell_result, tie_count in col:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
-            html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}</div>"
-        html += "</div>"
-    html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
+            st.markdown(f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True) # Close big-road-column
+    st.markdown("</div>", unsafe_allow_html=True) # Close big-road-container
 
     # JavaScript to scroll the big-road-container to the end
+    # This script will run every time the markdown block is re-rendered due to its key
     st.markdown(
-        """
+        f"""
         <script>
-            function scrollToRight() {
-                var container = document.getElementById('big-road-container');
-                if (container) {
-                    container.scrollLeft = container.scrollWidth;
-                }
-            }
-            // Use a longer delay to ensure rendering is fully complete and stable
-            setTimeout(scrollToRight, 500); 
+            var container = document.getElementById('big-road-container-unique-{len(history)}');
+            if (container) {{
+                // Scroll to the end of the container
+                container.scrollLeft = container.scrollWidth;
+                
+                // Optional: Scroll the last column into view for more precise alignment
+                var lastColumn = container.lastElementChild;
+                if (lastColumn) {{
+                    lastColumn.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'end' }});
+                }}
+            }}
         </script>
         """,
         unsafe_allow_html=True
@@ -388,7 +379,6 @@ else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
 # --- Input Buttons ---
-# Use st.columns for button layout
 col1, col2, col3 = st.columns(3)
 with col1:
     st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
@@ -405,11 +395,11 @@ with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
 
 # --- Accuracy by Module ---
-st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) # Changed to use h3 directly in markdown
+st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) 
 modules = st.session_state.oracle.get_module_accuracy()
 if modules:
     for name, acc in modules.items():
-        st.write(f"✅ {name}: {acc:.1f}%") # Format accuracy to 1 decimal place
+        st.markdown(f"<p class='st-emotion-cache-1kyxreq'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 else:
     st.info("ยังไม่มีข้อมูลความแม่นยำ")
 
