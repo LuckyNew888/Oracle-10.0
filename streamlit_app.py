@@ -163,7 +163,7 @@ h3 { /* Target h3 for "ความแม่นยำรายโมดูล" *
     margin-bottom: 1px !important; 
 }
 
-/* NEW: Sniper message styling */
+/* Sniper message styling */
 .sniper-message {
     background-color: #4CAF50; /* Green background */
     color: white;
@@ -205,7 +205,7 @@ if 'pattern_name' not in st.session_state:
     st.session_state.pattern_name = None
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
-if 'is_sniper_opportunity' not in st.session_state: # NEW: Sniper flag
+if 'is_sniper_opportunity' not in st.session_state: 
     st.session_state.is_sniper_opportunity = False
 
 
@@ -217,15 +217,13 @@ def handle_click(outcome_str: str):
     """
     st.session_state.oracle.add_result(outcome_str)
     
-    # NEW: Unpack the new is_sniper_opportunity flag
     prediction, source, confidence, pattern_code, _, is_sniper_opportunity = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity = is_sniper_opportunity # Update sniper flag
+    st.session_state.is_sniper_opportunity = is_sniper_opportunity 
     
-    # Map pattern codes to Thai names for display
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
@@ -239,7 +237,6 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -248,13 +245,12 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # NEW: Unpack the new is_sniper_opportunity flag
     prediction, source, confidence, pattern_code, _, is_sniper_opportunity = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity = is_sniper_opportunity # Update sniper flag
+    st.session_state.is_sniper_opportunity = is_sniper_opportunity 
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -271,7 +267,6 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -284,10 +279,9 @@ def handle_reset():
     st.session_state.source = None
     st.session_state.confidence = None
     st.session_state.pattern_name = None
-    st.session_state.initial_shown = False # Reset initial message flag
-    st.session_state.is_sniper_opportunity = False # Reset sniper flag
+    st.session_state.initial_shown = False 
+    st.session_state.is_sniper_opportunity = False 
     
-    # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
@@ -306,7 +300,7 @@ if st.session_state.prediction:
     if st.session_state.pattern_name:
         st.caption(f"📊 เค้าไพ่: {st.session_state.pattern_name}")
     if st.session_state.confidence is not None:
-        st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") # Format confidence to 1 decimal place
+        st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") 
 else:
     p_count = st.session_state.oracle.history.count("P")
     b_count = st.session_state.oracle.history.count("B")
@@ -321,7 +315,7 @@ else:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- NEW: Sniper Opportunity Message ---
+# --- Sniper Opportunity Message ---
 if st.session_state.is_sniper_opportunity:
     st.markdown("""
         <div class="sniper-message">
@@ -383,7 +377,7 @@ if history:
     # Limit columns to display only the most recent 14 columns
     MAX_DISPLAY_COLUMNS = 14 
     if len(columns) > MAX_DISPLAY_COLUMNS:
-        columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last 14 columns
+        columns = columns[-MAX_DISPLAY_COLUMNS:] 
 
     # Generate the full HTML string for Big Road
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
@@ -393,10 +387,9 @@ if history:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
             big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}</div>"
-        big_road_html += "</div>" # Close big-road-column
-    big_road_html += "</div>" # Close big-road-container
+        big_road_html += "</div>" 
+    big_road_html += "</div>" 
     
-    # Display the Big Road HTML
     st.markdown(big_road_html, unsafe_allow_html=True)
 
 else:
@@ -420,10 +413,27 @@ with col5:
 
 # --- Accuracy by Module ---
 st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) 
-modules = st.session_state.oracle.get_module_accuracy()
-if modules:
-    for name, acc in modules.items():
+
+# Get accuracies for different periods
+all_time_accuracies = st.session_state.oracle.get_module_accuracy_all_time()
+recent_10_accuracies = st.session_state.oracle.get_module_accuracy_recent(10)
+recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
+
+# Display accuracies
+if all_time_accuracies:
+    st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
+    for name, acc in all_time_accuracies.items():
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
+    
+    if len(st.session_state.oracle.history) >= 10: # Only show if enough data for 10 recent
+        st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
+        for name, acc in recent_10_accuracies.items():
+            st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
+
+    if len(st.session_state.oracle.history) >= 20: # Only show if enough data for 20 recent
+        st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
+        for name, acc in recent_20_accuracies.items():
+            st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 else:
     st.info("ยังไม่มีข้อมูลความแม่นยำ")
 
