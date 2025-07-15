@@ -325,7 +325,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 if st.session_state.is_sniper_opportunity:
     st.markdown("""
         <div class="sniper-message">
-            🎯 SNIPER! มั่นใจเป็นพิเศษ สามารถทุ่มหรือ All-in ได้!
+            🎯 SNIPER! มั่นใจเป็นพิเศษ
         </div>
     """, unsafe_allow_html=True)
 
