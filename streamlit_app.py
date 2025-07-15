@@ -158,7 +158,7 @@ h3 { /* Target h3 for "ความแม่นยำรายโมดูล" *
 }
 /* Target for st.write output, which renders as <p> tags with a specific class */
 .accuracy-item { /* Using the custom class defined in st.markdown */
-    font-size: 11px; /* Readable size */
+    font-size: 10px; /* Readable size */
     margin-bottom: 2px; 
 }
 
@@ -211,8 +211,8 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # No need for dummy state variable or query params for scroll anymore.
-    # The script will run on every rerun.
+    # Force a full rerun of the app to re-execute the scroll script
+    st.rerun()
 
 
 def handle_remove():
@@ -240,6 +240,9 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
+    # Force a full rerun of the app to re-execute the scroll script
+    st.rerun()
+
 
 def handle_reset():
     """
@@ -252,6 +255,8 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
+    # Force a full rerun of the app to re-execute the scroll script
+    st.rerun()
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -350,7 +355,7 @@ if history:
     st.markdown(big_road_html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # Removed the dynamic key. This script will be re-executed on every Streamlit rerun.
+    # This script will be re-executed on every Streamlit rerun.
     st.markdown(
         """
         <script>
@@ -361,7 +366,6 @@ if history:
                 }
             }
             // Use a slight delay to ensure rendering is fully complete and stable
-            // This delay might need to be adjusted based on performance.
             setTimeout(scrollToRight, 100); 
         </script>
         """,
@@ -376,7 +380,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
 with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B") # Corrected from on_on_click
+    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
