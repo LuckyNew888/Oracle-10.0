@@ -58,7 +58,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-radius: 8px;
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
-    flex-direction: row; /* Reverted to default: Display columns from left to right */
+    flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
     min-height: 140px; /* Adjusted minimum height for the road */
     box-shadow: inset 0 2px 5px rgba(0,0,0,0.3);
@@ -66,9 +66,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 2px; /* Reverted to margin-right */
-    border-right: 1px solid rgba(255,255,255,0.1); /* Reverted to border-right */
-    padding-right: 2px; /* Reverted to padding-right */
+    margin-right: 2px; 
+    border-right: 1px solid rgba(255,255,255,0.1); 
+    padding-right: 2px; 
 }
 .big-road-cell {
     width: 20px; /* Further reduced size for smaller emoji */
@@ -163,6 +163,27 @@ h3 { /* Target h3 for "ความแม่นยำรายโมดูล" *
     margin-bottom: 1px !important; 
 }
 
+/* NEW: Sniper message styling */
+.sniper-message {
+    background-color: #4CAF50; /* Green background */
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    animation: pulse 1.5s infinite; /* Add a subtle pulse animation */
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.02); opacity: 0.9; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+
 hr {
     border-top: 1px solid rgba(255,255,255,0.1);
     margin: 25px 0;
@@ -184,6 +205,9 @@ if 'pattern_name' not in st.session_state:
     st.session_state.pattern_name = None
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
+if 'is_sniper_opportunity' not in st.session_state: # NEW: Sniper flag
+    st.session_state.is_sniper_opportunity = False
+
 
 # --- UI Callback Functions ---
 def handle_click(outcome_str: str):
@@ -193,19 +217,22 @@ def handle_click(outcome_str: str):
     """
     st.session_state.oracle.add_result(outcome_str)
     
-    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
+    # NEW: Unpack the new is_sniper_opportunity flag
+    prediction, source, confidence, pattern_code, _, is_sniper_opportunity = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
+    st.session_state.is_sniper_opportunity = is_sniper_opportunity # Update sniper flag
     
+    # Map pattern codes to Thai names for display
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร P", "BBBB": "มังกร B",
-        "PPBPP": "ปิงปองยาว P", "BBPBB": "ปิงปองยาว B",
-        "PPPBBB": "สามตัวตัด B", "BBBPBB": "สามตัวตัด P",
-        "PBBP": "คู่สลับ P", "BPPB": "คู่สลับ B"
+        "PPPP": "มังกร", "BBBB": "มังกร",
+        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
+        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -221,18 +248,21 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    prediction, source, confidence, pattern_code, _ = st.session_state.oracle.predict_next()
+    # NEW: Unpack the new is_sniper_opportunity flag
+    prediction, source, confidence, pattern_code, _, is_sniper_opportunity = st.session_state.oracle.predict_next()
+    
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
+    st.session_state.is_sniper_opportunity = is_sniper_opportunity # Update sniper flag
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร P", "BBBB": "มังกร B",
-        "PPBPP": "ปิงปองยาว P", "BBPBB": "ปิงปองยาว B",
-        "PPPBBB": "สามตัวตัด B", "BBBPBB": "สามตัวตัด P",
-        "PBBP": "คู่สลับ P", "BPPB": "คู่สลับ B"
+        "PPPP": "มังกร", "BBBB": "มังกร",
+        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
+        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -255,6 +285,7 @@ def handle_reset():
     st.session_state.confidence = None
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
+    st.session_state.is_sniper_opportunity = False # Reset sniper flag
     
     # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
@@ -289,6 +320,14 @@ else:
             st.info("⏳ กำลังวิเคราะห์ข้อมูล")
 
 st.markdown("</div>", unsafe_allow_html=True)
+
+# --- NEW: Sniper Opportunity Message ---
+if st.session_state.is_sniper_opportunity:
+    st.markdown("""
+        <div class="sniper-message">
+            🎯 SNIPER! มั่นใจเป็นพิเศษ สามารถทุ่มหรือ All-in ได้!
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
@@ -341,7 +380,7 @@ if history:
     if current_col:
         columns.append(current_col)
 
-    # NEW: Limit columns to display only the most recent 14 columns
+    # Limit columns to display only the most recent 14 columns
     MAX_DISPLAY_COLUMNS = 14 
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last 14 columns
@@ -359,11 +398,6 @@ if history:
     
     # Display the Big Road HTML
     st.markdown(big_road_html, unsafe_allow_html=True)
-
-    # Removed all JavaScript scrolling. The Big Road will now always display
-    # the last MAX_DISPLAY_COLUMNS, effectively keeping the latest results in view.
-    # The overflow-x: auto still allows manual scrolling if MAX_DISPLAY_COLUMNS
-    # is set too high for the screen size.
 
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
@@ -389,7 +423,6 @@ st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3
 modules = st.session_state.oracle.get_module_accuracy()
 if modules:
     for name, acc in modules.items():
-        # Using st.markdown with a specific class for better control
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 else:
     st.info("ยังไม่มีข้อมูลความแม่นยำ")
