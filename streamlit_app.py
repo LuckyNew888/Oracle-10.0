@@ -1,7 +1,7 @@
 # streamlit_app.py
 import streamlit as st
-# Make sure oracle_core.py is in the same directory or accessible in PYTHONPATH
-from oracle_core import OracleBrain, Outcome # Outcome is now a Literal, not an Enum
+import time # Import time for unique timestamp
+from oracle_core import OracleBrain, Outcome
 
 # --- Setup Page ---
 st.set_page_config(page_title="🔮 Oracle v2.7.3", layout="centered")
@@ -211,8 +211,8 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Force a full rerun of the app to re-execute the scroll script
-    st.rerun()
+    # Use st.experimental_set_query_params to trigger scroll via URL
+    st.experimental_set_query_params(scroll_to_end=f"{time.time()}", _t=f"{time.time()}")
 
 
 def handle_remove():
@@ -240,8 +240,8 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Force a full rerun of the app to re-execute the scroll script
-    st.rerun()
+    # Use st.experimental_set_query_params to trigger scroll via URL
+    st.experimental_set_query_params(scroll_to_end=f"{time.time()}", _t=f"{time.time()}")
 
 
 def handle_reset():
@@ -255,8 +255,8 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # Force a full rerun of the app to re-execute the scroll script
-    st.rerun()
+    # Use st.experimental_set_query_params to trigger scroll via URL
+    st.experimental_set_query_params(scroll_to_end=f"{time.time()}", _t=f"{time.time()}")
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -354,30 +354,34 @@ if history:
     # Display the Big Road HTML
     st.markdown(big_road_html, unsafe_allow_html=True)
 
-    # JavaScript to scroll the big-road-container to the end
-    # Using a more robust polling mechanism with setTimeout
+    # JavaScript to scroll the big-road-container to the end using query params
     st.markdown(
         """
         <script>
-            function tryScrollToRight(attempts) {
+            function getQueryParam(name) {
+                name = name.replace(/[\[\]]/g, '\\$&');
+                var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+                    results = regex.exec(window.location.search);
+                if (!results) return null;
+                if (!results[2]) return '';
+                return decodeURIComponent(results[2].replace(/\+/g, ' '));
+            }
+
+            function scrollToRightOnLoad() {
                 var container = document.getElementById('big-road-container-unique');
-                if (container) {
-                    // Only scroll if there's actual overflow
-                    if (container.scrollWidth > container.clientWidth) {
-                        container.scrollLeft = container.scrollWidth;
-                        // console.log('Scrolled! attempts left: ' + attempts); // For debugging
-                        return; // Exit if scrolled successfully
-                    }
-                }
-                // If not scrolled and attempts remain, try again
-                if (attempts > 0) {
+                var scrollParam = getQueryParam('scroll_to_end');
+                
+                if (container && scrollParam) {
+                    // Use a short delay to ensure rendering is complete
                     setTimeout(function() {
-                        tryScrollToRight(attempts - 1);
-                    }, 10); // Very short delay for aggressive polling
+                        if (container.scrollWidth > container.clientWidth) {
+                            container.scrollLeft = container.scrollWidth;
+                        }
+                    }, 50); // Small delay
                 }
             }
-            // Initial call with many attempts
-            tryScrollToRight(50); // Try up to 50 times with 10ms interval = 500ms total
+            // Execute the scroll function when the script loads (on page load/reload)
+            scrollToRightOnLoad();
         </script>
         """,
         unsafe_allow_html=True
