@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 12px; /* Further reduced font size to match captions */
-    margin-top: 15px; /* Reduced margin */
-    margin-bottom: 5px; /* Reduced margin */
+    font-size: 10px; /* Further reduced font size */
+    margin-top: 10px; /* Reduced margin */
+    margin-bottom: 3px; /* Reduced margin */
 }
 .st-emotion-cache-1kyxreq { /* Target st.write output for accuracy (p tag) */
-    font-size: 11px; /* Further reduced font size for accuracy lines */
-    margin-bottom: 2px; /* Reduced margin between lines */
+    font-size: 9px; /* Further reduced font size for accuracy lines */
+    margin-bottom: 1px; /* Reduced margin between lines */
 }
 
 hr {
@@ -216,6 +216,12 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
+    # Update a dummy query param to force Streamlit to re-render and re-run the scroll script
+    # This is a common workaround for persistent JS effects in Streamlit.
+    st.session_state['scroll_trigger'] = st.session_state.get('scroll_trigger', 0) + 1
+    st.experimental_set_query_params(scroll_trigger=st.session_state['scroll_trigger'])
+
+
 def handle_remove():
     """
     Handles removing the last added result.
@@ -242,6 +248,11 @@ def handle_remove():
     b_count = st.session_state.oracle.history.count("B")
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
+    
+    # Update a dummy query param to force Streamlit to re-render and re-run the scroll script
+    st.session_state['scroll_trigger'] = st.session_state.get('scroll_trigger', 0) + 1
+    st.experimental_set_query_params(scroll_trigger=st.session_state['scroll_trigger'])
+
 
 def handle_reset():
     """
@@ -253,6 +264,10 @@ def handle_reset():
     st.session_state.confidence = None
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
+    
+    # Reset scroll trigger
+    st.session_state['scroll_trigger'] = 0
+    st.experimental_set_query_params(scroll_trigger=st.session_state['scroll_trigger'])
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -353,7 +368,7 @@ if history:
         columns.append(current_col)
 
     # Generate HTML for Big Road
-    html = "<div class='big-road-container'>"
+    html = "<div class='big-road-container' id='big-road-container'>" # Added ID here
     for col in columns:
         html += "<div class='big-road-column'>"
         for cell_result, tie_count in col:
@@ -365,19 +380,25 @@ if history:
     st.markdown(html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # Use a small timeout to ensure the DOM is rendered before scrolling
+    # This script will run every time Streamlit re-renders this section.
+    # We use a unique key for the script to ensure it re-runs on every update.
     st.markdown(
-        """
+        f"""
         <script>
-            setTimeout(function() {
-                var container = document.querySelector('.big-road-container');
-                if (container) {
+            function scrollToRight() {{
+                var container = document.getElementById('big-road-container');
+                if (container) {{
                     container.scrollLeft = container.scrollWidth;
-                }
-            }, 100); // 100ms delay
+                }}
+            }}
+            // Call on load and on subsequent updates
+            scrollToRight();
+            // Also add a slight delay to ensure rendering is complete
+            setTimeout(scrollToRight, 50); 
         </script>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
+        key=f"big_road_scroll_script_{st.session_state.get('scroll_trigger', 0)}" # Unique key
     )
 
 else:
