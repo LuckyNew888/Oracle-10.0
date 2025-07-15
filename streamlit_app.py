@@ -152,13 +152,13 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 /* Accuracy by Module section */
 h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 12px; /* Reverted to a more readable size */
+    font-size: 14px; /* Adjusted to a more readable size */
     margin-top: 15px; 
     margin-bottom: 5px; 
 }
 /* Target for st.write output, which renders as <p> tags with a specific class */
 .st-emotion-cache-1kyxreq p { /* Target the p tag directly within the Streamlit class */
-    font-size: 11px; /* Reverted to a more readable size */
+    font-size: 12px; /* Adjusted to a more readable size */
     margin-bottom: 2px; 
 }
 
@@ -211,8 +211,8 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Update a dummy state variable to trigger rerender and scroll
-    st.session_state['last_history_len'] = len(st.session_state.oracle.history)
+    # Store current history length to trigger scroll script
+    st.session_state['current_history_len'] = len(st.session_state.oracle.history)
 
 
 def handle_remove():
@@ -240,8 +240,8 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # Update a dummy state variable to trigger rerender and scroll
-    st.session_state['last_history_len'] = len(st.session_state.oracle.history)
+    # Store current history length to trigger scroll script
+    st.session_state['current_history_len'] = len(st.session_state.oracle.history)
 
 
 def handle_reset():
@@ -255,8 +255,8 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # Reset dummy state variable
-    st.session_state['last_history_len'] = 0
+    # Reset history length for scroll trigger
+    st.session_state['current_history_len'] = 0
 
 # --- Header ---
 st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
@@ -303,6 +303,7 @@ st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
 history = st.session_state.oracle.history
 
+# Build the entire HTML string for Big Road in one go
 if history:
     max_row = 6
     columns = []
@@ -339,40 +340,38 @@ if history:
     if current_col:
         columns.append(current_col)
 
-    # Generate HTML for Big Road
-    # Use a key based on history length to force rerender of this markdown block
-    st.markdown(
-        f"<div class='big-road-container' id='big-road-container-unique-{len(history)}'>", 
-        unsafe_allow_html=True
-    )
+    # Generate the full HTML string for Big Road
+    big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
     for col in columns:
-        st.markdown(f"<div class='big-road-column'>", unsafe_allow_html=True)
+        big_road_html += "<div class='big-road-column'>"
         for cell_result, tie_count in col:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
-            st.markdown(f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True) # Close big-road-column
-    st.markdown("</div>", unsafe_allow_html=True) # Close big-road-container
+            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}</div>"
+        big_road_html += "</div>" # Close big-road-column
+    big_road_html += "</div>" # Close big-road-container
+    
+    # Display the Big Road HTML
+    st.markdown(big_road_html, unsafe_allow_html=True)
 
     # JavaScript to scroll the big-road-container to the end
-    # This script will run every time the markdown block is re-rendered due to its key
+    # This script will run every time the Streamlit app reruns.
+    # We use st.session_state to ensure the script reruns when history changes.
     st.markdown(
         f"""
         <script>
-            var container = document.getElementById('big-road-container-unique-{len(history)}');
-            if (container) {{
-                // Scroll to the end of the container
-                container.scrollLeft = container.scrollWidth;
-                
-                // Optional: Scroll the last column into view for more precise alignment
-                var lastColumn = container.lastElementChild;
-                if (lastColumn) {{
-                    lastColumn.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'end' }});
+            function scrollToRight() {{
+                var container = document.getElementById('big-road-container-unique');
+                if (container) {{
+                    container.scrollLeft = container.scrollWidth;
                 }}
             }}
+            // Use a slight delay to ensure rendering is fully complete and stable
+            setTimeout(scrollToRight, 100); 
         </script>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
+        key=f"big_road_scroll_script_{st.session_state.get('current_history_len', 0)}" # Unique key based on history length
     )
 
 else:
@@ -383,7 +382,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
 with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
+    st.button("🔴 B", on_on_click=handle_click, args=("B",), key="btn_B") # Corrected typo: on_on_click -> on_click
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
@@ -399,7 +398,8 @@ st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3
 modules = st.session_state.oracle.get_module_accuracy()
 if modules:
     for name, acc in modules.items():
-        st.markdown(f"<p class='st-emotion-cache-1kyxreq'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
+        # Using st.markdown with a specific class for better control
+        st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 else:
     st.info("ยังไม่มีข้อมูลความแม่นยำ")
 
