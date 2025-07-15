@@ -58,6 +58,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-radius: 8px;
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
+    flex-direction: row; /* Reverted to default: Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
     min-height: 140px; /* Adjusted minimum height for the road */
     box-shadow: inset 0 2px 5px rgba(0,0,0,0.3);
@@ -65,9 +66,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 2px; /* Reduced margin between columns */
-    border-right: 1px solid rgba(255,255,255,0.1); /* Separator between columns */
-    padding-right: 2px; /* Reduced padding */
+    margin-right: 2px; /* Reverted to margin-right */
+    border-right: 1px solid rgba(255,255,255,0.1); /* Reverted to border-right */
+    padding-right: 2px; /* Reverted to padding-right */
 }
 .big-road-cell {
     width: 20px; /* Further reduced size for smaller emoji */
@@ -210,9 +211,9 @@ def handle_click(outcome_str: str):
     
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
-    
-    # st.query_params will trigger a rerun automatically
-    st.query_params["_t"] = f"{time.time()}" # Simply update a dummy param to force a rerun
+
+    # Simply update a dummy param to force a rerun, no specific scroll param needed now
+    st.query_params["_t"] = f"{time.time()}"
 
 
 def handle_remove():
@@ -240,7 +241,7 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
-    # st.query_params will trigger a rerun automatically
+    # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -255,7 +256,7 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False # Reset initial message flag
     
-    # st.query_params will trigger a rerun automatically
+    # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
@@ -340,13 +341,10 @@ if history:
     if current_col:
         columns.append(current_col)
 
-    # NEW: Limit columns to display only the most recent ones
-    # Adjust this number based on desired visible width on mobile
-    # A column is about 20px wide + margin. 20 columns * 20px = 400px.
-    # This should fit most mobile screens without requiring manual scroll.
-    MAX_DISPLAY_COLUMNS = 20 
+    # NEW: Limit columns to display only the most recent 16 columns
+    MAX_DISPLAY_COLUMNS = 16 
     if len(columns) > MAX_DISPLAY_COLUMNS:
-        columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last N columns
+        columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last 16 columns
 
     # Generate the full HTML string for Big Road
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
