@@ -212,7 +212,7 @@ def handle_click(outcome_str: str):
     if not st.session_state.initial_shown:
         st.session_state.initial_shown = True
 
-    # Simply update a dummy param to force a rerun, no specific scroll param needed now
+    # Simply update a dummy param to force a rerun
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -341,10 +341,10 @@ if history:
     if current_col:
         columns.append(current_col)
 
-    # NEW: Limit columns to display only the most recent 16 columns
-    MAX_DISPLAY_COLUMNS = 16 
+    # NEW: Limit columns to display only the most recent 14 columns
+    MAX_DISPLAY_COLUMNS = 14 
     if len(columns) > MAX_DISPLAY_COLUMNS:
-        columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last 16 columns
+        columns = columns[-MAX_DISPLAY_COLUMNS:] # Take only the last 14 columns
 
     # Generate the full HTML string for Big Road
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
