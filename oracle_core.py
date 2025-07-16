@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.0 - Final Clean Version)
+# oracle_core.py (Oracle V6.2 - Minimum Confidence Threshold)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -42,24 +42,33 @@ class RuleEngine:
     """
     Predicts based on simple repeating patterns (e.g., P P P -> P, B B B -> B)
     or alternating patterns (e.g., P B P -> P).
+    V6.1: Added more basic rule patterns.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
         if len(filtered_history) < 3:
             return None
 
+        # Rule 1: Simple streak (P P P -> P, B B B -> B)
         if filtered_history[-1] == filtered_history[-2] == filtered_history[-3]:
             return filtered_history[-1]
         
+        # Rule 2: Alternating pattern (P B P -> B, B P B -> P)
         if filtered_history[-1] != filtered_history[-2] and filtered_history[-2] != filtered_history[-3]:
-            if filtered_history[-1] == filtered_history[-3]:
+            if filtered_history[-1] == filtered_history[-3]: # P B P, B P B
                 return "P" if filtered_history[-1] == "B" else "B"
         
+        # V6.1 New Rule: Two consecutive, then chop (P P B -> P, B B P -> B)
+        if len(filtered_history) >= 3:
+            if filtered_history[-1] != filtered_history[-2] and filtered_history[-2] == filtered_history[-3]:
+                return filtered_history[-2] # Predict a return to the streak that was chopped
+
         return None
 
 class PatternAnalyzer:
     """
     Predicts based on specific predefined patterns in the recent history.
+    V6.1: Expanded the dictionary of known patterns for better coverage.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
@@ -68,16 +77,30 @@ class PatternAnalyzer:
 
         joined_filtered = "".join(filtered_history)
         
+        # V6.1: Expanded patterns
         patterns_and_predictions = {
+            # Basic Repeating/Alternating
             "PBPB": "P", "BPBP": "B",       
             "PPBB": "P", "BBPP": "B",       
             "PPPP": "P", "BBBB": "B",       
-            "PPBPP": "P", "BBPBB": "B",     
-            "PPPBBB": "B", "BBBPBB": "P",   
-            "PBBP": "B", "BPPB": "P"        
+            
+            # Longer Streaks/Chops
+            "PPPPP": "P", "BBBBB": "B", # 5 in a row
+            "PBPBP": "B", "BPBPB": "P", # Longer alternating
+            
+            # Specific Combinations
+            "PBB": "P", "BPP": "B", # Two of one, then one of other, predict first
+            "PPBP": "P", "BBPA": "B", # Two, chop, one, predict first
+            "PBPP": "P", "BPPB": "B", # Chop, two, chop, predict first
+            "PBBPP": "P", "BPBB": "B", # Two, two, then chop, predict first
+            "PBPBPB": "P", "BPBPBP": "B", # Longer alternating, predict next
+            "PPPBBB": "B", "BBBPBB": "P", # Three of one, three of other, predict chop
+            "PPBPP": "P", "BBPBB": "B", # Two, chop, two, predict first
+            "PBBP": "B", "BPPB": "P" # Specific chop pattern
         }
 
-        for length in range(6, 3, -1):
+        # Iterate from longest to shortest pattern for matching
+        for length in range(6, 2, -1): # Check patterns from length 6 down to 3
             if len(joined_filtered) >= length:
                 current_pattern = joined_filtered[-length:]
                 if current_pattern in patterns_and_predictions:
@@ -87,6 +110,7 @@ class PatternAnalyzer:
 class TrendScanner:
     """
     Predicts based on the dominant outcome in the recent history.
+    V6.1: Made trend detection slightly more sensitive and added a "minority trend" consideration.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
@@ -94,18 +118,31 @@ class TrendScanner:
             return None
         
         last_10 = filtered_history[-10:]
-        p_count = last_10.count("P")
-        b_count = last_10.count("B")
+        p_count_10 = last_10.count("P")
+        b_count_10 = last_10.count("B")
 
-        if p_count >= 7:
+        # Strong trend (e.g., 60% or more in last 10)
+        if p_count_10 >= 6: # Changed from 7 to 6 for slightly more sensitivity
             return "P"
-        if b_count >= 7:
+        if b_count_10 >= 6: # Changed from 7 to 6
             return "B"
+        
+        # V6.1 New: Consider a shorter, very strong recent trend (e.g., 4 out of last 5)
+        if len(filtered_history) >= 5:
+            last_5 = filtered_history[-5:]
+            p_count_5 = last_5.count("P")
+            b_count_5 = last_5.count("B")
+            if p_count_5 >= 4:
+                return "P"
+            if b_count_5 >= 4:
+                return "B"
+
         return None
 
 class TwoTwoPattern:
     """
     Predicts based on a specific 2-2 alternating pattern (e.g., PPBB -> P).
+    V6.1: No significant changes, already robust.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
@@ -120,6 +157,7 @@ class TwoTwoPattern:
 class SniperPattern:
     """
     A more aggressive pattern matching module, often looking for specific "sniper" setups.
+    V6.1: Expanded known patterns for sniper opportunities.
     """
     def __init__(self):
         self.known_patterns = {
@@ -128,7 +166,12 @@ class SniperPattern:
             "PPBPP": "P", "BBPBB": "B",
             "PPPBBB": "B", "BBBPBB": "P", 
             "PPPP": "P", "BBBB": "B",
-            "PBBP": "B", "BPPB": "P"
+            "PBBP": "B", "BPPB": "P",
+            # V6.1 Added more sniper patterns
+            "PBBBP": "B", "BPBPP": "P", # Specific reversal points
+            "PBBBP": "B", "BPBPP": "P", 
+            "PBPBPP": "P", "BPBPBB": "B", # Alternating then streak
+            "PPPPB": "B", "BBBB P": "P" # End of long streak
         }
 
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
@@ -138,7 +181,7 @@ class SniperPattern:
         
         joined = "".join(filtered_history)
         
-        for length in range(6, 3, -1):
+        for length in range(6, 3, -1): # Check patterns from length 6 down to 4
             if len(joined) >= length:
                 current_pattern = joined[-length:]
                 if current_pattern in self.known_patterns:
@@ -148,17 +191,19 @@ class SniperPattern:
 class FallbackModule:
     """
     Provides a random prediction if no other module can make a prediction.
+    V6.1: No change, its purpose is to always provide an answer.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         # This module should always return a prediction unless history is empty, which is handled
         # by MIN_HISTORY_FOR_PREDICTION in OracleBrain.predict_next
         return random.choice(["P", "B"])
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.0) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1) ---
 
 class TiePredictor:
     """
-    Predicts Tie outcomes with further enhanced logic for V6.0.
+    Predicts Tie outcomes with further enhanced logic for V6.1.
+    V6.1: Added more specific conditions for tie prediction.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["T"]]:
         tie_flags = _get_side_bet_history_flags(history, "T")
@@ -203,12 +248,19 @@ class TiePredictor:
             recent_main_6 = "".join(main_history_pb[-6:])
             if recent_main_6 == "PBPBPP" or recent_main_6 == "BPBPBB":
                 return "T"
+        
+        # V6.1 New Rule: Tie after a very short streak (e.g., PP or BB) followed by a chop
+        if len(main_history_pb) >= 3:
+            if main_history_pb[-3:] == ["P", "P", "B"] or main_history_pb[-3:] == ["B", "B", "P"]:
+                if not any(tie_flags[-5:]): # No tie in last 5 rounds
+                    return "T"
 
         return None
 
 class PairPredictor:
     """
-    Predicts Player Pair or Banker Pair with further enhanced logic for V6.0.
+    Predicts Player Pair or Banker Pair with further enhanced logic for V6.1.
+    V6.1: Added more specific conditions for pair prediction.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["PP", "BP"]]:
         player_pair_flags = _get_side_bet_history_flags(history, "PP")
@@ -262,13 +314,21 @@ class PairPredictor:
                 return "PP"
             if main_history_pb[-8:].count("B") == 7 and main_history_pb[-1] == "P": # B B B B B B B P -> Pair (often BP)
                 return "BP"
+        
+        # V6.1 New Rule: Pair after a specific P/B chop pattern (e.g., P B P B)
+        if len(main_history_pb) >= 4:
+            if "".join(main_history_pb[-4:]) == "PBPB":
+                return random.choice(["PP", "BP"]) # Random pair after a chop
+            if "".join(main_history_pb[-4:]) == "BPBP":
+                return random.choice(["PP", "BP"])
 
         return None
 
 class Banker6Predictor:
     """
-    Predicts Banker 6 (Super 6) outcomes with further enhanced, but still conservative, logic for V6.0.
+    Predicts Banker 6 (Super 6) outcomes with further enhanced, but still conservative, logic for V6.1.
     B6 is rare, so predictions should be very cautious.
+    V6.1: Strengthened conditions for B6.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["B6"]]:
         b6_flags = _get_side_bet_history_flags(history, "B6")
@@ -310,6 +370,12 @@ class Banker6Predictor:
             recent_main_5 = "".join(main_history_pb[-5:])
             if recent_main_5 == "BPBPB" and not any(b6_flags[-5:]):
                 return "B6"
+        
+        # V6.1 New Rule: B6 after a specific sequence of Banker wins and a Player win (B B B P B)
+        if len(main_history_pb) >= 5:
+            if "".join(main_history_pb[-5:]) == "BBBPB":
+                if not any(b6_flags[-10:]): # No B6 in last 10 rounds
+                    return "B6"
 
         return None
 
@@ -319,11 +385,12 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
     Calculates the final prediction and its confidence based on module predictions
     and their historical accuracy, with adaptive weighting.
     This scorer is primarily for main P/B outcomes.
+    V6.1: Adjusted blending ratio for more responsiveness to recent accuracy.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
               module_accuracies_all_time: Dict[str, float], # All-time accuracy for baseline
-              module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting
+              module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting (last 10)
               history: List[RoundResult]) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]:
         
         total_score = {"P": 0.0, "B": 0.0}
@@ -340,11 +407,13 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
             recent_acc_val = module_accuracies_recent.get(name, 0.0)
 
             # Use 50% (0.5 weight) if accuracy is 0.0 or module hasn't made enough predictions yet
+            # This ensures modules start contributing even with no prior accuracy data
             all_time_weight = (all_time_acc_val if all_time_acc_val > 0.0 else 50.0) / 100.0
             recent_weight = (recent_acc_val if recent_acc_val > 0.0 else 50.0) / 100.0
             
-            # Simple adaptive blend: 70% recent, 30% all-time (can be tuned)
-            weight = (recent_weight * 0.7) + (all_time_weight * 0.3)
+            # V6.1: Adjusted blend ratio - more emphasis on recent performance (80% recent, 20% all-time)
+            # This makes the system more adaptive to current trends.
+            weight = (recent_weight * 0.8) + (all_time_weight * 0.2)
             
             total_score[pred] += weight
 
@@ -356,6 +425,7 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
         sum_of_scores = sum(total_score.values())
         raw_confidence = (total_score[best_prediction_outcome] / sum_of_scores) * 100
         
+        # Confidence capped at 95% to avoid overconfidence
         confidence = min(int(raw_confidence), 95)
         
         source_modules = [name for name, pred in active_predictions.items() if pred == best_prediction_outcome]
@@ -372,16 +442,24 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
         
         joined_filtered = "".join(filtered_history)
 
+        # V6.1: Updated with more pattern names
         common_patterns = {
             "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
             "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
             "PPPP": "มังกร", "BBBB": "มังกร",
             "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
             "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว", # Added for 5 in a row
+            "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว", # Added for longer alternating
+            "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", # New simple patterns
+            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
+            "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวตัด",
+            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
         }
 
-        for length in range(6, 3, -1):
+        for length in range(6, 2, -1): # Check patterns from length 6 down to 3
             if len(joined_filtered) >= length:
                 current_pattern_str = joined_filtered[-length:]
                 if current_pattern_str in common_patterns:
@@ -692,6 +770,7 @@ class OracleBrain:
         MIN_HISTORY_FOR_PREDICTION = 20 
         MIN_HISTORY_FOR_SNIPER = 30 
         MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 
+        MIN_DISPLAY_CONFIDENCE = 55 # V6.2: Minimum confidence required for main prediction to be displayed
 
         final_prediction_main = None
         source_module_name_main = None
@@ -721,6 +800,13 @@ class OracleBrain:
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
+
+        # V6.2: Apply minimum display confidence
+        if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
+            final_prediction_main = None
+            source_module_name_main = None
+            confidence_main = None
+            pattern_code_main = None
 
         if current_miss_streak in [3, 4]:
             best_module_for_recovery = self.get_best_recent_module()
