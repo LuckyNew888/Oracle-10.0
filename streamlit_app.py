@@ -4,7 +4,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome # Import RoundResult and MainOutcome
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V5.5", layout="centered") # Updated version
+st.set_page_config(page_title="🔮 Oracle V5.6", layout="centered") # Updated version
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -103,7 +103,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
-/* NEW: Styling for Pair and B6 indicators in Big Road */
+/* Styling for Pair and B6 indicators in Big Road */
 .pair-indicator, .b6-indicator {
     position: absolute;
     font-size: 8px; /* Smaller font for indicators */
@@ -276,7 +276,7 @@ if 'pair_prediction' not in st.session_state:
 if 'banker6_prediction' not in st.session_state:
     st.session_state.banker6_prediction = None
 
-# NEW: Session state for checkboxes (to control their state)
+# Session state for checkboxes (to control their state)
 if 'is_player_pair_checked' not in st.session_state:
     st.session_state.is_player_pair_checked = False
 if 'is_banker_pair_checked' not in st.session_state:
@@ -323,7 +323,7 @@ def handle_click(main_outcome_str: MainOutcome): # Removed side bet args from he
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
         "PPPP": "มังกร", "BBBB": "B", # Fixed typo
-        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
+        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", # Fixed typo
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
     }
@@ -406,7 +406,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V5.5</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V5.6</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -449,24 +449,21 @@ if st.session_state.is_sniper_opportunity:
 st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
 col_side1, col_side2, col_side3 = st.columns(3)
 
+# Display Tie prediction only if it exists
 with col_side1:
     if st.session_state.tie_prediction:
         st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<p style='text-align:center; color:#BBBBBB;'>⚪ เสมอ: -</p>", unsafe_allow_html=True)
 
+# Display Pair prediction only if it exists
 with col_side2:
     if st.session_state.pair_prediction:
         pair_emoji = "🔵" if st.session_state.pair_prediction == "PP" else "🔴"
         st.markdown(f"<p style='text-align:center; font-weight:bold;'>{pair_emoji} ไพ่คู่</p>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<p style='text-align:center; color:#BBBBBB;'>🃏 ไพ่คู่: -</p>", unsafe_allow_html=True)
 
+# Display Banker 6 prediction only if it exists
 with col_side3:
     if st.session_state.banker6_prediction:
         st.markdown(f"<p style='text-align:center; color:#FFD700; font-weight:bold;'>🟡 6 แต้ม</p>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<p style='text-align:center; color:#BBBBBB;'>🟡 6 แต้ม: -</p>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
