@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V6.2", layout="centered") # Updated version to V6.2
+st.set_page_config(page_title="🔮 Oracle V6.4", layout="centered") # Updated version to V6.4
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -355,7 +355,7 @@ def handle_click(main_outcome_str: MainOutcome):
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร", # Changed from "B" to "มังกร" for consistency
+        "PPPP": "มังกร", "BBBB": "มังกร", 
         "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
@@ -364,8 +364,9 @@ def handle_click(main_outcome_str: MainOutcome):
         "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
         "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
         "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวตัด",
-        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
+        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
+        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+        "มังกรตัด": "มังกรตัด" 
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -406,7 +407,7 @@ def handle_remove():
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร", # Changed from "B" to "มังกร" for consistency
+        "PPPP": "มังกร", "BBBB": "มังกร", 
         "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
@@ -415,8 +416,9 @@ def handle_remove():
         "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
         "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
         "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวตัด",
-        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
+        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
+        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+        "มังกรตัด": "มังกรตัด" 
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -464,7 +466,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V6.2</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V6.4</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -691,6 +693,7 @@ recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
     # Sort modules to display main modules first, then side bet modules
+    # V6.4: Ensure "NoPrediction" is not in the list of modules to display accuracy for.
     sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
     for name in sorted_module_names:
         acc = all_time_accuracies[name]
