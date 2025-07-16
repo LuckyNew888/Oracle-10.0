@@ -4,7 +4,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome # Import RoundResult and MainOutcome
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V5.9", layout="centered") # Updated version
+st.set_page_config(page_title="🔮 Oracle V6.0", layout="centered") # Updated version
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -237,6 +237,22 @@ h3 { /* Target h3 for "ความแม่นยำรายโมดูล" *
     animation: pulse 1.5s infinite; /* Add a subtle pulse animation */
 }
 
+/* NEW: Side Bet Sniper message styling */
+.side-bet-sniper-message {
+    background-color: #007bff; /* Blue background for side bet sniper */
+    color: white;
+    padding: 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+    animation: pulse 1.5s infinite; /* Keep pulse animation */
+    font-size: 14px; /* Smaller font than main sniper */
+}
+
+
 @keyframes pulse {
     0% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.02); opacity: 0.9; }
@@ -265,8 +281,8 @@ if 'pattern_name' not in st.session_state:
     st.session_state.pattern_name = None
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
-if 'is_sniper_opportunity' not in st.session_state: 
-    st.session_state.is_sniper_opportunity = False
+if 'is_sniper_opportunity_main' not in st.session_state: # Renamed
+    st.session_state.is_sniper_opportunity_main = False
 
 # Session state for side bet predictions
 if 'tie_prediction' not in st.session_state:
@@ -275,6 +291,14 @@ if 'pair_prediction' not in st.session_state:
     st.session_state.pair_prediction = None
 if 'banker6_prediction' not in st.session_state:
     st.session_state.banker6_prediction = None
+
+# NEW: Session state for side bet sniper opportunities
+if 'is_tie_sniper_opportunity' not in st.session_state:
+    st.session_state.is_tie_sniper_opportunity = False
+if 'is_pair_sniper_opportunity' not in st.session_state:
+    st.session_state.is_pair_sniper_opportunity = False
+if 'is_banker6_sniper_opportunity' not in st.session_state:
+    st.session_state.is_banker6_sniper_opportunity = False
 
 # Session state for checkboxes (to control their state)
 if 'is_player_pair_checked' not in st.session_state:
@@ -305,19 +329,25 @@ def handle_click(main_outcome_str: MainOutcome):
     st.session_state.is_banker_pair_checked = False
     st.session_state.is_banker_6_checked = False
 
-    # Unpack all return values from predict_next
-    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity,
-     tie_pred, pair_pred, banker6_pred) = st.session_state.oracle.predict_next()
+    # Unpack all return values from predict_next (now includes side bet sniper flags)
+    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+     tie_pred, pair_pred, banker6_pred,
+     is_tie_sniper_opportunity, is_pair_sniper_opportunity, is_banker6_sniper_opportunity) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity = is_sniper_opportunity 
+    st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
     
     # Update side bet predictions
     st.session_state.tie_prediction = tie_pred
     st.session_state.pair_prediction = pair_pred
     st.session_state.banker6_prediction = banker6_pred
+
+    # Update side bet sniper opportunities
+    st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+    st.session_state.is_pair_sniper_opportunity = is_pair_sniper_opportunity
+    st.session_state.is_banker6_sniper_opportunity = is_banker6_sniper_opportunity
 
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -343,19 +373,25 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # Unpack all return values from predict_next
-    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity,
-     tie_pred, pair_pred, banker6_pred) = st.session_state.oracle.predict_next()
+    # Unpack all return values from predict_next (now includes side bet sniper flags)
+    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+     tie_pred, pair_pred, banker6_pred,
+     is_tie_sniper_opportunity, is_pair_sniper_opportunity, is_banker6_sniper_opportunity) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity = is_sniper_opportunity 
+    st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
 
     # Update side bet predictions
     st.session_state.tie_prediction = tie_pred
     st.session_state.pair_prediction = pair_pred
     st.session_state.banker6_prediction = banker6_pred
+
+    # Update side bet sniper opportunities
+    st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+    st.session_state.is_pair_sniper_opportunity = is_pair_sniper_opportunity
+    st.session_state.is_banker6_sniper_opportunity = is_banker6_sniper_opportunity
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -391,12 +427,17 @@ def handle_reset():
     st.session_state.confidence = None
     st.session_state.pattern_name = None
     st.session_state.initial_shown = False 
-    st.session_state.is_sniper_opportunity = False 
+    st.session_state.is_sniper_opportunity_main = False 
     
     # Reset side bet predictions
     st.session_state.tie_prediction = None
     st.session_state.pair_prediction = None
     st.session_state.banker6_prediction = None
+
+    # Reset side bet sniper opportunities
+    st.session_state.is_tie_sniper_opportunity = False
+    st.session_state.is_pair_sniper_opportunity = False
+    st.session_state.is_banker6_sniper_opportunity = False
 
     # Reset checkboxes on full reset
     st.session_state.is_player_pair_checked = False
@@ -406,7 +447,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V5.9</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V6.0</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -437,8 +478,8 @@ else:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Sniper Opportunity Message ---
-if st.session_state.is_sniper_opportunity:
+# --- Sniper Opportunity Message (Main Outcome) ---
+if st.session_state.is_sniper_opportunity_main: # Updated variable name
     st.markdown("""
         <div class="sniper-message">
             🎯 SNIPER! มั่นใจเป็นพิเศษ
@@ -453,17 +494,35 @@ col_side1, col_side2, col_side3 = st.columns(3)
 with col_side1:
     if st.session_state.tie_prediction:
         st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
+        if st.session_state.is_tie_sniper_opportunity:
+            st.markdown("""
+                <div class="side-bet-sniper-message">
+                    🎯 SNIPER เสมอ!
+                </div>
+            """, unsafe_allow_html=True)
 
 # Display Pair prediction only if it exists
 with col_side2:
     if st.session_state.pair_prediction:
         pair_emoji = "🔵" if st.session_state.pair_prediction == "PP" else "🔴"
         st.markdown(f"<p style='text-align:center; font-weight:bold;'>{pair_emoji} ไพ่คู่</p>", unsafe_allow_html=True)
+        if st.session_state.is_pair_sniper_opportunity:
+            st.markdown("""
+                <div class="side-bet-sniper-message">
+                    🎯 SNIPER ไพ่คู่!
+                </div>
+            """, unsafe_allow_html=True)
 
 # Display Banker 6 prediction only if it exists
 with col_side3:
     if st.session_state.banker6_prediction:
         st.markdown(f"<p style='text-align:center; color:#FFD700; font-weight:bold;'>🟡 6 แต้ม</p>", unsafe_allow_html=True)
+        if st.session_state.is_banker6_sniper_opportunity:
+            st.markdown("""
+                <div class="side-bet-sniper-message">
+                    🎯 SNIPER 6 แต้ม!
+                </div>
+            """, unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
