@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V6.4", layout="centered") # Updated version to V6.4
+st.set_page_config(page_title="🔮 Oracle V6.6", layout="centered") # Updated version to V6.6
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -104,8 +104,8 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
-/* Styling for Pair and B6 indicators in Big Road */
-.pair-indicator, .b6-indicator {
+/* Styling for Natural indicator in Big Road (New for V6.5) */
+.natural-indicator {
     position: absolute;
     font-size: 8px; /* Smaller font for indicators */
     font-weight: bold;
@@ -114,23 +114,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding: 1px 2px;
     border-radius: 3px;
     z-index: 10;
-}
-.pair-indicator.P { /* Player Pair */
-    background-color: #007BFF; /* Blue */
-    top: -2px;
-    left: -2px;
-}
-.pair-indicator.B { /* Banker Pair */
-    background-color: #DC3545; /* Red */
+    background-color: #4CAF50; /* Green for Natural */
     top: -2px;
     right: -2px;
-}
-.b6-indicator { /* Banker 6 */
-    background-color: #FFD700; /* Gold */
-    color: #333; /* Dark text */
-    bottom: -2px;
-    left: 50%;
-    transform: translateX(-50%);
 }
 
 
@@ -290,26 +276,18 @@ if 'show_debug_info' not in st.session_state: # New session state for debug togg
 # Session state for side bet predictions
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
-if 'pair_prediction' not in st.session_state:
-    st.session_state.pair_prediction = None
-if 'banker6_prediction' not in st.session_state:
-    st.session_state.banker6_prediction = None
+if 'pock_prediction' not in st.session_state: 
+    st.session_state.pock_prediction = None
 
 # NEW: Session state for side bet sniper opportunities
 if 'is_tie_sniper_opportunity' not in st.session_state:
     st.session_state.is_tie_sniper_opportunity = False
-if 'is_pair_sniper_opportunity' not in st.session_state:
-    st.session_state.is_pair_sniper_opportunity = False
-if 'is_banker6_sniper_opportunity' not in st.session_state:
-    st.session_state.is_banker6_sniper_opportunity = False
+if 'is_pock_sniper_opportunity' not in st.session_state: 
+    st.session_state.is_pock_sniper_opportunity = False
 
 # Session state for checkboxes (to control their state)
-if 'is_player_pair_checked' not in st.session_state:
-    st.session_state.is_player_pair_checked = False
-if 'is_banker_pair_checked' not in st.session_state:
-    st.session_state.is_banker_pair_checked = False
-if 'is_banker_6_checked' not in st.session_state:
-    st.session_state.is_banker_6_checked = False
+if 'is_any_natural_checked' not in st.session_state: 
+    st.session_state.is_any_natural_checked = False
 
 
 # --- UI Callback Functions ---
@@ -320,22 +298,18 @@ def handle_click(main_outcome_str: MainOutcome):
     Adds the result to OracleBrain and updates all predictions.
     """
     # Read current checkbox states
-    is_player_pair = st.session_state.is_player_pair_checked
-    is_banker_pair = st.session_state.is_banker_pair_checked
-    is_banker_6 = st.session_state.is_banker_6_checked
+    is_any_natural = st.session_state.is_any_natural_checked 
 
     # Call add_result with all information
-    st.session_state.oracle.add_result(main_outcome_str, is_player_pair, is_banker_pair, is_banker_6)
+    st.session_state.oracle.add_result(main_outcome_str, is_any_natural)
     
     # Reset checkboxes after adding result
-    st.session_state.is_player_pair_checked = False
-    st.session_state.is_banker_pair_checked = False
-    st.session_state.is_banker_6_checked = False
+    st.session_state.is_any_natural_checked = False
 
-    # Unpack all return values from predict_next (now includes side bet sniper flags)
+    # Unpack all return values from predict_next
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, pair_pred, banker6_pred,
-     is_tie_sniper_opportunity, is_pair_sniper_opportunity, is_banker6_sniper_opportunity) = st.session_state.oracle.predict_next()
+     tie_pred, pock_pred, 
+     is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -344,13 +318,11 @@ def handle_click(main_outcome_str: MainOutcome):
     
     # Update side bet predictions
     st.session_state.tie_prediction = tie_pred
-    st.session_state.pair_prediction = pair_pred
-    st.session_state.banker6_prediction = banker6_pred
+    st.session_state.pock_prediction = pock_pred
 
     # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.is_pair_sniper_opportunity = is_pair_sniper_opportunity
-    st.session_state.is_banker6_sniper_opportunity = is_banker6_sniper_opportunity
+    st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
 
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -384,10 +356,10 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # Unpack all return values from predict_next (now includes side bet sniper flags)
+    # Unpack all return values from predict_next
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, pair_pred, banker6_pred,
-     is_tie_sniper_opportunity, is_pair_sniper_opportunity, is_banker6_sniper_opportunity) = st.session_state.oracle.predict_next()
+     tie_pred, pock_pred, 
+     is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -396,13 +368,11 @@ def handle_remove():
 
     # Update side bet predictions
     st.session_state.tie_prediction = tie_pred
-    st.session_state.pair_prediction = pair_pred
-    st.session_state.banker6_prediction = banker6_pred
+    st.session_state.pock_prediction = pock_pred
 
     # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.is_pair_sniper_opportunity = is_pair_sniper_opportunity
-    st.session_state.is_banker6_sniper_opportunity = is_banker6_sniper_opportunity
+    st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -429,9 +399,7 @@ def handle_remove():
         st.session_state.initial_shown = False
     
     # Reset checkboxes on remove, as the last round's state is gone
-    st.session_state.is_player_pair_checked = False
-    st.session_state.is_banker_pair_checked = False
-    st.session_state.is_banker_6_checked = False
+    st.session_state.is_any_natural_checked = False
 
     st.query_params["_t"] = f"{time.time()}"
 
@@ -450,23 +418,19 @@ def handle_reset():
     
     # Reset side bet predictions
     st.session_state.tie_prediction = None
-    st.session_state.pair_prediction = None
-    st.session_state.banker6_prediction = None
+    st.session_state.pock_prediction = None
 
     # Reset side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = False
-    st.session_state.is_pair_sniper_opportunity = False
-    st.session_state.is_banker6_sniper_opportunity = False
+    st.session_state.is_pock_sniper_opportunity = False
 
     # Reset checkboxes on full reset
-    st.session_state.is_player_pair_checked = False
-    st.session_state.is_banker_pair_checked = False
-    st.session_state.is_banker_6_checked = False
+    st.session_state.is_any_natural_checked = False
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V6.4</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V6.6</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -499,7 +463,7 @@ else:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Sniper Opportunity Message (Main Outcome) ---
-if st.session_state.is_sniper_opportunity_main: # Updated variable name
+if st.session_state.is_sniper_opportunity_main: 
     st.markdown("""
         <div class="sniper-message">
             🎯 SNIPER! มั่นใจเป็นพิเศษ
@@ -508,7 +472,7 @@ if st.session_state.is_sniper_opportunity_main: # Updated variable name
 
 # --- Side Bet Prediction Display ---
 st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
-col_side1, col_side2, col_side3 = st.columns(3)
+col_side1, col_side2 = st.columns(2) 
 
 # Display Tie prediction only if it exists
 with col_side1:
@@ -520,29 +484,23 @@ with col_side1:
                     🎯 SNIPER เสมอ!
                 </div>
             """, unsafe_allow_html=True)
+    else:
+        st.markdown("<p style='text-align:center; color:#495057;'>⚪ เสมอ (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
 
-# Display Pair prediction only if it exists
+
+# Display Pock prediction only if it exists
 with col_side2:
-    if st.session_state.pair_prediction:
-        pair_emoji = "🔵" if st.session_state.pair_prediction == "PP" else "🔴"
-        st.markdown(f"<p style='text-align:center; font-weight:bold;'>{pair_emoji} ไพ่คู่</p>", unsafe_allow_html=True)
-        if st.session_state.is_pair_sniper_opportunity:
+    if st.session_state.pock_prediction:
+        st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>🟢 ไพ่ป็อก</p>", unsafe_allow_html=True)
+        if st.session_state.is_pock_sniper_opportunity:
             st.markdown("""
                 <div class="side-bet-sniper-message">
-                    🎯 SNIPER ไพ่คู่!
+                    🎯 SNIPER ไพ่ป็อก!
                 </div>
             """, unsafe_allow_html=True)
+    else:
+        st.markdown("<p style='text-align:center; color:#495057;'>🟢 ไพ่ป็อก (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
 
-# Display Banker 6 prediction only if it exists
-with col_side3:
-    if st.session_state.banker6_prediction:
-        st.markdown(f"<p style='text-align:center; color:#FFD700; font-weight:bold;'>🟡 6 แต้ม</p>", unsafe_allow_html=True)
-        if st.session_state.is_banker6_sniper_opportunity:
-            st.markdown("""
-                <div class="side-bet-sniper-message">
-                    🎯 SNIPER 6 แต้ม!
-                </div>
-            """, unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -558,7 +516,7 @@ elif miss >= 6:
 st.markdown("<hr>", unsafe_allow_html=True) 
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
-history_results = st.session_state.oracle.history # Now contains RoundResult objects
+history_results = st.session_state.oracle.history 
 
 # Build the entire HTML string for Big Road in one go
 if history_results:
@@ -567,17 +525,15 @@ if history_results:
     current_col = []
     last_non_tie_result = None
     
-    for i, round_result in enumerate(history_results): # Iterate over RoundResult objects
+    for i, round_result in enumerate(history_results): 
         main_outcome = round_result.main_outcome
-        is_player_pair = round_result.is_player_pair
-        is_banker_pair = round_result.is_banker_pair
-        is_banker_6 = round_result.is_banker_6
+        is_any_natural = round_result.is_any_natural 
 
         if main_outcome == "T":
             if current_col:
                 last_cell_idx = len(current_col) - 1
                 current_col[last_cell_idx] = (current_col[last_cell_idx][0], current_col[last_cell_idx][1] + 1,
-                                               current_col[last_cell_idx][2], current_col[last_cell_idx][3], current_col[last_cell_idx][4])
+                                               current_col[last_cell_idx][2]) 
             elif columns:
                 last_col_idx = len(columns) - 1
                 if columns[last_col_idx]:
@@ -585,22 +541,20 @@ if history_results:
                     columns[last_col_idx][last_cell_in_prev_col_idx] = (
                         columns[last_col_idx][last_cell_in_prev_col_idx][0],
                         columns[last_col_idx][last_cell_in_prev_col_idx][1] + 1,
-                        columns[last_col_idx][last_cell_in_prev_col_idx][2],
-                        columns[last_col_idx][last_cell_in_prev_col_idx][3],
-                        columns[last_col_idx][last_cell_in_prev_col_idx][4]
+                        columns[last_col_idx][last_cell_in_prev_col_idx][2]
                     )
             continue
         
         if main_outcome == last_non_tie_result:
             if len(current_col) < max_row:
-                current_col.append((main_outcome, 0, is_player_pair, is_banker_pair, is_banker_6))
+                current_col.append((main_outcome, 0, is_any_natural)) 
             else:
                 columns.append(current_col)
-                current_col = [(main_outcome, 0, is_player_pair, is_banker_pair, is_banker_6)]
+                current_col = [(main_outcome, 0, is_any_natural)] 
         else:
             if current_col:
                 columns.append(current_col)
-            current_col = [(main_outcome, 0, is_player_pair, is_banker_pair, is_banker_6)]
+            current_col = [(main_outcome, 0, is_any_natural)] 
             last_non_tie_result = main_outcome
             
     if current_col:
@@ -615,16 +569,14 @@ if history_results:
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
     for col in columns:
         big_road_html += "<div class='big-road-column'>"
-        for cell_result, tie_count, pp_flag, bp_flag, b6_flag in col:
+        for cell_result, tie_count, natural_flag in col: 
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
             
-            # Pair and B6 indicators
-            pp_indicator = f"<span class='pair-indicator P'>PP</span>" if pp_flag else ""
-            bp_indicator = f"<span class='pair-indicator B'>BP</span>" if bp_flag else ""
-            b6_indicator = f"<span class='b6-indicator'>6</span>" if b6_flag else ""
+            # Natural indicator
+            natural_indicator = f"<span class='natural-indicator'>N</span>" if natural_flag else ""
 
-            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{pp_indicator}{bp_indicator}{b6_indicator}</div>"
+            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{natural_indicator}</div>" 
         big_road_html += "</div>" 
     big_road_html += "</div>" 
     
@@ -647,13 +599,9 @@ with col3:
 
 # NEW: Checkboxes for Side Outcomes
 st.markdown("<b>ผลเสริม (เลือกก่อนกดปุ่มผลหลัก):</b>", unsafe_allow_html=True)
-col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3)
+col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3) 
 with col_checkbox1:
-    st.checkbox("🔵 PP", key="is_player_pair_checked")
-with col_checkbox2:
-    st.checkbox("🔴 BP", key="is_banker_pair_checked")
-with col_checkbox3:
-    st.checkbox("🟡 6", key="is_banker_6_checked")
+    st.checkbox("🟢 ไพ่ป็อก", key="is_any_natural_checked") 
 
 
 # --- Control Buttons ---
@@ -676,11 +624,11 @@ if st.session_state.show_debug_info:
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
     st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
     st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
+    st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") # V6.6: Display choppiness rate
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
-    st.write(f"ทำนายไพ่คู่: {st.session_state.pair_prediction}, Sniper ไพ่คู่: {st.session_state.is_pair_sniper_opportunity}")
-    st.write(f"ทำนาย 6 แต้ม: {st.session_state.banker6_prediction}, Sniper 6 แต้ม: {st.session_state.is_banker6_sniper_opportunity}")
-    st.write("---") # Add a separator for clarity
+    st.write(f"ทำนายไพ่ป็อก: {st.session_state.pock_prediction}, Sniper ไพ่ป็อก: {st.session_state.is_pock_sniper_opportunity}") 
+    st.write("---") 
 
 
 # --- Accuracy by Module ---
@@ -692,28 +640,25 @@ recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    # Sort modules to display main modules first, then side bet modules
-    # V6.4: Ensure "NoPrediction" is not in the list of modules to display accuracy for.
-    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
+    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
     for name in sorted_module_names:
         acc = all_time_accuracies[name]
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
     
-    # Check if there's enough P/B history for recent stats
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
     main_history_len = p_count + b_count
 
     if main_history_len >= 10: 
         st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
+        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
         for name in sorted_module_names_recent_10:
             acc = recent_10_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 
     if main_history_len >= 20: 
         st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
+        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
         for name in sorted_module_names_recent_20:
             acc = recent_20_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
