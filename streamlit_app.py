@@ -368,9 +368,8 @@ def handle_click(main_outcome_str: MainOutcome):
 
     st.query_params["_t"] = f"{time.time()}"
 
-    # --- DEBUGGING OUTPUT ---
+    # --- DEBUGGING OUTPUT (บน UI) ---
     st.write("--- DEBUGGING INFO (หลังกดปุ่ม) ---")
-    # Corrected line: call the helper function directly
     st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
     st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
@@ -431,9 +430,8 @@ def handle_remove():
 
     st.query_params["_t"] = f"{time.time()}"
 
-    # --- DEBUGGING OUTPUT ---
+    # --- DEBUGGING OUTPUT (บน UI) ---
     st.write("--- DEBUGGING INFO (หลังลบรายการ) ---")
-    # Corrected line: call the helper function directly
     st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}")
     st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
