@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V5.9 - Enhanced Side Bet Prediction)
+# oracle_core.py (Oracle V6.0 - Adaptive Scoring & Side Bet Sniper Logic)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -152,56 +152,61 @@ class FallbackModule:
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         return random.choice(["P", "B"])
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V5.9) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.0) ---
 
 class TiePredictor:
     """
-    Predicts Tie outcomes with further enhanced logic for V5.9.
+    Predicts Tie outcomes with further enhanced logic for V6.0.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["T"]]:
         tie_flags = _get_side_bet_history_flags(history, "T")
         main_history_pb = _get_main_outcome_history(history) # Only P/B for main patterns
 
-        if len(tie_flags) < 20: # Increased history requirement for even better tie prediction
+        if len(tie_flags) < 25: # Increased history requirement for even better tie prediction
             return None
         
-        # Rule 1: Tie after a long streak of P/B (e.g., 10+ non-tie outcomes)
-        # More aggressive than V5.8's 8+
-        if len(main_history_pb) >= 10 and not any(tie_flags[-10:]):
+        # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
+        if len(main_history_pb) >= 12 and not any(tie_flags[-12:]):
             return "T"
         
-        # Rule 2: If tie occurred recently and then a few non-ties, it might repeat (T _ _ T)
-        # More specific: T followed by 3 non-ties, then predict T
-        if len(tie_flags) >= 4 and tie_flags[-4] and not tie_flags[-1] and not tie_flags[-2] and not tie_flags[-3]:
+        # Rule 2: If tie occurred recently and then a few non-ties, it might repeat (T _ _ _ T)
+        # More specific: T followed by 4 non-ties, then predict T
+        if len(tie_flags) >= 5 and tie_flags[-5] and not any(tie_flags[-4:]):
             return "T" 
             
-        # Rule 3: Tie after specific alternating patterns in main outcomes (e.g., PBPBP, then T)
-        if len(main_history_pb) >= 5:
-            recent_main = "".join(main_history_pb[-5:])
-            if recent_main in ["PBPBP", "BPBPP"]: # Longer alternating patterns often break with T
+        # Rule 3: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
+        if len(main_history_pb) >= 6:
+            recent_main = "".join(main_history_pb[-6:])
+            if recent_main in ["PBPBPB", "BPBPBP"]: # Longer alternating patterns often break with T
                 return "T"
         
-        # Rule 4: If ties are very frequent in recent history (e.g., 5+ in last 15)
+        # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20)
         # Higher threshold for frequency and longer lookback
-        if tie_flags[-15:].count(True) >= 5:
+        if tie_flags[-20:].count(True) >= 6:
             return "T"
             
         # Rule 5: Tie after a specific main outcome sequence (e.g., P B B P, then T)
-        if len(main_history_pb) >= 4:
-            recent_main_4 = "".join(main_history_pb[-4:])
-            if recent_main_4 == "PBBP" or recent_main_4 == "BPPB": # Common patterns for tie
+        if len(main_history_pb) >= 5:
+            recent_main_5 = "".join(main_history_pb[-5:])
+            if recent_main_5 == "PBBPB" or recent_main_5 == "BPPBP": # More complex patterns for tie
                 return "T"
 
-        # Rule 6: Tie after a long streak of one side winning (e.g., 6+ P's or 6+ B's)
+        # Rule 6: Tie after a long streak of one side winning (e.g., 7+ P's or 7+ B's)
+        if len(main_history_pb) >= 7:
+            if main_history_pb[-7:].count("P") == 7 or main_history_pb[-7:].count("B") == 7:
+                return "T"
+        
+        # Rule 7: Tie after a specific "chop" pattern (e.g., P B P B, then P P -> T)
         if len(main_history_pb) >= 6:
-            if main_history_pb[-6:].count("P") == 6 or main_history_pb[-6:].count("B") == 6:
+            recent_main_6 = "".join(main_history_pb[-6:])
+            if recent_main_6 == "PBPBPP" or recent_main_6 == "BPBPBB":
                 return "T"
 
         return None
 
 class PairPredictor:
     """
-    Predicts Player Pair or Banker Pair with further enhanced logic for V5.9.
+    Predicts Player Pair or Banker Pair with further enhanced logic for V6.0.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["PP", "BP"]]:
         player_pair_flags = _get_side_bet_history_flags(history, "PP")
@@ -209,103 +214,114 @@ class PairPredictor:
         combined_pair_flags = _get_combined_pair_history_flags(history)
         main_history_pb = _get_main_outcome_history(history)
 
-        if len(combined_pair_flags) < 20: # Increased history requirement for pair prediction
+        if len(combined_pair_flags) < 25: # Increased history requirement for pair prediction
             return None
         
         # Rule 1: Pair just occurred, strong chance of another pair (momentum)
-        # Predict the specific pair if it just occurred
+        # Predict the specific pair if it just occurred, with higher confidence for immediate repeat
         if player_pair_flags[-1]:
             return "PP"
         if banker_pair_flags[-1]:
             return "BP"
         
-        # Rule 2: If no pairs for a very long time (e.g., 15+ rounds), predict a pair might be due
-        # Longer "due" period
-        if not any(combined_pair_flags[-15:]):
+        # Rule 2: If no pairs for a very long time (e.g., 20+ rounds), predict a pair might be due
+        if not any(combined_pair_flags[-20:]):
             return random.choice(["PP", "BP"])
             
-        # Rule 3: If pairs are frequent in recent history (e.g., 5+ in last 15)
-        # Higher threshold for frequency and longer lookback
-        if combined_pair_flags[-15:].count(True) >= 5:
-            # Predict the more frequent pair recently (last 15 rounds)
-            pp_recent_count = player_pair_flags[-15:].count(True)
-            bp_recent_count = banker_pair_flags[-15:].count(True)
+        # Rule 3: If pairs are very frequent in recent history (e.g., 6+ in last 20)
+        if combined_pair_flags[-20:].count(True) >= 6:
+            pp_recent_count = player_pair_flags[-20:].count(True)
+            bp_recent_count = banker_pair_flags[-20:].count(True)
             if pp_recent_count > bp_recent_count:
                 return "PP"
             elif bp_recent_count > pp_recent_count:
                 return "BP"
-            else: # If counts are equal, random
+            else: 
                 return random.choice(["PP", "BP"])
         
-        # Rule 4: Pair after a specific main outcome (e.g., P P B, then Pair)
-        # More specific patterns
+        # Rule 4: Pair after specific main outcome patterns (e.g., P P P B, then Pair)
         if len(main_history_pb) >= 4:
             recent_main = "".join(main_history_pb[-4:])
-            if recent_main == "PPBB": # Common pattern for pair to break a streak
+            if recent_main == "PPPB": # Player streak followed by Banker, often a Player Pair
                 return "PP" 
-            if recent_main == "BBPP":
+            if recent_main == "BBBP": # Banker streak followed by Player, often a Banker Pair
                 return "BP"
 
         # Rule 5: Pair after an alternating sequence of pairs (e.g., PP BP PP -> BP)
-        if len(combined_pair_flags) >= 3 and combined_pair_flags[-1] and combined_pair_flags[-2] and combined_pair_flags[-3]:
-            if player_pair_flags[-1] and banker_pair_flags[-2] and player_pair_flags[-3]:
-                return "BP" # PP BP PP -> BP
-            if banker_pair_flags[-1] and player_pair_flags[-2] and banker_pair_flags[-3]:
-                return "PP" # BP PP BP -> PP
+        if len(combined_pair_flags) >= 4 and combined_pair_flags[-1] and combined_pair_flags[-2] and combined_pair_flags[-3] and combined_pair_flags[-4]:
+            if player_pair_flags[-1] and banker_pair_flags[-2] and player_pair_flags[-3] and banker_pair_flags[-4]:
+                return "PP" # BP PP BP PP -> PP (next in sequence)
+            if banker_pair_flags[-1] and player_pair_flags[-2] and banker_pair_flags[-3] and player_pair_flags[-4]:
+                return "BP" # PP BP PP BP -> BP (next in sequence)
+
+        # Rule 6: Pair after a "dragon" (long streak) breaks
+        if len(main_history_pb) >= 8:
+            if main_history_pb[-8:].count("P") == 7 and main_history_pb[-1] == "B": # P P P P P P P B -> Pair (often PP)
+                return "PP"
+            if main_history_pb[-8:].count("B") == 7 and main_history_pb[-1] == "P": # B B B B B B B P -> Pair (often BP)
+                return "BP"
 
         return None
 
 class Banker6Predictor:
     """
-    Predicts Banker 6 (Super 6) outcomes with further enhanced, but still conservative, logic for V5.9.
+    Predicts Banker 6 (Super 6) outcomes with further enhanced, but still conservative, logic for V6.0.
     B6 is rare, so predictions should be very cautious.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["B6"]]:
         b6_flags = _get_side_bet_history_flags(history, "B6")
-        main_history_outcomes = [r.main_outcome for r in history] # Full main outcomes (P, B, T)
-        main_history_pb = _get_main_outcome_history(history) # Only P/B for main patterns
+        main_history_outcomes = [r.main_outcome for r in history] 
+        main_history_pb = _get_main_outcome_history(history) 
 
-        if len(b6_flags) < 40: # Increased history requirement for B6, very rare
+        if len(b6_flags) < 50: # Increased history requirement for B6, very rare
             return None
         
         # Rule 1: B6 just occurred (very strong immediate signal)
         if b6_flags[-1]:
             return "B6"
         
-        # Rule 2: If Banker has won with 6 points recently (e.g., in last 15 rounds)
-        # and there's a very strong Banker trend (e.g., 5+ Banker wins in last 5)
-        if b6_flags[-15:].count(True) >= 1: # B6 occurred in last 15 rounds
-            recent_banker_wins = [o for o in main_history_pb[-5:] if o == "B"]
-            if recent_banker_wins.count("B") >= 5: # Very strong Banker dominance
+        # Rule 2: If Banker has won with 6 points recently (e.g., in last 20 rounds)
+        # and there's a very strong Banker trend (e.g., 6+ Banker wins in last 7)
+        if b6_flags[-20:].count(True) >= 1: # B6 occurred in last 20 rounds
+            recent_banker_wins = [o for o in main_history_pb[-7:] if o == "B"]
+            if recent_banker_wins.count("B") >= 6: # Very strong Banker dominance
                 return "B6"
         
-        # Rule 3: If Banker has been dominant for a very long time (e.g., 9+ B's in last 10)
+        # Rule 3: If Banker has been dominant for a very long time (e.g., 10+ B's in last 12)
         # and no B6 has occurred in that period, it might be due. (Cautious)
-        if main_history_pb[-10:].count("B") >= 9 and not any(b6_flags[-10:]):
+        if main_history_pb[-12:].count("B") >= 10 and not any(b6_flags[-12:]):
             return "B6"
             
-        # Rule 4: Very rare: B6 after a very long absence (e.g., 30+ rounds)
-        if len(b6_flags) >= 30 and not any(b6_flags[-30:]):
+        # Rule 4: Very rare: B6 after a very long absence (e.g., 40+ rounds)
+        if len(b6_flags) >= 40 and not any(b6_flags[-40:]):
             return "B6"
 
-        # Rule 5: B6 after a specific Banker streak (e.g., exactly 4 or 5 Banker wins)
-        if len(main_history_pb) >= 5:
-            if main_history_pb[-5:].count("B") == 5 and not any(b6_flags[-5:]): # 5 consecutive Banker wins, no B6 yet
+        # Rule 5: B6 after a specific Banker streak (e.g., exactly 6 or 7 Banker wins)
+        if len(main_history_pb) >= 7:
+            if main_history_pb[-7:].count("B") == 7 and not any(b6_flags[-7:]): 
                 return "B6"
-            if len(main_history_pb) >= 4 and main_history_pb[-4:].count("B") == 4 and not any(b6_flags[-4:]): # 4 consecutive Banker wins, no B6 yet
+            if len(main_history_pb) >= 6 and main_history_pb[-6:].count("B") == 6 and not any(b6_flags[-6:]): 
+                return "B6"
+        
+        # Rule 6: B6 after a series of "chop" Banker outcomes (e.g., B P B P B)
+        if len(main_history_pb) >= 5:
+            recent_main_5 = "".join(main_history_pb[-5:])
+            if recent_main_5 == "BPBPB" and not any(b6_flags[-5:]):
                 return "B6"
 
         return None
 
 
-class ConfidenceScorer:
+class AdaptiveScorer: # Renamed from ConfidenceScorer
     """
     Calculates the final prediction and its confidence based on module predictions
-    and their historical accuracy. This scorer is primarily for main P/B outcomes.
+    and their historical accuracy, with adaptive weighting.
+    This scorer is primarily for main P/B outcomes.
     """
     def score(self, 
-              predictions: Dict[str, Optional[MainOutcome]], # Only for P/B predictions
-              module_accuracies: Dict[str, float], 
+              predictions: Dict[str, Optional[MainOutcome]], 
+              module_accuracies_all_time: Dict[str, float], # All-time accuracy for baseline
+              module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting
               history: List[RoundResult]) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]:
         
         total_score = {"P": 0.0, "B": 0.0}
@@ -316,7 +332,17 @@ class ConfidenceScorer:
             return None, None, 0, None 
 
         for name, pred in active_predictions.items():
-            weight = module_accuracies.get(name, 50.0) / 100.0 
+            # Adaptive weighting: combine all-time and recent accuracy
+            all_time_weight = module_accuracies_all_time.get(name, 50.0) / 100.0
+            recent_weight = module_accuracies_recent.get(name, 50.0) / 100.0
+            
+            # Simple adaptive blend: 70% recent, 30% all-time (can be tuned)
+            # Ensure we don't divide by zero if no predictions for a module
+            if module_accuracies_recent.get(name) is not None and module_accuracies_all_time.get(name) is not None:
+                weight = (recent_weight * 0.7) + (all_time_weight * 0.3)
+            else:
+                weight = all_time_weight # Fallback if recent data is not available
+            
             total_score[pred] += weight
 
         if not any(total_score.values()):
@@ -390,7 +416,7 @@ class OracleBrain:
         self.pair_predictor = PairPredictor()
         self.banker6_predictor = Banker6Predictor()
 
-        self.scorer = ConfidenceScorer()
+        self.scorer = AdaptiveScorer() # Changed to AdaptiveScorer
         self.show_initial_wait_message = True 
 
     def add_result(self, main_outcome: MainOutcome, is_player_pair: bool = False, is_banker_pair: bool = False, is_banker_6: bool = False):
@@ -647,7 +673,8 @@ class OracleBrain:
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, # Main prediction
         Optional[Literal["T"]], # Tie prediction
         Optional[Literal["PP", "BP"]], # Pair prediction
-        Optional[Literal["B6"]] # Banker 6 prediction
+        Optional[Literal["B6"]], # Banker 6 prediction
+        bool, bool, bool # is_tie_sniper_opportunity, is_pair_sniper_opportunity, is_banker6_sniper_opportunity
     ]:
         """
         Generates the next predictions for main outcome and side bets,
@@ -661,17 +688,22 @@ class OracleBrain:
 
         MIN_HISTORY_FOR_PREDICTION = 20 
         MIN_HISTORY_FOR_SNIPER = 30 
+        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 # New threshold for side bet sniper
 
         final_prediction_main = None
         source_module_name_main = None
         confidence_main = None
         pattern_code_main = None
-        is_sniper_opportunity = False
+        is_sniper_opportunity_main = False # Renamed to avoid conflict
+        is_tie_sniper_opportunity = False
+        is_pair_sniper_opportunity = False
+        is_banker6_sniper_opportunity = False
+
 
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
             self.last_module = None
-            return None, None, None, None, current_miss_streak, False, None, None, None 
+            return None, None, None, None, current_miss_streak, False, None, None, None, False, False, False 
 
         predictions_from_modules = {
             "Rule": self.rule_engine.predict(self.history),
@@ -682,10 +714,11 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history) 
         }
         
-        module_accuracies_for_weights = self.get_module_accuracy_normalized() 
+        module_accuracies_all_time = self.get_module_accuracy_all_time()
+        module_accuracies_recent_10 = self.get_module_accuracy_recent(10) # For adaptive scoring
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
-            self.scorer.score(predictions_from_modules, module_accuracies_for_weights, self.history)
+            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) # Pass recent accuracy
 
         if current_miss_streak in [3, 4]:
             best_module_for_recovery = self.get_best_recent_module()
@@ -693,7 +726,7 @@ class OracleBrain:
                 final_prediction_main = predictions_from_modules[best_module_for_recovery]
                 source_module_name_main = f"{best_module_for_recovery}-Recovery"
 
-        # --- Sniper Opportunity Logic ---
+        # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
             if confidence_main == 95 and current_miss_streak == 0 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
@@ -721,8 +754,8 @@ class OracleBrain:
                         sniper_module_recent_accuracy_ok = False
                 
                 if all_contributing_modules_high_all_time_accuracy and sniper_module_recent_accuracy_ok:
-                    is_sniper_opportunity = True
-        # --- END Sniper Opportunity Logic ---
+                    is_sniper_opportunity_main = True
+        # --- END Main Outcome Sniper Logic ---
 
         self.last_prediction = final_prediction_main
         self.last_module = source_module_name_main 
@@ -732,8 +765,41 @@ class OracleBrain:
         pair_prediction = self.pair_predictor.predict(self.history)
         banker6_prediction = self.banker6_predictor.predict(self.history)
 
+        # --- Side Bet Sniper Opportunity Logic (NEW for V6.0) ---
+        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 # Lower threshold than main P/B for rarity
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 90 # High recent accuracy is key
+        SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 # Need at least 3 recent predictions for accuracy check
+
+        # Tie Sniper
+        if tie_prediction == "T" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
+            tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
+            tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+            
+            if tie_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
+                is_tie_sniper_opportunity = True
+
+        # Pair Sniper
+        if pair_prediction in ("PP", "BP") and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
+            pair_all_time_acc = module_accuracies_all_time.get("Pair", 0)
+            pair_recent_acc = self._calculate_side_bet_module_accuracy(self.pair_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+            
+            if pair_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and pair_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
+                is_pair_sniper_opportunity = True
+
+        # Banker 6 Sniper (even more stringent, or higher history requirement)
+        if banker6_prediction == "B6" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER + 10: # Higher history for B6 sniper
+            b6_all_time_acc = module_accuracies_all_time.get("Banker6", 0)
+            b6_recent_acc = self._calculate_side_bet_module_accuracy(self.banker6_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+            
+            # B6 requires very high confidence due to rarity
+            if b6_all_time_acc >= (SIDE_BET_SNIPER_ACCURACY_THRESHOLD + 5) and b6_recent_acc >= (SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD + 5):
+                is_banker6_sniper_opportunity = True
+        # --- END Side Bet Sniper Logic ---
+
+
         return (
-            final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity,
-            tie_prediction, pair_prediction, banker6_prediction
+            final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
+            tie_prediction, pair_prediction, banker6_prediction,
+            is_tie_sniper_opportunity, is_pair_sniper_opportunity, is_banker6_sniper_opportunity
         )
 
