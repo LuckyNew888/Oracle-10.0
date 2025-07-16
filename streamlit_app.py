@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V6.0", layout="centered") # Updated version
+st.set_page_config(page_title="🔮 Oracle V6.2", layout="centered") # Updated version to V6.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -355,10 +355,17 @@ def handle_click(main_outcome_str: MainOutcome):
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "B", 
-        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", 
+        "PPPP": "มังกร", "BBBB": "มังกร", # Changed from "B" to "มังกร" for consistency
+        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
+        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+        "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+        "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
+        "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
+        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวตัด",
+        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -399,10 +406,17 @@ def handle_remove():
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "B", 
-        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", 
+        "PPPP": "มังกร", "BBBB": "มังกร", # Changed from "B" to "มังกร" for consistency
+        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
+        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+        "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+        "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
+        "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
+        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวตัด",
+        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -450,7 +464,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V6.0</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V6.2</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -469,15 +483,16 @@ else:
     # Get P/B count from the new history structure
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
+    main_history_len = p_count + b_count
+    miss = st.session_state.oracle.calculate_miss_streak()
 
-    if (p_count + b_count) < 20 and not st.session_state.initial_shown: 
-        st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย") 
+    if main_history_len < 20 and not st.session_state.initial_shown: 
+        st.warning(f"⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย (ปัจจุบัน {main_history_len} ตา)") 
+    elif miss >= 6:
+        st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
     else:
-        miss = st.session_state.oracle.calculate_miss_streak()
-        if miss >= 6:
-            st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
-        else:
-            st.info("⏳ กำลังวิเคราะห์ข้อมูล")
+        # This message now appears if history is sufficient and not on miss streak, but confidence is too low
+        st.info("⏳ กำลังวิเคราะห์ข้อมูล... ความมั่นใจยังไม่สูงพอที่จะทำนาย")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -654,7 +669,6 @@ st.session_state.show_debug_info = st.checkbox("แสดงข้อมูล D
 # --- Conditional Debugging Output ---
 if st.session_state.show_debug_info:
     st.markdown("<h3>⚙️ ข้อมูล Debugging (สำหรับนักพัฒนา)</h3>", unsafe_allow_html=True)
-    st.write("--- DEBUGGING INFO (หลังกดปุ่ม) ---")
     st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
     st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
@@ -664,7 +678,7 @@ if st.session_state.show_debug_info:
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
     st.write(f"ทำนายไพ่คู่: {st.session_state.pair_prediction}, Sniper ไพ่คู่: {st.session_state.is_pair_sniper_opportunity}")
     st.write(f"ทำนาย 6 แต้ม: {st.session_state.banker6_prediction}, Sniper 6 แต้ม: {st.session_state.is_banker6_sniper_opportunity}")
-    st.write("------------------------------------")
+    st.write("---") # Add a separator for clarity
 
 
 # --- Accuracy by Module ---
