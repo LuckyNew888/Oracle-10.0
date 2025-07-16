@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.0 - Fix AdaptiveScorer Weight)
+# oracle_core.py (Oracle V6.0 - No Change)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -326,18 +326,18 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
               module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting
               history: List[RoundResult]) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]:
         
-        print(f"DEBUG: AdaptiveScorer.score received predictions: {predictions}") # DEBUG
-        print(f"DEBUG: AdaptiveScorer.score received all_time_accuracies: {module_accuracies_all_time}") # DEBUG
-        print(f"DEBUG: AdaptiveScorer.score received recent_accuracies: {module_accuracies_recent}") # DEBUG
+        # print(f"DEBUG: AdaptiveScorer.score received predictions: {predictions}") # DEBUG
+        # print(f"DEBUG: AdaptiveScorer.score received all_time_accuracies: {module_accuracies_all_time}") # DEBUG
+        # print(f"DEBUG: AdaptiveScorer.score received recent_accuracies: {module_accuracies_recent}") # DEBUG
 
         total_score = {"P": 0.0, "B": 0.0}
         
         active_predictions = {name: pred for name, pred in predictions.items() if pred in ("P", "B")}
 
-        print(f"DEBUG: AdaptiveScorer.score active_predictions: {active_predictions}") # DEBUG
+        # print(f"DEBUG: AdaptiveScorer.score active_predictions: {active_predictions}") # DEBUG
 
         if not active_predictions:
-            print("DEBUG: AdaptiveScorer.score No active predictions, returning None.") # DEBUG
+            # print("DEBUG: AdaptiveScorer.score No active predictions, returning None.") # DEBUG
             return None, None, 0, None 
 
         for name, pred in active_predictions.items():
@@ -354,10 +354,10 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
             weight = (recent_weight * 0.7) + (all_time_weight * 0.3)
             
             total_score[pred] += weight
-            print(f"DEBUG: Module {name} ({pred}) weight: {weight}, total_score: {total_score}") # DEBUG
+            # print(f"DEBUG: Module {name} ({pred}) weight: {weight}, total_score: {total_score}") # DEBUG
 
         if not any(total_score.values()):
-            print("DEBUG: AdaptiveScorer.score No total score values, returning None.") # DEBUG
+            # print("DEBUG: AdaptiveScorer.score No total score values, returning None.") # DEBUG
             return None, None, 0, None 
 
         best_prediction_outcome = max(total_score, key=total_score.get)
@@ -372,7 +372,7 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
 
         pattern = self._extract_relevant_pattern(history, predictions)
         
-        print(f"DEBUG: AdaptiveScorer.score final outcome: {best_prediction_outcome}, source: {source_name}, confidence: {confidence}, pattern: {pattern}") # DEBUG
+        # print(f"DEBUG: AdaptiveScorer.score final outcome: {best_prediction_outcome}, source: {source_name}, confidence: {confidence}, pattern: {pattern}") # DEBUG
         return best_prediction_outcome, source_name, confidence, pattern
 
     def _extract_relevant_pattern(self, history: List[RoundResult], predictions: Dict[str, Optional[MainOutcome]]) -> Optional[str]:
@@ -712,12 +712,12 @@ class OracleBrain:
         is_pair_sniper_opportunity = False
         is_banker6_sniper_opportunity = False
 
-        print(f"DEBUG: predict_next - P/B History Length: {p_count + b_count}, Miss Streak: {current_miss_streak}") # DEBUG
+        # print(f"DEBUG: predict_next - P/B History Length: {p_count + b_count}, Miss Streak: {current_miss_streak}") # DEBUG
 
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
             self.last_module = None
-            print("DEBUG: predict_next - Conditions not met for main prediction.") # DEBUG
+            # print("DEBUG: predict_next - Conditions not met for main prediction.") # DEBUG
             return None, None, None, None, current_miss_streak, False, None, None, None, False, False, False 
 
         predictions_from_modules = {
@@ -729,7 +729,7 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history) 
         }
         
-        print(f"DEBUG: predict_next - Raw predictions from modules: {predictions_from_modules}") # DEBUG
+        # print(f"DEBUG: predict_next - Raw predictions from modules: {predictions_from_modules}") # DEBUG
 
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
