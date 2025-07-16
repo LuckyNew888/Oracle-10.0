@@ -147,7 +147,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 .stButton>button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+    box_shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
 }
 /* Specific button colors */
 #btn_P button { background-color: #007BFF; color: white; border: none; }
