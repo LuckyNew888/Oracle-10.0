@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.0 - Deep Debugging)
+# oracle_core.py (Oracle V6.0 - Fix AdaptiveScorer Weight)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -342,15 +342,16 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
 
         for name, pred in active_predictions.items():
             # Adaptive weighting: combine all-time and recent accuracy
-            all_time_weight = module_accuracies_all_time.get(name, 50.0) / 100.0
-            recent_weight = module_accuracies_recent.get(name, 50.0) / 100.0
+            # If accuracy is 0.0, treat it as 50% for initial weighting to allow prediction
+            all_time_acc_val = module_accuracies_all_time.get(name, 0.0)
+            recent_acc_val = module_accuracies_recent.get(name, 0.0)
+
+            # Use 50% (0.5 weight) if accuracy is 0.0 or module hasn't made enough predictions yet
+            all_time_weight = (all_time_acc_val if all_time_acc_val > 0.0 else 50.0) / 100.0
+            recent_weight = (recent_acc_val if recent_acc_val > 0.0 else 50.0) / 100.0
             
             # Simple adaptive blend: 70% recent, 30% all-time (can be tuned)
-            # Ensure we don't divide by zero if no predictions for a module
-            if module_accuracies_recent.get(name) is not None and module_accuracies_all_time.get(name) is not None:
-                weight = (recent_weight * 0.7) + (all_time_weight * 0.3)
-            else:
-                weight = all_time_weight # Fallback if recent data is not available
+            weight = (recent_weight * 0.7) + (all_time_weight * 0.3)
             
             total_score[pred] += weight
             print(f"DEBUG: Module {name} ({pred}) weight: {weight}, total_score: {total_score}") # DEBUG
