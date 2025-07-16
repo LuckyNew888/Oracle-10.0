@@ -147,7 +147,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 .stButton>button:hover {
     transform: translateY(-2px);
-    box_shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
 }
 /* Specific button colors */
 #btn_P button { background-color: #007BFF; color: white; border: none; }
@@ -368,19 +368,6 @@ def handle_click(main_outcome_str: MainOutcome):
 
     st.query_params["_t"] = f"{time.time()}"
 
-    # --- DEBUGGING OUTPUT (บน UI) ---
-    st.write("--- DEBUGGING INFO (หลังกดปุ่ม) ---")
-    st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
-    st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
-    st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
-    st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
-    st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
-    st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
-    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
-    st.write(f"ทำนายไพ่คู่: {st.session_state.pair_prediction}, Sniper ไพ่คู่: {st.session_state.is_pair_sniper_opportunity}")
-    st.write(f"ทำนาย 6 แต้ม: {st.session_state.banker6_prediction}, Sniper 6 แต้ม: {st.session_state.is_banker6_sniper_opportunity}")
-    st.write("------------------------------------")
-
 
 def handle_remove():
     """
@@ -429,19 +416,6 @@ def handle_remove():
     st.session_state.is_banker_6_checked = False
 
     st.query_params["_t"] = f"{time.time()}"
-
-    # --- DEBUGGING OUTPUT (บน UI) ---
-    st.write("--- DEBUGGING INFO (หลังลบรายการ) ---")
-    st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}")
-    st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
-    st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
-    st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
-    st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
-    st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
-    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
-    st.write(f"ทำนายไพ่คู่: {st.session_state.pair_prediction}, Sniper ไพ่คู่: {st.session_state.is_pair_sniper_opportunity}")
-    st.write(f"ทำนาย 6 แต้ม: {st.session_state.banker6_prediction}, Sniper 6 แต้ม: {st.session_state.is_banker6_sniper_opportunity}")
-    st.write("------------------------------------")
 
 
 def handle_reset():
