@@ -284,6 +284,8 @@ if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
 if 'is_sniper_opportunity_main' not in st.session_state: # Renamed
     st.session_state.is_sniper_opportunity_main = False
+if 'show_debug_info' not in st.session_state: # New session state for debug toggle
+    st.session_state.show_debug_info = False
 
 # Session state for side bet predictions
 if 'tie_prediction' not in st.session_state:
@@ -644,6 +646,26 @@ with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
 with col5:
     st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
+
+# --- Debugging Toggle ---
+st.markdown("<hr>", unsafe_allow_html=True)
+st.session_state.show_debug_info = st.checkbox("แสดงข้อมูล Debugging")
+
+# --- Conditional Debugging Output ---
+if st.session_state.show_debug_info:
+    st.markdown("<h3>⚙️ ข้อมูล Debugging (สำหรับนักพัฒนา)</h3>", unsafe_allow_html=True)
+    st.write("--- DEBUGGING INFO (หลังกดปุ่ม) ---")
+    st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
+    st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
+    st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
+    st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
+    st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
+    st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
+    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
+    st.write(f"ทำนายไพ่คู่: {st.session_state.pair_prediction}, Sniper ไพ่คู่: {st.session_state.is_pair_sniper_opportunity}")
+    st.write(f"ทำนาย 6 แต้ม: {st.session_state.banker6_prediction}, Sniper 6 แต้ม: {st.session_state.is_banker6_sniper_opportunity}")
+    st.write("------------------------------------")
+
 
 # --- Accuracy by Module ---
 st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) 
