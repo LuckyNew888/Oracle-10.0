@@ -4,7 +4,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome # Import RoundResult and MainOutcome
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V5.4", layout="centered") # Updated version
+st.set_page_config(page_title="🔮 Oracle V5.5", layout="centered") # Updated version
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -152,16 +152,34 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_P button { background-color: #007BFF; color: white; border: none; }
 #btn_B button { background-color: #DC3545; color: white; border: none; }
 #btn_T button { background-color: #6C757D; color: white; border: none; }
-/* NEW: Side Bet Button Styling */
-#btn_PP_P button, #btn_BP_B button, #btn_PP_T button, #btn_BP_T button, #btn_B6_B button, #btn_B6_P button { 
-    background-color: #343A40; /* Darker background for side bet buttons */
-    color: white; 
-    border: 1px solid #495057; 
-    font-size: 14px; 
-    padding: 8px 0; 
+/* Checkbox styling adjustments */
+.stCheckbox > label {
+    padding: 8px 10px; /* Adjust padding for better click area */
+    border: 1px solid #495057;
+    border-radius: 8px;
+    background-color: #343A40;
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    display: flex; /* Use flex to align checkbox and text */
+    align-items: center;
+    justify-content: center; /* Center content horizontally */
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
 }
-#btn_PP_P button:hover, #btn_BP_B button:hover, #btn_PP_T button:hover, #btn_BP_T button:hover, #btn_B6_B button:hover, #btn_B6_P button:hover {
+.stCheckbox > label:hover {
     background-color: #495057;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+}
+.stCheckbox > label > div:first-child { /* The actual checkbox input */
+    margin-right: 8px; /* Space between checkbox and text */
+}
+/* Style for checked checkboxes */
+.stCheckbox > label[data-checked="true"] {
+    background-color: #007BFF; /* Example color for checked */
+    border-color: #007BFF;
 }
 
 
@@ -250,7 +268,7 @@ if 'initial_shown' not in st.session_state:
 if 'is_sniper_opportunity' not in st.session_state: 
     st.session_state.is_sniper_opportunity = False
 
-# NEW: Session state for side bet predictions
+# Session state for side bet predictions
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
 if 'pair_prediction' not in st.session_state:
@@ -258,16 +276,36 @@ if 'pair_prediction' not in st.session_state:
 if 'banker6_prediction' not in st.session_state:
     st.session_state.banker6_prediction = None
 
+# NEW: Session state for checkboxes (to control their state)
+if 'is_player_pair_checked' not in st.session_state:
+    st.session_state.is_player_pair_checked = False
+if 'is_banker_pair_checked' not in st.session_state:
+    st.session_state.is_banker_pair_checked = False
+if 'is_banker_6_checked' not in st.session_state:
+    st.session_state.is_banker_6_checked = False
+
 
 # --- UI Callback Functions ---
-def handle_click(main_outcome_str: MainOutcome, is_player_pair: bool = False, is_banker_pair: bool = False, is_banker_6: bool = False):
+def handle_click(main_outcome_str: MainOutcome): # Removed side bet args from here
     """
-    Handles button clicks for P, B, T outcomes, with options for pairs and banker 6.
+    Handles button clicks for P, B, T outcomes.
+    Reads checkbox states for side bets.
     Adds the result to OracleBrain and updates all predictions.
     """
+    # Read current checkbox states
+    is_player_pair = st.session_state.is_player_pair_checked
+    is_banker_pair = st.session_state.is_banker_pair_checked
+    is_banker_6 = st.session_state.is_banker_6_checked
+
+    # Call add_result with all information
     st.session_state.oracle.add_result(main_outcome_str, is_player_pair, is_banker_pair, is_banker_6)
     
-    # NEW: Unpack all return values from predict_next
+    # Reset checkboxes after adding result
+    st.session_state.is_player_pair_checked = False
+    st.session_state.is_banker_pair_checked = False
+    st.session_state.is_banker_6_checked = False
+
+    # Unpack all return values from predict_next
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity,
      tie_pred, pair_pred, banker6_pred) = st.session_state.oracle.predict_next()
     
@@ -284,7 +322,7 @@ def handle_click(main_outcome_str: MainOutcome, is_player_pair: bool = False, is
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร",
+        "PPPP": "มังกร", "BBBB": "B", # Fixed typo
         "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
@@ -305,7 +343,7 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # NEW: Unpack all return values from predict_next
+    # Unpack all return values from predict_next
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity,
      tie_pred, pair_pred, banker6_pred) = st.session_state.oracle.predict_next()
     
@@ -322,8 +360,8 @@ def handle_remove():
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร",
-        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
+        "PPPP": "มังกร", "BBBB": "B", # Fixed typo
+        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", # Fixed typo
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
     }
@@ -335,6 +373,11 @@ def handle_remove():
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
+    # Reset checkboxes on remove, as the last round's state is gone
+    st.session_state.is_player_pair_checked = False
+    st.session_state.is_banker_pair_checked = False
+    st.session_state.is_banker_6_checked = False
+
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -355,10 +398,15 @@ def handle_reset():
     st.session_state.pair_prediction = None
     st.session_state.banker6_prediction = None
 
+    # Reset checkboxes on full reset
+    st.session_state.is_player_pair_checked = False
+    st.session_state.is_banker_pair_checked = False
+    st.session_state.is_banker_6_checked = False
+
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V5.4</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V5.5</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -397,7 +445,7 @@ if st.session_state.is_sniper_opportunity:
         </div>
     """, unsafe_allow_html=True)
 
-# --- NEW: Side Bet Prediction Display ---
+# --- Side Bet Prediction Display ---
 st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
 col_side1, col_side2, col_side3 = st.columns(3)
 
@@ -495,7 +543,7 @@ if history_results:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
             
-            # NEW: Pair and B6 indicators
+            # Pair and B6 indicators
             pp_indicator = f"<span class='pair-indicator P'>PP</span>" if pp_flag else ""
             bp_indicator = f"<span class='pair-indicator B'>BP</span>" if bp_flag else ""
             b6_indicator = f"<span class='b6-indicator'>6</span>" if b6_flag else ""
@@ -511,7 +559,8 @@ else:
 
 # --- Input Buttons (Main Outcomes) ---
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<b>ป้อนผลหลัก:</b>", unsafe_allow_html=True)
+st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) # Simplified label
+
 col1, col2, col3 = st.columns(3)
 with col1:
     st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
@@ -520,19 +569,16 @@ with col2:
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
-# --- NEW: Input Buttons (Side Outcomes) ---
-st.markdown("<b>ป้อนผลเสริม (ไม่บังคับ):</b>", unsafe_allow_html=True)
-col_input_side1, col_input_side2, col_input_side3 = st.columns(3)
-with col_input_side1:
-    # Changed args for these buttons to reflect the main outcome + pair
-    st.button("🔵 P + PP", on_click=handle_click, args=("P", True, False, False), key="btn_PP_P") 
-    st.button("🔴 B + BP", on_click=handle_click, args=("B", False, True, False), key="btn_BP_B") 
-with col_input_side2:
-    st.button("⚪ T + PP", on_click=handle_click, args=("T", True, False, False), key="btn_PP_T")
-    st.button("⚪ T + BP", on_click=handle_click, args=("T", False, True, False), key="btn_BP_T")
-with col_input_side3:
-    st.button("🔴 B + 6", on_click=handle_click, args=("B", False, False, True), key="btn_B6_B")
-    st.button("🔵 P + 6", on_click=handle_click, args=("P", False, False, True), key="btn_B6_P") # B6 can occur with P if Banker has 6 and Player has lower.
+# NEW: Checkboxes for Side Outcomes
+st.markdown("<b>ผลเสริม (เลือกก่อนกดปุ่มผลหลัก):</b>", unsafe_allow_html=True)
+col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3)
+with col_checkbox1:
+    st.checkbox("🔵 PP", key="is_player_pair_checked")
+with col_checkbox2:
+    st.checkbox("🔴 BP", key="is_banker_pair_checked")
+with col_checkbox3:
+    st.checkbox("🟡 6", key="is_banker_6_checked")
+
 
 # --- Control Buttons ---
 st.markdown("<hr>", unsafe_allow_html=True)
