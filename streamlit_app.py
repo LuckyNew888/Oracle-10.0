@@ -4,7 +4,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome # Import RoundResult and MainOutcome
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V5.6", layout="centered") # Updated version
+st.set_page_config(page_title="🔮 Oracle V5.7", layout="centered") # Updated version
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -286,7 +286,7 @@ if 'is_banker_6_checked' not in st.session_state:
 
 
 # --- UI Callback Functions ---
-def handle_click(main_outcome_str: MainOutcome): # Removed side bet args from here
+def handle_click(main_outcome_str: MainOutcome): 
     """
     Handles button clicks for P, B, T outcomes.
     Reads checkbox states for side bets.
@@ -322,8 +322,8 @@ def handle_click(main_outcome_str: MainOutcome): # Removed side bet args from he
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "B", # Fixed typo
-        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", # Fixed typo
+        "PPPP": "มังกร", "BBBB": "B", 
+        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", 
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
     }
@@ -332,8 +332,8 @@ def handle_click(main_outcome_str: MainOutcome): # Removed side bet args from he
     # Check if enough P/B history for initial message
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) >= 20:
-        st.session_state.initial_shown = True # Ensure message disappears once 20 P/B are met
+    if (p_count + b_count) >= 20: 
+        st.session_state.initial_shown = True 
 
     st.query_params["_t"] = f"{time.time()}"
 
@@ -360,8 +360,8 @@ def handle_remove():
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "B", # Fixed typo
-        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", # Fixed typo
+        "PPPP": "มังกร", "BBBB": "B", 
+        "PPBPP": "ปิงปองยาว", "BBPBB": "BBPBB", 
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ"
     }
@@ -370,7 +370,7 @@ def handle_remove():
     # Re-check if initial message should be shown after removing
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) < 20:
+    if (p_count + b_count) < 20: 
         st.session_state.initial_shown = False
     
     # Reset checkboxes on remove, as the last round's state is gone
@@ -406,11 +406,11 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V5.6</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V5.7</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("<b>📍 คำทำนายหลัก:</b>", unsafe_allow_html=True) # Changed label
+st.markdown("<b>📍 คำทำนายหลัก:</b>", unsafe_allow_html=True) 
 
 if st.session_state.prediction:
     emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
@@ -426,8 +426,8 @@ else:
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
 
-    if (p_count + b_count) < 20 and not st.session_state.initial_shown:
-        st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย")
+    if (p_count + b_count) < 20 and not st.session_state.initial_shown: 
+        st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย") 
     else:
         miss = st.session_state.oracle.calculate_miss_streak()
         if miss >= 6:
@@ -556,7 +556,7 @@ else:
 
 # --- Input Buttons (Main Outcomes) ---
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) # Simplified label
+st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
 
 col1, col2, col3 = st.columns(3)
 with col1:
