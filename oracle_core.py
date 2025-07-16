@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V5.4 - Side Bet Accuracy Tracking)
+# oracle_core.py (Oracle V5.7 - Enhanced Prediction Logic)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ class RoundResult:
 def _get_main_outcome_history(history: List[RoundResult]) -> List[MainOutcome]:
     return [r.main_outcome for r in history if r.main_outcome in ("P", "B")]
 
-# Helper function to get specific side bet history
+# Helper function to get specific side bet history flags (True/False for occurrence)
 def _get_side_bet_history_flags(history: List[RoundResult], bet_type: str) -> List[bool]:
     if bet_type == "T":
         return [r.main_outcome == "T" for r in history]
@@ -32,6 +32,10 @@ def _get_side_bet_history_flags(history: List[RoundResult], bet_type: str) -> Li
     elif bet_type == "B6":
         return [r.is_banker_6 for r in history]
     return []
+
+# Helper function to get combined pair flags
+def _get_combined_pair_history_flags(history: List[RoundResult]) -> List[bool]:
+    return [r.is_player_pair or r.is_banker_pair for r in history]
 
 
 class RuleEngine:
@@ -136,9 +140,9 @@ class SniperPattern:
         
         for length in range(6, 3, -1):
             if len(joined) >= length:
-                pattern_to_check = joined[-length:]
-                if pattern_to_check in self.known_patterns:
-                    return self.known_patterns[pattern_to_check]
+                current_pattern = joined[-length:]
+                if current_pattern in self.known_patterns:
+                    return self.known_patterns[current_pattern]
         return None
 
 class FallbackModule:
@@ -148,65 +152,97 @@ class FallbackModule:
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         return random.choice(["P", "B"])
 
-# --- NEW PREDICTION MODULES FOR SIDE BETS ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS ---
 
 class TiePredictor:
     """
-    Predicts Tie outcomes. Simple logic for now, can be expanded.
+    Predicts Tie outcomes with enhanced logic.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["T"]]:
         tie_flags = _get_side_bet_history_flags(history, "T")
-        if len(tie_flags) < 5: # Need some history
+        main_history_pb = _get_main_outcome_history(history) # Only P/B for main patterns
+
+        if len(tie_flags) < 10: # Need more history for better tie prediction
             return None
         
-        # Simple rule: if there hasn't been a tie in the last 5 rounds, predict T
-        if not any(tie_flags[-5:]):
+        # Rule 1: Tie after a long streak of P/B (e.g., 7+ non-tie outcomes)
+        if len(main_history_pb) >= 7 and not any(tie_flags[-7:]):
             return "T"
         
-        # If there were many ties recently, predict T (e.g., more than 2 in last 5)
-        if tie_flags[-5:].count(True) >= 2:
-            return "T"
+        # Rule 2: If tie occurred recently and then a few non-ties, it might repeat
+        if len(tie_flags) >= 3 and tie_flags[-3] and not tie_flags[-1] and not tie_flags[-2]:
+            return "T" # T _ _ T
             
+        # Rule 3: Tie after a specific pattern in main outcomes (e.g., P B P B, then T)
+        if len(main_history_pb) >= 4:
+            recent_main = "".join(main_history_pb[-4:])
+            if recent_main in ["PBPB", "BPBP"]: # Ping pong pattern often breaks with T
+                return "T"
+        
+        # Rule 4: If ties are very frequent in recent history (e.g., 3+ in last 10)
+        if tie_flags[-10:].count(True) >= 3:
+            return "T"
+
         return None
 
 class PairPredictor:
     """
-    Predicts Player Pair or Banker Pair. Simple logic for now.
+    Predicts Player Pair or Banker Pair with enhanced logic.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["PP", "BP"]]:
         player_pair_flags = _get_side_bet_history_flags(history, "PP")
         banker_pair_flags = _get_side_bet_history_flags(history, "BP")
+        combined_pair_flags = _get_combined_pair_history_flags(history)
 
-        if len(player_pair_flags) < 5: # Need some history
+        if len(combined_pair_flags) < 10: # Need more history for pair prediction
             return None
         
-        # If no pairs in last 5, predict a pair
-        if not any(player_pair_flags[-5:]) and not any(banker_pair_flags[-5:]):
-            return random.choice(["PP", "BP"]) # Predict either pair
+        # Rule 1: Pair just occurred, slight chance of another pair (momentum)
+        if combined_pair_flags[-1]:
+            return random.choice(["PP", "BP"]) # Still random choice for which pair, but predicts a pair
         
-        # If there were many pairs recently, predict a pair (e.g., more than 2 in last 5)
-        if player_pair_flags[-5:].count(True) + banker_pair_flags[-5:].count(True) >= 2:
+        # Rule 2: If no pairs for a long time (e.g., 10+ rounds), predict a pair might be due
+        if not any(combined_pair_flags[-10:]):
             return random.choice(["PP", "BP"])
             
+        # Rule 3: If pairs are frequent in recent history (e.g., 3+ in last 10)
+        if combined_pair_flags[-10:].count(True) >= 3:
+            # Try to predict the more frequent pair recently
+            if player_pair_flags[-5:].count(True) > banker_pair_flags[-5:].count(True):
+                return "PP"
+            elif banker_pair_flags[-5:].count(True) > player_pair_flags[-5:].count(True):
+                return "BP"
+            else: # If counts are equal, random
+                return random.choice(["PP", "BP"])
+                
         return None
 
 class Banker6Predictor:
     """
-    Predicts Banker 6 (Super 6) outcomes.
+    Predicts Banker 6 (Super 6) outcomes with enhanced, but still conservative, logic.
+    B6 is rare, so predictions should be very cautious.
     """
     def predict(self, history: List[RoundResult]) -> Optional[Literal["B6"]]:
         b6_flags = _get_side_bet_history_flags(history, "B6")
-        main_history = _get_main_outcome_history(history)
+        main_history_outcomes = [r.main_outcome for r in history] # Full main outcomes (P, B, T)
 
-        if len(b6_flags) < 10: # Need more history for B6 as it's less frequent
+        if len(b6_flags) < 20: # Need substantial history for B6
             return None
         
-        # Simple rule: if Banker has won with 6 points recently, predict B6 again
-        if b6_flags[-5:].count(True) >= 1: # If B6 happened in last 5 rounds
+        # Rule 1: B6 just occurred (very strong immediate signal)
+        if b6_flags[-1]:
             return "B6"
         
-        # If Banker has won many times recently (but not necessarily B6), maybe B6 is due
-        if main_history.count("B") >= 7 and not any(b6_flags[-10:]): # If Banker dominant and no recent B6
+        # Rule 2: If Banker has won with 6 points recently (e.g., in last 5 rounds)
+        # and there's a strong Banker trend (e.g., 3+ Banker wins in last 5)
+        if b6_flags[-5:].count(True) >= 1:
+            recent_main_pb = [o for o in main_history_outcomes[-5:] if o == "B"]
+            if recent_main_pb.count("B") >= 3:
+                return "B6"
+        
+        # Rule 3: If Banker has been dominant for a long time (e.g., 7+ B's in last 10)
+        # and no B6 has occurred in that period, it might be due. (Cautious)
+        if main_history_outcomes[-10:].count("B") >= 7 and not any(b6_flags[-10:]):
             return "B6"
             
         return None
@@ -276,20 +312,19 @@ class ConfidenceScorer:
 
 class OracleBrain:
     def __init__(self):
-        self.history: List[RoundResult] = [] # Changed to List[RoundResult]
-        self.prediction_log: List[Optional[MainOutcome]] = [] # Log of system's main predictions
-        self.result_log: List[MainOutcome] = [] # Log of actual main outcomes
-        self.last_prediction: Optional[MainOutcome] = None # System's last main prediction
-        self.last_module: Optional[str] = None # Module that made the last main prediction
+        self.history: List[RoundResult] = [] 
+        self.prediction_log: List[Optional[MainOutcome]] = [] 
+        self.result_log: List[MainOutcome] = [] 
+        self.last_prediction: Optional[MainOutcome] = None 
+        self.last_module: Optional[str] = None 
 
         self.modules_accuracy_log: Dict[str, List[bool]] = {} 
         self.individual_module_prediction_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": []
         }
-        # NEW: Individual module prediction logs for side bets
-        self.tie_module_prediction_log: List[Tuple[Optional[Literal["T"]], bool]] = [] # (predicted_T, actual_is_T)
-        self.pair_module_prediction_log: List[Tuple[Optional[Literal["PP", "BP"]], bool]] = [] # (predicted_pair, actual_is_pair)
-        self.banker6_module_prediction_log: List[Tuple[Optional[Literal["B6"]], bool]] = [] # (predicted_B6, actual_is_B6)
+        self.tie_module_prediction_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
+        self.pair_module_prediction_log: List[Tuple[Optional[Literal["PP", "BP"]], bool]] = [] 
+        self.banker6_module_prediction_log: List[Tuple[Optional[Literal["B6"]], bool]] = [] 
 
 
         # Initialize all prediction modules (P/B)
@@ -300,7 +335,7 @@ class OracleBrain:
         self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
 
-        # NEW: Initialize side bet prediction modules
+        # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
         self.pair_predictor = PairPredictor()
         self.banker6_predictor = Banker6Predictor()
@@ -329,20 +364,20 @@ class OracleBrain:
             if pred in ("P", "B") and main_outcome in ("P", "B"):
                 self.individual_module_prediction_log[module_name].append((pred, main_outcome))
 
-        # --- NEW: Record individual side bet module predictions *before* adding the new outcome ---
+        # --- Record individual side bet module predictions *before* adding the new outcome ---
         tie_pred_for_log = self.tie_predictor.predict(self.history)
         pair_pred_for_log = self.pair_predictor.predict(self.history)
         b6_pred_for_log = self.banker6_predictor.predict(self.history)
 
         self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
-        self.pair_module_prediction_log.append((pair_pred_for_log, is_player_pair or is_banker_pair)) # Pair is true if PP or BP
+        self.pair_module_prediction_log.append((pair_pred_for_log, is_player_pair or is_banker_pair)) 
         self.banker6_module_prediction_log.append((b6_pred_for_log, is_banker_6))
 
 
         # Now, add the actual outcome to main history and logs
-        self.history.append(new_round_result) # Append RoundResult object
-        self.result_log.append(main_outcome) # Still log only main outcome for miss streak
-        self.prediction_log.append(self.last_prediction) # Log the prediction made *before* this outcome
+        self.history.append(new_round_result) 
+        self.result_log.append(main_outcome) 
+        self.prediction_log.append(self.last_prediction) 
 
         # Update overall module accuracy log based on the system's final main prediction
         if self.last_prediction in ("P", "B") and main_outcome in ("P", "B"):
@@ -368,10 +403,9 @@ class OracleBrain:
             if self.individual_module_prediction_log[module_name]:
                 self.individual_module_prediction_log[module_name].pop()
         
-        # NEW: Remove from side bet prediction logs
-        if self.tie_module_prediction_log: self.tie_module_prediction_log.pop()
-        if self.pair_module_prediction_log: self.pair_module_prediction_log.pop()
-        if self.banker6_module_prediction_log: self.banker6_module_prediction_log.pop()
+        self.tie_module_prediction_log.pop() if self.tie_module_prediction_log else None
+        self.pair_module_prediction_log.pop() if self.pair_module_prediction_log else None
+        self.banker6_module_prediction_log.pop() if self.banker6_module_prediction_log else None
 
 
     def reset(self):
@@ -382,7 +416,6 @@ class OracleBrain:
         for module_name in self.individual_module_prediction_log:
             self.individual_module_prediction_log[module_name].clear()
         
-        # NEW: Clear side bet prediction logs
         self.tie_module_prediction_log.clear()
         self.pair_module_prediction_log.clear()
         self.banker6_module_prediction_log.clear()
@@ -401,7 +434,6 @@ class OracleBrain:
         for module_name in self.individual_module_prediction_log:
             self.individual_module_prediction_log[module_name] = self.individual_module_prediction_log[module_name][-max_length:]
         
-        # NEW: Trim side bet prediction logs
         self.tie_module_prediction_log = self.tie_module_prediction_log[-max_length:]
         self.pair_module_prediction_log = self.pair_module_prediction_log[-max_length:]
         self.banker6_module_prediction_log = self.banker6_module_prediction_log[-max_length:]
@@ -420,11 +452,6 @@ class OracleBrain:
         return streak
 
     def _calculate_module_accuracy_for_period(self, module_name: str, lookback: Optional[int] = None) -> float:
-        """
-        Calculates accuracy for a specific main P/B module over a given lookback period
-        using the overall system's prediction log (for general module accuracy display).
-        If lookback is None, calculates all-time accuracy.
-        """
         results = self.modules_accuracy_log.get(module_name, [])
         
         if lookback is not None:
@@ -437,15 +464,11 @@ class OracleBrain:
         return 0.0
 
     def _calculate_individual_module_recent_accuracy(self, module_name: str, predictions_count: int) -> float:
-        """
-        Calculates the accuracy of a specific main P/B module based on its own recent predictions.
-        This uses the individual_module_prediction_log.
-        """
         log = self.individual_module_prediction_log.get(module_name, [])
         
         recent_relevant_preds = []
         for pred, actual in reversed(log):
-            if pred in ("P", "B") and actual in ("P", "B"): # Only count P/B predictions
+            if pred in ("P", "B") and actual in ("P", "B"): 
                 recent_relevant_preds.append((pred, actual))
             if len(recent_relevant_preds) >= predictions_count:
                 break
@@ -460,12 +483,7 @@ class OracleBrain:
         
         return (wins / len(recent_relevant_preds)) * 100
 
-    # NEW: Function to calculate accuracy for side bet modules
     def _calculate_side_bet_module_accuracy(self, log: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
-        """
-        Calculates accuracy for a side bet module based on its specific prediction log.
-        log: List of (predicted_value, actual_boolean_flag)
-        """
         relevant_log = log
         if lookback is not None:
             relevant_log = log[-lookback:]
@@ -474,32 +492,11 @@ class OracleBrain:
         total_predictions = 0
         
         for predicted_val, actual_flag in relevant_log:
-            # Only count if the module actually made a prediction (not None)
-            # and the prediction is for the expected side bet type (e.g., "T" for TiePredictor)
+            # Only count if the module actually made a prediction (predicted_val is not None)
             if predicted_val is not None:
                 total_predictions += 1
-                # If predicted value matches the actual flag (True/False)
-                # For Tie, Pair, B6, a prediction of "T"/"PP"/"B6" means it predicted True.
-                # So we check if predicted_val is not None AND actual_flag is True.
-                # If predicted_val is None, it means no prediction was made.
-                # If predicted_val is not None, it means a prediction was made.
-                # We count a win if a prediction was made AND it was correct.
-                # For side bets, "correct" means the predicted_val was made AND the actual_flag was True.
-                # Or, if predicted_val was NOT made (e.g., None) AND actual_flag was False.
-                # This logic needs to be precise:
-                # A win occurs if:
-                #   1. Module predicted "T" (or "PP"/"BP"/"B6") AND actual was True
-                #   2. Module predicted None (no prediction) AND actual was False (it correctly *didn't* predict)
-                # This is more complex than P/B. Let's simplify for now:
-                # We only score when the module *actually made a prediction* (predicted_val is not None)
-                # And then check if that prediction was correct (e.g., predicted "T" and actual was True)
-                
-                # Simplified: only count accuracy when the module predicted the specific event
-                if (predicted_val is not None) and actual_flag: # If it predicted something AND the event happened
+                if actual_flag: 
                     wins += 1
-                # If it predicted something AND the event DID NOT happen, it's a miss.
-                # If it predicted None, it's not counted as a prediction attempt.
-                # This means total_predictions only counts when a prediction was made.
         
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
@@ -513,7 +510,6 @@ class OracleBrain:
         if "NoPrediction" in self.modules_accuracy_log:
             accuracy_results["NoPrediction"] = self._calculate_module_accuracy_for_period("NoPrediction", lookback=None)
 
-        # NEW: Add side bet module accuracies
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback=None)
         accuracy_results["Pair"] = self._calculate_side_bet_module_accuracy(self.pair_module_prediction_log, lookback=None)
         accuracy_results["Banker6"] = self._calculate_side_bet_module_accuracy(self.banker6_module_prediction_log, lookback=None)
@@ -529,7 +525,6 @@ class OracleBrain:
         if "NoPrediction" in self.modules_accuracy_log:
             accuracy_results["NoPrediction"] = self._calculate_module_accuracy_for_period("NoPrediction", lookback)
         
-        # NEW: Add side bet module accuracies for recent period
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback)
         accuracy_results["Pair"] = self._calculate_side_bet_module_accuracy(self.pair_module_prediction_log, lookback)
         accuracy_results["Banker6"] = self._calculate_side_bet_module_accuracy(self.banker6_module_prediction_log, lookback)
@@ -539,10 +534,9 @@ class OracleBrain:
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
         if not acc:
-            all_known_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "Tie", "Pair", "Banker6"] # Include side bet modules
+            all_known_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "Tie", "Pair", "Banker6"] 
             return {name: 0.5 for name in all_known_modules}
         
-        # Exclude side bet modules and "NoPrediction"/"Fallback" from max_val calculation for main P/B weighting
         active_accuracies = {k: v for k, v in acc.items() if v > 0 and k not in ["NoPrediction", "Fallback", "Tie", "Pair", "Banker6"]} 
         
         if not active_accuracies:
@@ -555,14 +549,13 @@ class OracleBrain:
             
         normalized_acc = {}
         for k, v in acc.items():
-            if k in ["NoPrediction", "Fallback", "Tie", "Pair", "Banker6"]: # Side bets and special modules get neutral weight for MAIN prediction
+            if k in ["NoPrediction", "Fallback", "Tie", "Pair", "Banker6"]: 
                 normalized_acc[k] = 0.5
             else:
                 normalized_acc[k] = (v / max_val)
         return normalized_acc
 
     def get_best_recent_module(self, lookback: int = 10) -> Optional[str]:
-        # This function is primarily for main P/B recovery, so it only considers main modules
         modules_to_check = {
             "Rule": self.rule_engine,
             "Pattern": self.pattern_analyzer,
@@ -584,7 +577,6 @@ class OracleBrain:
                 
                 module_pred = module.predict(current_sub_history)
                 
-                # Compare with main outcome from RoundResult
                 if module_pred in ("P", "B") and self.history[j].main_outcome in ("P", "B"): 
                     total_preds += 1
                     if module_pred == self.history[j].main_outcome:
@@ -611,15 +603,13 @@ class OracleBrain:
         Generates the next predictions for main outcome and side bets,
         along with main outcome's source, confidence, miss streak, and Sniper opportunity flag.
         """
-        # --- Main Outcome Prediction Logic ---
-        # Get P/B count from the main outcomes within RoundResult history
         main_history_filtered_for_pb = _get_main_outcome_history(self.history)
         p_count = main_history_filtered_for_pb.count("P")
         b_count = main_history_filtered_for_pb.count("B")
         
         current_miss_streak = self.calculate_miss_streak()
 
-        MIN_HISTORY_FOR_PREDICTION = 20
+        MIN_HISTORY_FOR_PREDICTION = 20 # Keep at 20 as per user's request
         MIN_HISTORY_FOR_SNIPER = 30 
 
         final_prediction_main = None
@@ -631,7 +621,6 @@ class OracleBrain:
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
             self.last_module = None
-            # Return None for all predictions if not enough history or too many misses
             return None, None, None, None, current_miss_streak, False, None, None, None 
 
         predictions_from_modules = {
@@ -643,7 +632,7 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history) 
         }
         
-        module_accuracies_for_weights = self.get_module_accuracy_normalized() # Use normalized all-time accuracy for weights
+        module_accuracies_for_weights = self.get_module_accuracy_normalized() 
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_for_weights, self.history)
@@ -689,6 +678,7 @@ class OracleBrain:
         self.last_module = source_module_name_main 
 
         # --- Side Bet Predictions ---
+        # These predictions are now based on enhanced logic
         tie_prediction = self.tie_predictor.predict(self.history)
         pair_prediction = self.pair_predictor.predict(self.history)
         banker6_prediction = self.banker6_predictor.predict(self.history)
