@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.2 - Minimum Confidence Threshold)
+# oracle_core.py (Oracle V6.4 - Accuracy Calculation Fix)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -197,6 +197,39 @@ class FallbackModule:
         # This module should always return a prediction unless history is empty, which is handled
         # by MIN_HISTORY_FOR_PREDICTION in OracleBrain.predict_next
         return random.choice(["P", "B"])
+
+# --- NEW MODULE FOR V6.3: ChopDetector ---
+class ChopDetector:
+    """
+    V6.3: Specifically designed to detect "chop" patterns (long streak broken by opposite).
+    When a chop is detected, it predicts the outcome that broke the streak.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        
+        # Look for a streak of at least 4-5, followed by a single opposite outcome
+        # Example: BBBBB P (predict P), PPPPP B (predict B)
+        if len(filtered_history) >= 6: # Need at least 5 for streak + 1 for chop
+            last_6 = filtered_history[-6:]
+            # Check for 5 of one, then 1 of other
+            if last_6[0] == last_6[1] == last_6[2] == last_6[3] == last_6[4] and last_6[4] != last_6[5]:
+                return last_6[5] # Predict the outcome that broke the streak
+        
+        if len(filtered_history) >= 5: # Look for 4 of one, then 1 of other
+            last_5 = filtered_history[-5:]
+            if last_5[0] == last_5[1] == last_5[2] == last_5[3] and last_5[3] != last_5[4]:
+                return last_5[4] # Predict the outcome that broke the streak
+
+        # V6.3: Also detect shorter, immediate chops after a pair
+        # Example: PP B (predict P), BB P (predict B) - this might be handled by RuleEngine, but reinforce
+        if len(filtered_history) >= 3:
+            if filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
+                # If the last two were the same, and then it chopped, predict the original streak to continue
+                # This is a common "chop" scenario where the streak tries to re-establish
+                return filtered_history[-2] # Predict P for PPB, B for BBP
+
+        return None
+
 
 # --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1) ---
 
@@ -412,8 +445,14 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
             recent_weight = (recent_acc_val if recent_acc_val > 0.0 else 50.0) / 100.0
             
             # V6.1: Adjusted blend ratio - more emphasis on recent performance (80% recent, 20% all-time)
-            # This makes the system more adaptive to current trends.
+            # V6.3: Slightly adjust blend ratio again for ChopDetector influence, or keep it.
+            # Keeping 80/20 for now. The ChopDetector's impact will come from its prediction being added.
             weight = (recent_weight * 0.8) + (all_time_weight * 0.2)
+            
+            # V6.3: Give ChopDetector a slightly higher base weight if it makes a prediction
+            # This ensures it has a stronger voice during chop situations.
+            if name == "ChopDetector" and predictions.get(name) is not None:
+                weight += 0.1 # Add a small bonus weight (can be tuned)
             
             total_score[pred] += weight
 
@@ -455,9 +494,14 @@ class AdaptiveScorer: # Renamed from ConfidenceScorer
             "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", # New simple patterns
             "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
             "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวตัด",
+            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", # Corrected "BPBB" pattern name
             "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
         }
+
+        # V6.3: Add Chop pattern name
+        if len(filtered_history) >= 5:
+            if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
+                return "มังกรตัด" # e.g., PPPPB or BBBBP
 
         for length in range(6, 2, -1): # Check patterns from length 6 down to 3
             if len(joined_filtered) >= length:
@@ -475,9 +519,12 @@ class OracleBrain:
         self.last_prediction: Optional[MainOutcome] = None 
         self.last_module: Optional[str] = None 
 
-        self.modules_accuracy_log: Dict[str, List[bool]] = {} 
+        # V6.4: Removed modules_accuracy_log as it was for overall system prediction, not individual module accuracy.
+        # Individual module accuracy will now be calculated directly from their prediction logs.
+        # self.modules_accuracy_log: Dict[str, List[bool]] = {} 
+
         self.individual_module_prediction_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": []
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
         }
         self.tie_module_prediction_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
         self.pair_module_prediction_log: List[Tuple[Optional[Literal["PP", "BP"]], bool]] = [] 
@@ -491,13 +538,14 @@ class OracleBrain:
         self.two_two_pattern = TwoTwoPattern()
         self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
+        self.chop_detector = ChopDetector() 
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
         self.pair_predictor = PairPredictor()
         self.banker6_predictor = Banker6Predictor()
 
-        self.scorer = AdaptiveScorer() # Changed to AdaptiveScorer
+        self.scorer = AdaptiveScorer() 
         self.show_initial_wait_message = True 
 
     def add_result(self, main_outcome: MainOutcome, is_player_pair: bool = False, is_banker_pair: bool = False, is_banker_6: bool = False):
@@ -514,7 +562,8 @@ class OracleBrain:
             "Trend": self.trend_scanner.predict(self.history),
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
-            "Fallback": self.fallback_module.predict(self.history) 
+            "Fallback": self.fallback_module.predict(self.history),
+            "ChopDetector": self.chop_detector.predict(self.history) 
         }
         
         for module_name, pred in current_predictions_from_modules_main.items():
@@ -536,14 +585,16 @@ class OracleBrain:
         self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
 
-        # Update overall module accuracy log based on the system's final main prediction
-        if self.last_prediction in ("P", "B") and main_outcome in ("P", "B"):
-            correct = (self.last_prediction == main_outcome)
-            module_name_to_log = self.last_module if self.last_module else "NoPrediction" 
-            
-            if module_name_to_log not in self.modules_accuracy_log:
-                self.modules_accuracy_log[module_name_to_log] = []
-            self.modules_accuracy_log[module_name_to_log].append(correct)
+        # V6.4: No longer logging overall system accuracy to modules_accuracy_log for individual module display.
+        # The overall system accuracy (self.last_prediction vs actual) can still be calculated
+        # for miss streak, but individual module accuracy comes from their specific logs.
+        # if self.last_prediction in ("P", "B") and main_outcome in ("P", "B"):
+        #     correct = (self.last_prediction == main_outcome)
+        #     module_name_to_log = self.last_module if self.last_module else "NoPrediction" 
+        #     
+        #     if module_name_to_log not in self.modules_accuracy_log:
+        #         self.modules_accuracy_log[module_name_to_log] = []
+        #     self.modules_accuracy_log[module_name_to_log].append(correct)
         
         self._trim_logs() 
 
@@ -552,9 +603,10 @@ class OracleBrain:
         if self.result_log: self.result_log.pop()
         if self.prediction_log: self.prediction_log.pop()
         
-        if self.last_module and self.last_module in self.modules_accuracy_log:
-            if self.modules_accuracy_log[self.last_module]:
-                self.modules_accuracy_log[self.last_module].pop()
+        # V6.4: Removed this part as modules_accuracy_log is no longer used for individual module accuracy display.
+        # if self.last_module and self.last_module in self.modules_accuracy_log:
+        #     if self.modules_accuracy_log[self.last_module]:
+        #         self.modules_accuracy_log[self.last_module].pop()
 
         for module_name in self.individual_module_prediction_log:
             if self.individual_module_prediction_log[module_name]:
@@ -569,7 +621,8 @@ class OracleBrain:
         self.history.clear()
         self.prediction_log.clear()
         self.result_log.clear()
-        self.modules_accuracy_log.clear() 
+        # V6.4: Removed this line
+        # self.modules_accuracy_log.clear() 
         for module_name in self.individual_module_prediction_log:
             self.individual_module_prediction_log[module_name].clear()
         
@@ -585,8 +638,9 @@ class OracleBrain:
         self.history = self.history[-max_length:]
         self.result_log = self.result_log[-max_length:]
         self.prediction_log = self.prediction_log[-max_length:]
-        for module_name in self.modules_accuracy_log:
-            self.modules_accuracy_log[module_name] = self.modules_accuracy_log[module_name][-max_length:]
+        # V6.4: Removed this part
+        # for module_name in self.modules_accuracy_log:
+        #     self.modules_accuracy_log[module_name] = self.modules_accuracy_log[module_name][-max_length:]
         
         for module_name in self.individual_module_prediction_log:
             self.individual_module_prediction_log[module_name] = self.individual_module_prediction_log[module_name][-max_length:]
@@ -599,7 +653,8 @@ class OracleBrain:
     def calculate_miss_streak(self) -> int:
         streak = 0
         for pred, actual in zip(reversed(self.prediction_log), reversed(self.result_log)):
-            if actual not in ("P", "B") or pred not in ("P", "B"):
+            # V6.4: Ensure both pred and actual are P/B for miss streak calculation
+            if pred is None or actual not in ("P", "B") or pred not in ("P", "B"):
                 continue 
             
             if pred != actual:
@@ -608,37 +663,37 @@ class OracleBrain:
                 break 
         return streak
 
-    def _calculate_module_accuracy_for_period(self, module_name: str, lookback: Optional[int] = None) -> float:
-        results = self.modules_accuracy_log.get(module_name, [])
+    # V6.4: This function is no longer needed as individual module accuracy is calculated differently.
+    # def _calculate_module_accuracy_for_period(self, module_name: str, lookback: Optional[int] = None) -> float:
+    #     results = self.modules_accuracy_log.get(module_name, [])
         
-        if lookback is not None:
-            results = results[-lookback:] 
+    #     if lookback is not None:
+    #         results = results[-lookback:] 
 
-        if results:
-            wins = sum(results) 
-            total = len(results)
-            return (wins / total) * 100
-        return 0.0
+    #     if results:
+    #         wins = sum(results) 
+    #         total = len(results)
+    #         return (wins / total) * 100
+    #     return 0.0
 
-    def _calculate_individual_module_recent_accuracy(self, module_name: str, predictions_count: int) -> float:
+    # V6.4: Renamed and modified to calculate accuracy for main P/B modules
+    def _calculate_main_module_accuracy(self, module_name: str, lookback: Optional[int] = None) -> float:
         log = self.individual_module_prediction_log.get(module_name, [])
         
-        recent_relevant_preds = []
-        for pred, actual in reversed(log):
-            if pred in ("P", "B") and actual in ("P", "B"): 
-                recent_relevant_preds.append((pred, actual))
-            if len(recent_relevant_preds) >= predictions_count:
-                break
-        
-        if not recent_relevant_preds:
-            return 0.0 
+        relevant_preds = log
+        if lookback is not None:
+            relevant_preds = log[-lookback:]
         
         wins = 0
-        for pred, actual in recent_relevant_preds:
-            if pred == actual:
-                wins += 1
+        total_predictions = 0
         
-        return (wins / len(recent_relevant_preds)) * 100
+        for predicted_val, actual_val in relevant_preds:
+            if predicted_val in ("P", "B") and actual_val in ("P", "B"):
+                total_predictions += 1
+                if predicted_val == actual_val:
+                    wins += 1
+        
+        return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
     def _calculate_side_bet_module_accuracy(self, log: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
         relevant_log = log
@@ -652,7 +707,7 @@ class OracleBrain:
             # Only count if the module actually made a prediction (predicted_val is not None)
             if predicted_val is not None:
                 total_predictions += 1
-                if actual_flag: 
+                if actual_flag: # If the actual outcome matched the predicted side bet occurrence
                     wins += 1
         
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
@@ -660,12 +715,13 @@ class OracleBrain:
 
     def get_module_accuracy_all_time(self) -> Dict[str, float]:
         accuracy_results = {}
-        all_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback"]
-        for module_name in all_modules:
-            accuracy_results[module_name] = self._calculate_module_accuracy_for_period(module_name, lookback=None)
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
+        for module_name in main_modules:
+            accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback=None)
         
-        if "NoPrediction" in self.modules_accuracy_log:
-            accuracy_results["NoPrediction"] = self._calculate_module_accuracy_for_period("NoPrediction", lookback=None)
+        # V6.4: "NoPrediction" is not a module, it's a state for overall system. Removed from individual module accuracy.
+        # if "NoPrediction" in self.modules_accuracy_log:
+        #     accuracy_results["NoPrediction"] = self._calculate_module_accuracy_for_period("NoPrediction", lookback=None)
 
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback=None)
         accuracy_results["Pair"] = self._calculate_side_bet_module_accuracy(self.pair_module_prediction_log, lookback=None)
@@ -675,12 +731,13 @@ class OracleBrain:
 
     def get_module_accuracy_recent(self, lookback: int) -> Dict[str, float]:
         accuracy_results = {}
-        all_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback"]
-        for module_name in all_modules:
-            accuracy_results[module_name] = self._calculate_module_accuracy_for_period(module_name, lookback)
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
+        for module_name in main_modules:
+            accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback)
         
-        if "NoPrediction" in self.modules_accuracy_log:
-            accuracy_results["NoPrediction"] = self._calculate_module_accuracy_for_period("NoPrediction", lookback)
+        # V6.4: "NoPrediction" is not a module. Removed.
+        # if "NoPrediction" in self.modules_accuracy_log:
+        #     accuracy_results["NoPrediction"] = self._calculate_module_accuracy_for_period("NoPrediction", lookback)
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback)
         accuracy_results["Pair"] = self._calculate_side_bet_module_accuracy(self.pair_module_prediction_log, lookback)
@@ -690,27 +747,32 @@ class OracleBrain:
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
+        # V6.4: Ensure all modules are considered for normalization, even if they haven't made predictions yet
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "Tie", "Pair", "Banker6"]
+        
+        # Initialize with 0.5 if no accuracy data yet
         if not acc:
-            all_known_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "Tie", "Pair", "Banker6"] 
-            return {name: 0.5 for name in all_known_modules}
+            return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_accuracies = {k: v for k, v in acc.items() if v > 0 and k not in ["NoPrediction", "Fallback", "Tie", "Pair", "Banker6"]} 
+        # Filter out side bets from the max_val calculation for main P/B modules
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector"] and v > 0} 
         
-        if not active_accuracies:
-            all_known_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "Tie", "Pair", "Banker6"]
-            return {name: 0.5 for name in all_known_modules}
+        if not active_main_accuracies:
+            # If no main modules have made predictions yet, return 0.5 for all
+            return {name: 0.5 for name in all_known_modules_for_norm}
             
-        max_val = max(active_accuracies.values()) 
+        max_val = max(active_main_accuracies.values()) 
         if max_val == 0: 
-            max_val = 1 
+            max_val = 1 # Avoid division by zero
             
         normalized_acc = {}
         for k, v in acc.items():
-            if k in ["NoPrediction", "Fallback", "Tie", "Pair", "Banker6"]: 
-                normalized_acc[k] = 0.5
-            else:
-                normalized_acc[k] = (v / max_val)
+            if k in ["Fallback", "Tie", "Pair", "Banker6"]: # Fallback and side bets use a fixed baseline if no data
+                normalized_acc[k] = (v / 100.0) if v > 0 else 0.5 # Normalize to 0-1 range
+            else: # Main P/B modules (Rule, Pattern, Trend, 2-2, Sniper, ChopDetector)
+                normalized_acc[k] = (v / max_val) if max_val > 0 else 0.5 # Normalize relative to max main module accuracy
         return normalized_acc
+
 
     def get_best_recent_module(self, lookback: int = 10) -> Optional[str]:
         modules_to_check = {
@@ -719,7 +781,8 @@ class OracleBrain:
             "Trend": self.trend_scanner,
             "2-2 Pattern": self.two_two_pattern,
             "Sniper": self.sniper_pattern,
-            "Fallback": self.fallback_module
+            "Fallback": self.fallback_module,
+            "ChopDetector": self.chop_detector 
         }
         
         module_scores: Dict[str, float] = {}
@@ -727,16 +790,28 @@ class OracleBrain:
         for name, module in modules_to_check.items():
             wins = 0
             total_preds = 0
-            start_index = max(4, len(self.history) - lookback) 
+            # V6.4: Ensure correct history length for module prediction
+            # The history passed to module.predict should be up to the current point, excluding the current round's result.
+            # This logic is already handled by `add_result` calling `predict` *before* adding the new result.
+            # For `get_best_recent_module`, we need to simulate predictions for past rounds.
+            
+            # This loop simulates predictions for the last 'lookback' rounds
+            # It's crucial that `self.history[j]` is the *actual result* for the prediction made on `self.history[:j]`
+            
+            # Start from a point where there's enough history for a module to predict
+            min_history_for_module = 4 # Most modules need at least 3-4 rounds
+            start_index = max(min_history_for_module, len(self.history) - lookback) 
             
             for j in range(start_index, len(self.history)):
-                current_sub_history = self.history[:j]
+                # Get the history *up to the round before the current result being checked*
+                current_sub_history = self.history[:j] 
                 
                 module_pred = module.predict(current_sub_history)
+                actual_outcome_for_this_round = self.history[j].main_outcome # The actual outcome for the round the prediction was made for
                 
-                if module_pred in ("P", "B") and self.history[j].main_outcome in ("P", "B"): 
+                if module_pred in ("P", "B") and actual_outcome_for_this_round in ("P", "B"): 
                     total_preds += 1
-                    if module_pred == self.history[j].main_outcome:
+                    if module_pred == actual_outcome_for_this_round:
                         wins += 1
             
             if total_preds > 0:
@@ -747,7 +822,13 @@ class OracleBrain:
         if not module_scores:
             return None
         
-        return max(module_scores, key=module_scores.get)
+        # V6.4: Exclude Fallback from "best recent module" as it's a last resort
+        filtered_module_scores = {k: v for k, v in module_scores.items() if k != "Fallback"}
+        
+        if not filtered_module_scores:
+            return None
+
+        return max(filtered_module_scores, key=filtered_module_scores.get)
 
 
     def predict_next(self) -> Tuple[
@@ -792,7 +873,8 @@ class OracleBrain:
             "Trend": self.trend_scanner.predict(self.history),
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
-            "Fallback": self.fallback_module.predict(self.history) 
+            "Fallback": self.fallback_module.predict(self.history),
+            "ChopDetector": self.chop_detector.predict(self.history) 
         }
         
         module_accuracies_all_time = self.get_module_accuracy_all_time()
@@ -813,6 +895,9 @@ class OracleBrain:
             if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
                 final_prediction_main = predictions_from_modules[best_module_for_recovery]
                 source_module_name_main = f"{best_module_for_recovery}-Recovery"
+                # V6.4: If recovery mode, force confidence to a reasonable level, e.g., 70%
+                confidence_main = 70 
+
 
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
@@ -826,7 +911,8 @@ class OracleBrain:
                     all_contributing_modules_high_all_time_accuracy = False
                 else:
                     for module_name in contributing_modules:
-                        mod_acc = self._calculate_module_accuracy_for_period(module_name, lookback=None) 
+                        # V6.4: Use the correct individual module accuracy calculation
+                        mod_acc = self._calculate_main_module_accuracy(module_name, lookback=None) 
                         if mod_acc < SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD:
                             all_contributing_modules_high_all_time_accuracy = False
                             break
@@ -836,7 +922,7 @@ class OracleBrain:
                     SNIPER_RECENT_PREDICTION_COUNT = 5 
                     SNIPER_RECENT_ACCURACY_THRESHOLD = 90 
 
-                    sniper_recent_acc = self._calculate_individual_module_recent_accuracy("Sniper", SNIPER_RECENT_PREDICTION_COUNT)
+                    sniper_recent_acc = self._calculate_main_module_accuracy("Sniper", SNIPER_RECENT_PREDICTION_COUNT) # V6.4: Use correct accuracy function
                     
                     if sniper_recent_acc < SNIPER_RECENT_ACCURACY_THRESHOLD:
                         sniper_module_recent_accuracy_ok = False
