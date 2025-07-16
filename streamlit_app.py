@@ -1,10 +1,10 @@
 # streamlit_app.py
 import streamlit as st
 import time # Import time for unique timestamp
-from oracle_core import OracleBrain, Outcome
+from oracle_core import OracleBrain, RoundResult, MainOutcome # Import RoundResult and MainOutcome
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle v2.7.3", layout="centered")
+st.set_page_config(page_title="🔮 Oracle V5.4", layout="centered") # Updated version
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -103,6 +103,35 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
+/* NEW: Styling for Pair and B6 indicators in Big Road */
+.pair-indicator, .b6-indicator {
+    position: absolute;
+    font-size: 8px; /* Smaller font for indicators */
+    font-weight: bold;
+    color: white;
+    line-height: 1;
+    padding: 1px 2px;
+    border-radius: 3px;
+    z-index: 10;
+}
+.pair-indicator.P { /* Player Pair */
+    background-color: #007BFF; /* Blue */
+    top: -2px;
+    left: -2px;
+}
+.pair-indicator.B { /* Banker Pair */
+    background-color: #DC3545; /* Red */
+    top: -2px;
+    right: -2px;
+}
+.b6-indicator { /* Banker 6 */
+    background-color: #FFD700; /* Gold */
+    color: #333; /* Dark text */
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
 
 /* Button styling */
 .stButton>button {
@@ -123,6 +152,19 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_P button { background-color: #007BFF; color: white; border: none; }
 #btn_B button { background-color: #DC3545; color: white; border: none; }
 #btn_T button { background-color: #6C757D; color: white; border: none; }
+/* NEW: Side Bet Button Styling */
+#btn_PP_P button, #btn_BP_B button, #btn_PP_T button, #btn_BP_T button, #btn_B6_B button, #btn_B6_P button { 
+    background-color: #343A40; /* Darker background for side bet buttons */
+    color: white; 
+    border: 1px solid #495057; 
+    font-size: 14px; 
+    padding: 8px 0; 
+}
+#btn_PP_P button:hover, #btn_BP_B button:hover, #btn_PP_T button:hover, #btn_BP_T button:hover, #btn_B6_B button:hover, #btn_B6_P button:hover {
+    background-color: #495057;
+}
+
+
 .stButton button[kind="secondary"] { /* For control buttons */
     background-color: #343A40;
     color: white;
@@ -195,7 +237,7 @@ hr {
 # Initialize session state variables if they don't exist
 if 'oracle' not in st.session_state:
     st.session_state.oracle = OracleBrain()
-if 'prediction' not in st.session_state:
+if 'prediction' not in st.session_state: # Main P/B prediction
     st.session_state.prediction = None
 if 'source' not in st.session_state:
     st.session_state.source = None
@@ -208,22 +250,37 @@ if 'initial_shown' not in st.session_state:
 if 'is_sniper_opportunity' not in st.session_state: 
     st.session_state.is_sniper_opportunity = False
 
+# NEW: Session state for side bet predictions
+if 'tie_prediction' not in st.session_state:
+    st.session_state.tie_prediction = None
+if 'pair_prediction' not in st.session_state:
+    st.session_state.pair_prediction = None
+if 'banker6_prediction' not in st.session_state:
+    st.session_state.banker6_prediction = None
+
 
 # --- UI Callback Functions ---
-def handle_click(outcome_str: str):
+def handle_click(main_outcome_str: MainOutcome, is_player_pair: bool = False, is_banker_pair: bool = False, is_banker_6: bool = False):
     """
-    Handles button clicks for P, B, T outcomes.
-    Adds the result to OracleBrain and updates the prediction.
+    Handles button clicks for P, B, T outcomes, with options for pairs and banker 6.
+    Adds the result to OracleBrain and updates all predictions.
     """
-    st.session_state.oracle.add_result(outcome_str)
+    st.session_state.oracle.add_result(main_outcome_str, is_player_pair, is_banker_pair, is_banker_6)
     
-    prediction, source, confidence, pattern_code, _, is_sniper_opportunity = st.session_state.oracle.predict_next()
+    # NEW: Unpack all return values from predict_next
+    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity,
+     tie_pred, pair_pred, banker6_pred) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     st.session_state.is_sniper_opportunity = is_sniper_opportunity 
     
+    # Update side bet predictions
+    st.session_state.tie_prediction = tie_pred
+    st.session_state.pair_prediction = pair_pred
+    st.session_state.banker6_prediction = banker6_pred
+
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
@@ -234,8 +291,11 @@ def handle_click(outcome_str: str):
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
-    if not st.session_state.initial_shown:
-        st.session_state.initial_shown = True
+    # Check if enough P/B history for initial message
+    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
+    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
+    if (p_count + b_count) >= 20:
+        st.session_state.initial_shown = True # Ensure message disappears once 20 P/B are met
 
     st.query_params["_t"] = f"{time.time()}"
 
@@ -245,12 +305,19 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    prediction, source, confidence, pattern_code, _, is_sniper_opportunity = st.session_state.oracle.predict_next()
+    # NEW: Unpack all return values from predict_next
+    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity,
+     tie_pred, pair_pred, banker6_pred) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     st.session_state.is_sniper_opportunity = is_sniper_opportunity 
+
+    # Update side bet predictions
+    st.session_state.tie_prediction = tie_pred
+    st.session_state.pair_prediction = pair_pred
+    st.session_state.banker6_prediction = banker6_pred
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -262,8 +329,9 @@ def handle_remove():
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
-    p_count = st.session_state.oracle.history.count("P")
-    b_count = st.session_state.oracle.history.count("B")
+    # Re-check if initial message should be shown after removing
+    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
+    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
     if (p_count + b_count) < 20:
         st.session_state.initial_shown = False
     
@@ -282,16 +350,20 @@ def handle_reset():
     st.session_state.initial_shown = False 
     st.session_state.is_sniper_opportunity = False 
     
+    # Reset side bet predictions
+    st.session_state.tie_prediction = None
+    st.session_state.pair_prediction = None
+    st.session_state.banker6_prediction = None
+
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">🔮 ORACLE V5.4</div>', unsafe_allow_html=True) # Updated version in title
 
-# --- Prediction Output Box ---
+# --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("<b>📍 คำทำนาย:</b>", unsafe_allow_html=True)
+st.markdown("<b>📍 คำทำนายหลัก:</b>", unsafe_allow_html=True) # Changed label
 
-# Determine what to display in the prediction box
 if st.session_state.prediction:
     emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
     st.markdown(f"<h2>{emoji} <b>{st.session_state.prediction}</b></h2>", unsafe_allow_html=True)
@@ -302,8 +374,10 @@ if st.session_state.prediction:
     if st.session_state.confidence is not None:
         st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") 
 else:
-    p_count = st.session_state.oracle.history.count("P")
-    b_count = st.session_state.oracle.history.count("B")
+    # Get P/B count from the new history structure
+    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
+    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
+
     if (p_count + b_count) < 20 and not st.session_state.initial_shown:
         st.warning("⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย")
     else:
@@ -323,6 +397,31 @@ if st.session_state.is_sniper_opportunity:
         </div>
     """, unsafe_allow_html=True)
 
+# --- NEW: Side Bet Prediction Display ---
+st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
+col_side1, col_side2, col_side3 = st.columns(3)
+
+with col_side1:
+    if st.session_state.tie_prediction:
+        st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<p style='text-align:center; color:#BBBBBB;'>⚪ เสมอ: -</p>", unsafe_allow_html=True)
+
+with col_side2:
+    if st.session_state.pair_prediction:
+        pair_emoji = "🔵" if st.session_state.pair_prediction == "PP" else "🔴"
+        st.markdown(f"<p style='text-align:center; font-weight:bold;'>{pair_emoji} ไพ่คู่</p>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<p style='text-align:center; color:#BBBBBB;'>🃏 ไพ่คู่: -</p>", unsafe_allow_html=True)
+
+with col_side3:
+    if st.session_state.banker6_prediction:
+        st.markdown(f"<p style='text-align:center; color:#FFD700; font-weight:bold;'>🟡 6 แต้ม</p>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<p style='text-align:center; color:#BBBBBB;'>🟡 6 แต้ม: -</p>", unsafe_allow_html=True)
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
 st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
@@ -335,41 +434,50 @@ elif miss >= 6:
 st.markdown("<hr>", unsafe_allow_html=True) 
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
-history = st.session_state.oracle.history
+history_results = st.session_state.oracle.history # Now contains RoundResult objects
 
 # Build the entire HTML string for Big Road in one go
-if history:
+if history_results:
     max_row = 6
     columns = []
     current_col = []
     last_non_tie_result = None
     
-    for i, result in enumerate(history):
-        if result == "T":
+    for i, round_result in enumerate(history_results): # Iterate over RoundResult objects
+        main_outcome = round_result.main_outcome
+        is_player_pair = round_result.is_player_pair
+        is_banker_pair = round_result.is_banker_pair
+        is_banker_6 = round_result.is_banker_6
+
+        if main_outcome == "T":
             if current_col:
                 last_cell_idx = len(current_col) - 1
-                current_col[last_cell_idx] = (current_col[last_cell_idx][0], current_col[last_cell_idx][1] + 1)
+                current_col[last_cell_idx] = (current_col[last_cell_idx][0], current_col[last_cell_idx][1] + 1,
+                                               current_col[last_cell_idx][2], current_col[last_cell_idx][3], current_col[last_cell_idx][4])
             elif columns:
                 last_col_idx = len(columns) - 1
                 if columns[last_col_idx]:
                     last_cell_in_prev_col_idx = len(columns[last_col_idx]) - 1
                     columns[last_col_idx][last_cell_in_prev_col_idx] = (
                         columns[last_col_idx][last_cell_in_prev_col_idx][0],
-                        columns[last_col_idx][last_cell_in_prev_col_idx][1] + 1
+                        columns[last_col_idx][last_cell_in_prev_col_idx][1] + 1,
+                        columns[last_col_idx][last_cell_in_prev_col_idx][2],
+                        columns[last_col_idx][last_cell_in_prev_col_idx][3],
+                        columns[last_col_idx][last_cell_in_prev_col_idx][4]
                     )
             continue
         
-        if result == last_non_tie_result:
+        if main_outcome == last_non_tie_result:
             if len(current_col) < max_row:
-                current_col.append((result, 0))
+                current_col.append((main_outcome, 0, is_player_pair, is_banker_pair, is_banker_6))
             else:
                 columns.append(current_col)
-                current_col = [(result, 0)]
+                current_col = [(main_outcome, 0, is_player_pair, is_banker_pair, is_banker_6)]
         else:
             if current_col:
                 columns.append(current_col)
-            current_col = [(result, 0)]
-            last_non_tie_result = result
+            current_col = [(main_outcome, 0, is_player_pair, is_banker_pair, is_banker_6)]
+            last_non_tie_result = main_outcome
             
     if current_col:
         columns.append(current_col)
@@ -383,10 +491,16 @@ if history:
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
     for col in columns:
         big_road_html += "<div class='big-road-column'>"
-        for cell_result, tie_count in col:
+        for cell_result, tie_count, pp_flag, bp_flag, b6_flag in col:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
-            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}</div>"
+            
+            # NEW: Pair and B6 indicators
+            pp_indicator = f"<span class='pair-indicator P'>PP</span>" if pp_flag else ""
+            bp_indicator = f"<span class='pair-indicator B'>BP</span>" if bp_flag else ""
+            b6_indicator = f"<span class='b6-indicator'>6</span>" if b6_flag else ""
+
+            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{pp_indicator}{bp_indicator}{b6_indicator}</div>"
         big_road_html += "</div>" 
     big_road_html += "</div>" 
     
@@ -395,7 +509,9 @@ if history:
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
-# --- Input Buttons ---
+# --- Input Buttons (Main Outcomes) ---
+st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<b>ป้อนผลหลัก:</b>", unsafe_allow_html=True)
 col1, col2, col3 = st.columns(3)
 with col1:
     st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
@@ -404,7 +520,22 @@ with col2:
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
+# --- NEW: Input Buttons (Side Outcomes) ---
+st.markdown("<b>ป้อนผลเสริม (ไม่บังคับ):</b>", unsafe_allow_html=True)
+col_input_side1, col_input_side2, col_input_side3 = st.columns(3)
+with col_input_side1:
+    # Changed args for these buttons to reflect the main outcome + pair
+    st.button("🔵 P + PP", on_click=handle_click, args=("P", True, False, False), key="btn_PP_P") 
+    st.button("🔴 B + BP", on_click=handle_click, args=("B", False, True, False), key="btn_BP_B") 
+with col_input_side2:
+    st.button("⚪ T + PP", on_click=handle_click, args=("T", True, False, False), key="btn_PP_T")
+    st.button("⚪ T + BP", on_click=handle_click, args=("T", False, True, False), key="btn_BP_T")
+with col_input_side3:
+    st.button("🔴 B + 6", on_click=handle_click, args=("B", False, False, True), key="btn_B6_B")
+    st.button("🔵 P + 6", on_click=handle_click, args=("P", False, False, True), key="btn_B6_P") # B6 can occur with P if Banker has 6 and Player has lower.
+
 # --- Control Buttons ---
+st.markdown("<hr>", unsafe_allow_html=True)
 col4, col5 = st.columns(2)
 with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
@@ -414,25 +545,35 @@ with col5:
 # --- Accuracy by Module ---
 st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) 
 
-# Get accuracies for different periods
 all_time_accuracies = st.session_state.oracle.get_module_accuracy_all_time()
 recent_10_accuracies = st.session_state.oracle.get_module_accuracy_recent(10)
 recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 
-# Display accuracies
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    for name, acc in all_time_accuracies.items():
+    # Sort modules to display main modules first, then side bet modules
+    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
+    for name in sorted_module_names:
+        acc = all_time_accuracies[name]
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
     
-    if len(st.session_state.oracle.history) >= 10: # Only show if enough data for 10 recent
+    # Check if there's enough P/B history for recent stats
+    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
+    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
+    main_history_len = p_count + b_count
+
+    if main_history_len >= 10: 
         st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        for name, acc in recent_10_accuracies.items():
+        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
+        for name in sorted_module_names_recent_10:
+            acc = recent_10_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 
-    if len(st.session_state.oracle.history) >= 20: # Only show if enough data for 20 recent
+    if main_history_len >= 20: 
         st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        for name, acc in recent_20_accuracies.items():
+        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie", "Pair", "Banker6"], x))
+        for name in sorted_module_names_recent_20:
+            acc = recent_20_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 else:
     st.info("ยังไม่มีข้อมูลความแม่นยำ")
