@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.0 - Adaptive Scoring & Side Bet Sniper Logic)
+# oracle_core.py (Oracle V6.0 - Current Version for Debugging)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -688,13 +688,13 @@ class OracleBrain:
 
         MIN_HISTORY_FOR_PREDICTION = 20 
         MIN_HISTORY_FOR_SNIPER = 30 
-        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 # New threshold for side bet sniper
+        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 
 
         final_prediction_main = None
         source_module_name_main = None
         confidence_main = None
         pattern_code_main = None
-        is_sniper_opportunity_main = False # Renamed to avoid conflict
+        is_sniper_opportunity_main = False 
         is_tie_sniper_opportunity = False
         is_pair_sniper_opportunity = False
         is_banker6_sniper_opportunity = False
@@ -715,10 +715,10 @@ class OracleBrain:
         }
         
         module_accuracies_all_time = self.get_module_accuracy_all_time()
-        module_accuracies_recent_10 = self.get_module_accuracy_recent(10) # For adaptive scoring
+        module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
-            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) # Pass recent accuracy
+            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
 
         if current_miss_streak in [3, 4]:
             best_module_for_recovery = self.get_best_recent_module()
@@ -766,9 +766,9 @@ class OracleBrain:
         banker6_prediction = self.banker6_predictor.predict(self.history)
 
         # --- Side Bet Sniper Opportunity Logic (NEW for V6.0) ---
-        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 # Lower threshold than main P/B for rarity
-        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 90 # High recent accuracy is key
-        SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 # Need at least 3 recent predictions for accuracy check
+        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 90 
+        SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
 
         # Tie Sniper
         if tie_prediction == "T" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
@@ -787,7 +787,7 @@ class OracleBrain:
                 is_pair_sniper_opportunity = True
 
         # Banker 6 Sniper (even more stringent, or higher history requirement)
-        if banker6_prediction == "B6" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER + 10: # Higher history for B6 sniper
+        if banker6_prediction == "B6" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER + 10: 
             b6_all_time_acc = module_accuracies_all_time.get("Banker6", 0)
             b6_recent_acc = self._calculate_side_bet_module_accuracy(self.banker6_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
             
