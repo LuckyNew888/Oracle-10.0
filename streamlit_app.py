@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V7.6", layout="centered") # Updated version to V7.6
+st.set_page_config(page_title="🔮 Oracle V7.7", layout="centered") # Updated version to V7.7
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -433,7 +433,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V7.6</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V7.7</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -474,8 +474,8 @@ if st.session_state.is_sniper_opportunity_main:
     """, unsafe_allow_html=True)
 
 # --- Side Bet Prediction Display ---
-st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
-# Adjusted to use a single column for Tie prediction
+# Removed the "คำทำนายเสริม:" header
+# st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
 col_side1, col_side_empty = st.columns(2) 
 
 # Display Tie prediction only if it exists and confidence is met
@@ -489,12 +489,18 @@ with col_side1:
                     🎯 SNIPER เสมอ!
                 </div>
             """, unsafe_allow_html=True)
-    else:
-        st.markdown("<p style='text-align:center; color:#495057;'>⚪ เสมอ (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
+    # Removed the "เสมอ (ไม่มีทำนาย)" message when no prediction
+    # else:
+    #     st.markdown("<p style='text-align:center; color:#495057;'>⚪ เสมอ (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
+
 
 # The second column is now intentionally empty for Pock, as it's removed
 with col_side_empty:
-    st.markdown("<p style='text-align:center; color:#495057;'>❌ ไพ่ป็อก (ยกเลิก)</p>", unsafe_allow_html=True)
+    # Changed this to be truly empty if no Pock, or removed entirely if no Pock is ever intended
+    # For now, keeping a placeholder to maintain column structure if needed, but it's not ideal.
+    # A better approach would be to only use one column if only Tie is present.
+    # For this version, we will just make it truly empty.
+    pass # No content in this column
 
 
 st.markdown("<hr>", unsafe_allow_html=True)
