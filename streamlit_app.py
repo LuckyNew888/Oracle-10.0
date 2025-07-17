@@ -1,667 +1,867 @@
-# streamlit_app.py
-import streamlit as st
-import time # Import time for unique timestamp
-# Import RoundResult, MainOutcome, and the helper function _get_main_outcome_history
-from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
+# oracle_core.py (Oracle V6.8 - Enhanced Side Bet Logic)
+from typing import List, Optional, Literal, Tuple, Dict, Any
+import random
+from dataclasses import dataclass
 
-# --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V6.7", layout="centered") # Updated version to V6.7
+# Define main outcomes
+MainOutcome = Literal["P", "B", "T"]
 
-# --- Custom CSS for Styling ---
-st.markdown("""
-<style>
-/* Import Sarabun font from Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+# Define additional outcomes (side bets)
+@dataclass
+class RoundResult:
+    main_outcome: MainOutcome
+    is_any_natural: bool = False # True if Player or Banker gets a Natural 8/9
 
-html, body, [class*="st-emotion"] { /* Target Streamlit's main content div classes */
-    font-family: 'Sarabun', sans-serif !important;
-}
-.big-title {
-    font-size: 28px;
-    text-align: center;
-    font-weight: bold;
-    color: #FF4B4B; /* Streamlit's default primary color */
-    margin-bottom: 20px;
-}
-.predict-box {
-    padding: 15px;
-    background-color: #262730; /* Darker background for the box */
-    border-radius: 12px;
-    color: white;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    text-align: center; /* Center content inside prediction box */
-}
-.predict-box h2 {
-    margin: 10px 0;
-    font-size: 40px;
-    font-weight: bold;
-}
-.predict-box b {
-    color: #FFD700; /* Gold color for emphasis */
-}
-.predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 14px; /* This is the target size for module/pattern/confidence */
-    color: #BBBBBB;
-}
+# --- Prediction Modules ---
 
-/* Miss Streak warning text */
-.st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
-    font-size: 14px; /* Reduced font size for miss streak text */
-}
+# Helper function to get filtered history (P/B only) from new RoundResult history
+def _get_main_outcome_history(history: List[RoundResult]) -> List[MainOutcome]:
+    return [r.main_outcome for r in history if r.main_outcome in ("P", "B")]
+
+# Helper function to get specific side bet history flags (True/False for occurrence)
+def _get_side_bet_history_flags(history: List[RoundResult], bet_type: str) -> List[bool]:
+    if bet_type == "T":
+        return [r.main_outcome == "T" for r in history]
+    elif bet_type == "NATURAL":
+        return [r.is_any_natural for r in history]
+    return []
 
 
-.big-road-container {
-    width: 100%;
-    overflow-x: auto; /* Allows horizontal scrolling if many columns */
-    padding: 8px 0;
-    background: #1A1A1A; /* Slightly darker background for the road */
-    border-radius: 8px;
-    white-space: nowrap; /* Keeps columns in a single line */
-    display: flex; /* Use flexbox for columns */
-    flex-direction: row; /* Display columns from left to right */
-    align-items: flex-start; /* Align columns to the top */
-    min-height: 140px; /* Adjusted minimum height for the road */
-    box-shadow: inset 0 2px 5px rgba(0,0,0,0.3);
-}
-.big-road-column {
-    display: inline-flex; /* Use inline-flex for vertical stacking within column */
-    flex-direction: column;
-    margin-right: 2px; 
-    border-right: 1px solid rgba(255,255,255,0.1); 
-    padding-right: 2px; 
-}
-.big-road-cell {
-    width: 20px; /* Further reduced size for smaller emoji */
-    height: 20px; /* Further reduced size for smaller emoji */
-    text-align: center;
-    line-height: 20px; /* Adjusted line-height for new size */
-    font-size: 14px; /* Smaller font for emojis */
-    margin-bottom: 1px; /* Reduced margin between cells */
-    border-radius: 50%; /* Make cells round */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-    color: white; /* Default text color for ties */
-    position: relative; /* For positioning tie count */
-}
-/* Specific colors for P, B, T */
-.big-road-cell.P { background-color: #007BFF; } /* Blue for Player */
-.big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
-.big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
-.big-road-cell .tie-count {
-    font-size: 9px; /* Slightly smaller font for tie count */
-    position: absolute;
-    bottom: -1px; /* Adjusted position */
-    right: -1px; /* Adjusted position */
-    background-color: #FFD700; /* Gold background for prominence */
-    color: #333; /* Dark text for contrast */
-    border-radius: 50%;
-    padding: 1px 3px; /* Reduced padding */
-    line-height: 1;
-    min-width: 14px; /* Ensure minimum width for single digit */
-    text-align: center;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
-}
-/* Styling for Natural indicator in Big Road (New for V6.5) */
-.natural-indicator {
-    position: absolute;
-    font-size: 8px; /* Smaller font for indicators */
-    font-weight: bold;
-    color: white;
-    line-height: 1;
-    padding: 1px 2px;
-    border-radius: 3px;
-    z-index: 10;
-    background-color: #4CAF50; /* Green for Natural */
-    top: -2px;
-    right: -2px;
-}
-
-
-/* Button styling */
-.stButton>button {
-    width: 100%;
-    border-radius: 8px;
-    font-size: 18px;
-    font-weight: bold;
-    padding: 10px 0;
-    margin-bottom: 10px;
-    transition: all 0.2s ease-in-out;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-.stButton>button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
-}
-/* Specific button colors */
-#btn_P button { background-color: #007BFF; color: white; border: none; }
-#btn_B button { background-color: #DC3545; color: white; border: none; }
-#btn_T button { background-color: #6C757D; color: white; border: none; }
-/* Checkbox styling adjustments */
-.stCheckbox > label {
-    padding: 8px 10px; /* Adjust padding for better click area */
-    border: 1px solid #495057;
-    border-radius: 8px;
-    background-color: #343A40;
-    color: white;
-    font-size: 14px;
-    font-weight: bold;
-    margin-bottom: 10px;
-    display: flex; /* Use flex to align checkbox and text */
-    align-items: center;
-    justify-content: center; /* Center content horizontally */
-    transition: all 0.2s ease-in-out;
-    cursor: pointer;
-}
-.stCheckbox > label:hover {
-    background-color: #495057;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
-}
-.stCheckbox > label > div:first-child { /* The actual checkbox input */
-    margin-right: 8px; /* Space between checkbox and text */
-}
-/* Style for checked checkboxes */
-.stCheckbox > label[data-checked="true"] {
-    background-color: #007BFF; /* Example color for checked */
-    border-color: #007BFF;
-}
-
-
-.stButton button[kind="secondary"] { /* For control buttons */
-    background-color: #343A40;
-    color: white;
-    border: 1px solid #495057;
-}
-.stButton button[kind="secondary"]:hover {
-    background-color: #495057;
-}
-
-/* Warning/Error messages */
-.st-emotion-cache-1f1d6zpt { /* Target Streamlit warning box */
-    background-color: #FFC10720; /* Light yellow with transparency */
-    border-left: 5px solid #FFC107;
-    color: #FFC107;
-}
-
-.st-emotion-cache-1s04v0m { /* Target Streamlit error box */
-    background-color: #DC354520; /* Light red with transparency */
-    border-left: 5px solid #DC3545;
-    color: #DC3545;
-}
-
-.st-emotion-cache-13ln4z2 { /* Target Streamlit info box */
-    background-color: #17A2B820; /* Light blue with transparency */
-    border-left: 5px solid #17A2B8;
-    color: #17A2B8;
-}
-
-/* Accuracy by Module section */
-h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 12px !important; /* Force this size */
-    margin-top: 10px !important; 
-    margin-bottom: 3px !important; 
-}
-/* Target for the custom class used for accuracy items */
-.accuracy-item { 
-    font-size: 10px !important; /* Force this size */
-    margin-bottom: 1px !important; 
-}
-
-/* Sniper message styling */
-.sniper-message {
-    background-color: #4CAF50; /* Green background */
-    color: white;
-    padding: 10px;
-    border-radius: 8px;
-    font-weight: bold;
-    text-align: center;
-    margin-top: 15px;
-    margin-bottom: 15px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-    animation: pulse 1.5s infinite; /* Add a subtle pulse animation */
-}
-
-/* NEW: Side Bet Sniper message styling */
-.side-bet-sniper-message {
-    background-color: #007bff; /* Blue background for side bet sniper */
-    color: white;
-    padding: 8px;
-    border-radius: 6px;
-    font-weight: bold;
-    text-align: center;
-    margin-top: 10px;
-    margin-bottom: 10px;
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
-    animation: pulse 1.5s infinite; /* Keep pulse animation */
-    font-size: 14px; /* Smaller font than main sniper */
-}
-
-
-@keyframes pulse {
-    0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.02); opacity: 0.9; }
-    100% { transform: scale(1); opacity: 1; }
-}
-
-
-hr {
-    border-top: 1px solid rgba(255,255,255,0.1);
-    margin: 25px 0;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# --- Session State Initialization ---
-# Initialize session state variables if they don't exist
-if 'oracle' not in st.session_state:
-    st.session_state.oracle = OracleBrain()
-if 'prediction' not in st.session_state: # Main P/B prediction
-    st.session_state.prediction = None
-if 'source' not in st.session_state:
-    st.session_state.source = None
-if 'confidence' not in st.session_state:
-    st.session_state.confidence = None
-if 'pattern_name' not in st.session_state:
-    st.session_state.pattern_name = None
-if 'initial_shown' not in st.session_state:
-    st.session_state.initial_shown = False
-if 'is_sniper_opportunity_main' not in st.session_state: # Renamed
-    st.session_state.is_sniper_opportunity_main = False
-if 'show_debug_info' not in st.session_state: # New session state for debug toggle
-    st.session_state.show_debug_info = False
-
-# Session state for side bet predictions
-if 'tie_prediction' not in st.session_state:
-    st.session_state.tie_prediction = None
-if 'pock_prediction' not in st.session_state: 
-    st.session_state.pock_prediction = None
-
-# NEW: Session state for side bet sniper opportunities
-if 'is_tie_sniper_opportunity' not in st.session_state:
-    st.session_state.is_tie_sniper_opportunity = False
-if 'is_pock_sniper_opportunity' not in st.session_state: 
-    st.session_state.is_pock_sniper_opportunity = False
-
-# Session state for checkboxes (to control their state)
-if 'is_any_natural_checked' not in st.session_state: 
-    st.session_state.is_any_natural_checked = False
-
-
-# --- UI Callback Functions ---
-def handle_click(main_outcome_str: MainOutcome): 
+class RuleEngine:
     """
-    Handles button clicks for P, B, T outcomes.
-    Reads checkbox states for side bets.
-    Adds the result to OracleBrain and updates all predictions.
+    Predicts based on simple repeating patterns (e.g., P P P -> P, B B B -> B)
+    or alternating patterns (e.g., P B P -> P).
+    V6.1: Added more basic rule patterns.
     """
-    # Read current checkbox states
-    is_any_natural = st.session_state.is_any_natural_checked 
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 3:
+            return None
 
-    # Call add_result with all information
-    st.session_state.oracle.add_result(main_outcome_str, is_any_natural)
-    
-    # Reset checkboxes after adding result
-    st.session_state.is_any_natural_checked = False
-
-    # Unpack all return values from predict_next
-    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, pock_pred, 
-     is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
-    
-    st.session_state.prediction = prediction
-    st.session_state.source = source
-    st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
-    
-    # Update side bet predictions
-    st.session_state.tie_prediction = tie_pred
-    st.session_state.pock_prediction = pock_pred
-
-    # Update side bet sniper opportunities
-    st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
-
-    pattern_names = {
-        "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-        "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร", 
-        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
-        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-        "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
-        "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
-        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "มังกรตัด": "มังกรตัด" 
-    }
-    st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
-    
-    # Check if enough P/B history for initial message
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) >= 20: 
-        st.session_state.initial_shown = True 
-
-    st.query_params["_t"] = f"{time.time()}"
-
-
-def handle_remove():
-    """
-    Handles removing the last added result.
-    """
-    st.session_state.oracle.remove_last()
-    # Unpack all return values from predict_next
-    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, pock_pred, 
-     is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
-    
-    st.session_state.prediction = prediction
-    st.session_state.source = source
-    st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
-
-    # Update side bet predictions
-    st.session_state.tie_prediction = tie_pred
-    st.session_state.pock_prediction = pock_pred
-
-    # Update side bet sniper opportunities
-    st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
-    
-    pattern_names = {
-        "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-        "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร", 
-        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
-        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-        "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
-        "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
-        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "มังกรตัด": "มังกรตัด" 
-    }
-    st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
-    
-    # Re-check if initial message should be shown after removing
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) < 20: 
-        st.session_state.initial_shown = False
-    
-    # Reset checkboxes on remove, as the last round's state is gone
-    st.session_state.is_any_natural_checked = False
-
-    st.query_params["_t"] = f"{time.time()}"
-
-
-def handle_reset():
-    """
-    Handles resetting the entire system.
-    """
-    st.session_state.oracle.reset()
-    st.session_state.prediction = None
-    st.session_state.source = None
-    st.session_state.confidence = None
-    st.session_state.pattern_name = None
-    st.session_state.initial_shown = False 
-    st.session_state.is_sniper_opportunity_main = False 
-    
-    # Reset side bet predictions
-    st.session_state.tie_prediction = None
-    st.session_state.pock_prediction = None
-
-    # Reset side bet sniper opportunities
-    st.session_state.is_tie_sniper_opportunity = False
-    st.session_state.is_pock_sniper_opportunity = False
-
-    # Reset checkboxes on full reset
-    st.session_state.is_any_natural_checked = False
-
-    st.query_params["_t"] = f"{time.time()}"
-
-# --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V6.7</div>', unsafe_allow_html=True) # Updated version in title
-
-# --- Prediction Output Box (Main Outcome) ---
-st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("<b>📍 คำทำนายหลัก:</b>", unsafe_allow_html=True) 
-
-if st.session_state.prediction:
-    emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
-    st.markdown(f"<h2>{emoji} <b>{st.session_state.prediction}</b></h2>", unsafe_allow_html=True)
-    if st.session_state.source:
-        st.caption(f"🧠 โมดูล: {st.session_state.source}")
-    if st.session_state.pattern_name:
-        st.caption(f"📊 เค้าไพ่: {st.session_state.pattern_name}")
-    if st.session_state.confidence is not None:
-        st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") 
-else:
-    # Get P/B count from the new history structure
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    main_history_len = p_count + b_count
-    miss = st.session_state.oracle.calculate_miss_streak()
-
-    if main_history_len < 20 and not st.session_state.initial_shown: 
-        st.warning(f"⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย (ปัจจุบัน {main_history_len} ตา)") 
-    elif miss >= 6:
-        st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
-    else:
-        # This message now appears if history is sufficient and not on miss streak, but confidence is too low
-        st.info("⏳ กำลังวิเคราะห์ข้อมูล... ความมั่นใจยังไม่สูงพอที่จะทำนาย")
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# --- Sniper Opportunity Message (Main Outcome) ---
-if st.session_state.is_sniper_opportunity_main: 
-    st.markdown("""
-        <div class="sniper-message">
-            🎯 SNIPER! มั่นใจเป็นพิเศษ
-        </div>
-    """, unsafe_allow_html=True)
-
-# --- Side Bet Prediction Display ---
-st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
-col_side1, col_side2 = st.columns(2) 
-
-# Display Tie prediction only if it exists
-with col_side1:
-    if st.session_state.tie_prediction:
-        st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
-        if st.session_state.is_tie_sniper_opportunity:
-            st.markdown("""
-                <div class="side-bet-sniper-message">
-                    🎯 SNIPER เสมอ!
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.markdown("<p style='text-align:center; color:#495057;'>⚪ เสมอ (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
-
-
-# Display Pock prediction only if it exists
-with col_side2:
-    if st.session_state.pock_prediction:
-        st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>🟢 ไพ่ป็อก</p>", unsafe_allow_html=True)
-        if st.session_state.is_pock_sniper_opportunity:
-            st.markdown("""
-                <div class="side-bet-sniper-message">
-                    🎯 SNIPER ไพ่ป็อก!
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.markdown("<p style='text-align:center; color:#495057;'>🟢 ไพ่ป็อก (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
-
-
-st.markdown("<hr>", unsafe_allow_html=True)
-
-# --- Miss Streak Warning ---
-miss = st.session_state.oracle.calculate_miss_streak()
-st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
-if miss == 3:
-    st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
-elif miss >= 6:
-    st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
-
-# --- Big Road Display ---
-st.markdown("<hr>", unsafe_allow_html=True) 
-st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
-
-history_results = st.session_state.oracle.history 
-
-# Build the entire HTML string for Big Road in one go
-if history_results:
-    max_row = 6
-    columns = []
-    current_col = []
-    last_non_tie_result = None
-    
-    for i, round_result in enumerate(history_results): 
-        main_outcome = round_result.main_outcome
-        is_any_natural = round_result.is_any_natural 
-
-        if main_outcome == "T":
-            if current_col:
-                last_cell_idx = len(current_col) - 1
-                current_col[last_cell_idx] = (current_col[last_cell_idx][0], current_col[last_cell_idx][1] + 1,
-                                               current_col[last_cell_idx][2]) 
-            elif columns:
-                last_col_idx = len(columns) - 1
-                if columns[last_col_idx]:
-                    last_cell_in_prev_col_idx = len(columns[last_col_idx]) - 1
-                    columns[last_col_idx][last_cell_in_prev_col_idx] = (
-                        columns[last_col_idx][last_cell_in_prev_col_idx][0],
-                        columns[last_col_idx][last_cell_in_prev_col_idx][1] + 1,
-                        columns[last_col_idx][last_cell_in_prev_col_idx][2]
-                    )
-            continue
+        # Rule 1: Simple streak (P P P -> P, B B B -> B)
+        if filtered_history[-1] == filtered_history[-2] == filtered_history[-3]:
+            return filtered_history[-1]
         
-        if main_outcome == last_non_tie_result:
-            if len(current_col) < max_row:
-                current_col.append((main_outcome, 0, is_any_natural)) 
+        # Rule 2: Alternating pattern (P B P -> B, B P B -> P)
+        if filtered_history[-1] != filtered_history[-2] and filtered_history[-2] != filtered_history[-3]:
+            if filtered_history[-1] == filtered_history[-3]: # P B P, B P B
+                return "P" if filtered_history[-1] == "B" else "B"
+        
+        # V6.1 New Rule: Two consecutive, then chop (P P B -> P, B B P -> B)
+        if len(filtered_history) >= 3:
+            if filtered_history[-1] != filtered_history[-2] and filtered_history[-2] == filtered_history[-3]:
+                return filtered_history[-2] # Predict a return to the streak that was chopped
+
+        return None
+
+class PatternAnalyzer:
+    """
+    Predicts based on specific predefined patterns in the recent history.
+    V6.1: Expanded the dictionary of known patterns for better coverage.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 4:
+            return None
+
+        joined_filtered = "".join(filtered_history)
+        
+        # V6.1: Expanded patterns
+        patterns_and_predictions = {
+            # Basic Repeating/Alternating
+            "PBPB": "P", "BPBP": "B",       
+            "PPBB": "P", "BBPP": "B",       
+            "PPPP": "P", "BBBB": "B",       
+            
+            # Longer Streaks/Chops
+            "PPPPP": "P", "BBBBB": "B", # 5 in a row
+            "PBPBP": "B", "BPBPB": "P", # Longer alternating
+            
+            # Specific Combinations
+            "PBB": "P", "BPP": "B", # Two of one, then one of other, predict first
+            "PPBP": "P", "BBPA": "B", # Two, chop, one, predict first
+            "PBPP": "P", "BPPB": "B", # Chop, two, chop, predict first
+            "PBBPP": "P", "BPBB": "B", # Two, two, then chop, predict first
+            "PBPBPB": "P", "BPBPBP": "B", # Longer alternating, predict next
+            "PPPBBB": "B", "BBBPBB": "P", # Three of one, three of other, predict chop
+            "PPBPP": "P", "BBPBB": "B", # Two, chop, two, predict first
+            "PBBP": "B", "BPPB": "P" # Specific chop pattern
+        }
+
+        # Iterate from longest to shortest pattern for matching
+        for length in range(6, 2, -1): # Check patterns from length 6 down to 3
+            if len(joined_filtered) >= length:
+                current_pattern = joined_filtered[-length:]
+                if current_pattern in patterns_and_predictions:
+                    return patterns_and_predictions[current_pattern]
+        return None
+
+class TrendScanner:
+    """
+    Predicts based on the dominant outcome in the recent history.
+    V6.1: Made trend detection slightly more sensitive and added a "minority trend" consideration.
+    V6.6: Implemented dynamic lookback based on choppiness.
+    """
+    def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        
+        # V6.6: Dynamic lookback based on choppiness
+        if choppiness_rate > 0.6: # High choppiness, focus on very recent
+            lookback_len = 5
+        elif choppiness_rate < 0.3: # Low choppiness (streaky), use a longer lookback
+            lookback_len = 15
+        else: # Moderate choppiness
+            lookback_len = 10
+
+        if len(filtered_history) < lookback_len:
+            return None
+        
+        recent_history = filtered_history[-lookback_len:]
+        p_count = recent_history.count("P")
+        b_count = recent_history.count("B")
+
+        # Strong trend (e.g., 60% or more in recent history)
+        if p_count / lookback_len >= 0.6:
+            return "P"
+        if b_count / lookback_len >= 0.6:
+            return "B"
+        
+        # V6.1 New: Consider a shorter, very strong recent trend (e.g., 4 out of last 5)
+        if len(filtered_history) >= 5:
+            last_5 = filtered_history[-5:]
+            p_count_5 = last_5.count("P")
+            b_count_5 = last_5.count("B")
+            if p_count_5 >= 4:
+                return "P"
+            if b_count_5 >= 4:
+                return "B"
+
+        return None
+
+class TwoTwoPattern:
+    """
+    Predicts based on a specific 2-2 alternating pattern (e.g., PPBB -> P).
+    V6.1: No significant changes, already robust.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 4:
+            return None
+        
+        last4 = filtered_history[-4:]
+        if last4[0] == last4[1] and last4[2] == last4[3] and last4[0] != last4[2]:
+            return last4[0]
+        return None
+
+class SniperPattern:
+    """
+    A more aggressive pattern matching module, often looking for specific "sniper" setups.
+    V6.1: Expanded known patterns for sniper opportunities.
+    """
+    def __init__(self):
+        self.known_patterns = {
+            "PBPB": "P", "BPBP": "B",
+            "PPBB": "P", "BBPP": "B",
+            "PPBPP": "P", "BBPBB": "B",
+            "PPPBBB": "B", "BBBPBB": "P", 
+            "PPPP": "P", "BBBB": "B",
+            "PBBP": "B", "BPPB": "P",
+            # V6.1 Added more sniper patterns
+            "PBBBP": "B", "BPBPP": "P", # Specific reversal points
+            "PBBBP": "B", "BPBPP": "P", 
+            "PBPBPP": "P", "BPBPBB": "B", # Alternating then streak
+            "PPPPB": "B", "BBBB P": "P" # End of long streak
+        }
+
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 4: 
+            return None
+        
+        joined = "".join(filtered_history)
+        
+        for length in range(6, 3, -1): # Check patterns from length 6 down to 4
+            if len(joined) >= length:
+                current_pattern = joined[-length:]
+                if current_pattern in self.known_patterns:
+                    return self.known_patterns[current_pattern]
+        return None
+
+class FallbackModule:
+    """
+    Provides a random prediction if no other module can make a prediction.
+    V6.1: No change, its purpose is to always provide an answer.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        # This module should always return a prediction unless history is empty, which is handled
+        # by MIN_HISTORY_FOR_PREDICTION in OracleBrain.predict_next
+        return random.choice(["P", "B"])
+
+class ChopDetector:
+    """
+    V6.3: Specifically designed to detect "chop" patterns (long streak broken by opposite).
+    When a chop is detected, it predicts the outcome that broke the streak.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        
+        # Look for a streak of at least 4-5, followed by a single opposite outcome
+        # Example: BBBBB P (predict P), PPPPP B (predict B)
+        if len(filtered_history) >= 6: # Need at least 5 for streak + 1 for chop
+            last_6 = filtered_history[-6:]
+            # Check for 5 of one, then 1 of other
+            if last_6[0] == last_6[1] == last_6[2] == last_6[3] == last_6[4] and last_6[4] != last_6[5]:
+                return last_6[5] # Predict the outcome that broke the streak
+        
+        if len(filtered_history) >= 5: # Look for 4 of one, then 1 of other
+            last_5 = filtered_history[-5:]
+            if last_5[0] == last_5[1] == last_5[2] == last_5[3] and last_5[3] != last_5[4]:
+                return last_5[4] # Predict the outcome that broke the streak
+
+        # V6.3: Also detect shorter, immediate chops after a pair
+        # Example: PP B (predict P), BB P (predict B) - this might be handled by RuleEngine, but reinforce
+        if len(filtered_history) >= 3:
+            if filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
+                # If the last two were the same, and then it chopped, predict the original streak to continue
+                # This is a common "chop" scenario where the streak tries to re-establish
+                return filtered_history[-2] # Predict P for PPB, B for BBP
+
+        return None
+
+
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.8) ---
+
+class TiePredictor:
+    """
+    Predicts Tie outcomes with further enhanced logic for V6.1.
+    V6.6: Incorporates theoretical probability.
+    V6.7: Adjusts probability-based logic to prevent constant Tie prediction.
+    V6.8: Further refined probability-based logic for more balanced prediction.
+    """
+    THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
+
+    def predict(self, history: List[RoundResult]) -> Optional[Literal["T"]]:
+        tie_flags = _get_side_bet_history_flags(history, "T")
+        main_history_pb = _get_main_outcome_history(history) 
+
+        if len(tie_flags) < 25: # Still require a decent amount of Tie history for robust probability check
+            return None
+        
+        # V6.8: Probability-based adjustment - more sensitive to over-representation
+        lookback_for_prob = min(len(tie_flags), 50) 
+        if lookback_for_prob > 0:
+            recent_tie_flags = tie_flags[-lookback_for_prob:]
+            actual_tie_count = recent_tie_flags.count(True)
+            expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
+
+            # If ties are significantly "due" (e.g., less than 90% of expected)
+            if actual_tie_count < expected_tie_count * 0.9: # V6.8: Adjusted from 0.8 to 0.9
+                return "T"
+            # If ties have been slightly more frequent than expected, stop predicting
+            elif actual_tie_count > expected_tie_count * 1.05: # V6.8: Adjusted from 1.2 to 1.05
+                return None 
+
+        # Existing rules from V6.1 (these will now be filtered by the probability check above)
+        # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
+        if len(main_history_pb) >= 12 and not any(tie_flags[-12:]):
+            return "T"
+        
+        # Rule 2: If tie occurred recently and then a few non-ties, it might repeat (T _ _ _ T)
+        if len(tie_flags) >= 5 and tie_flags[-5] and not any(tie_flags[-4:]):
+            return "T" 
+            
+        # Rule 3: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
+        if len(main_history_pb) >= 6:
+            recent_main = "".join(main_history_pb[-6:])
+            if recent_main in ["PBPBPB", "BPBPBP"]: 
+                return "T"
+        
+        # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20)
+        if tie_flags[-20:].count(True) >= 6:
+            return "T"
+            
+        # Rule 5: Tie after a specific main outcome sequence (e.g., P B B P, then T)
+        if len(main_history_pb) >= 5:
+            recent_main_5 = "".join(main_history_pb[-5:])
+            if recent_main_5 == "PBBPB" or recent_main_5 == "BPPBP": 
+                return "T"
+
+        # Rule 6: Tie after a long streak of one side winning (e.g., 7+ P's or 7+ B's)
+        if len(main_history_pb) >= 7:
+            if main_history_pb[-7:].count("P") == 7 or main_history_pb[-7:].count("B") == 7:
+                return "T"
+        
+        # Rule 7: Tie after a specific "chop" pattern (e.g., P B P B, then P P -> T)
+        if len(main_history_pb) >= 6:
+            recent_main_6 = "".join(main_history_pb[-6:])
+            if recent_main_6 == "PBPBPP" or recent_main_6 == "BPBPBB":
+                return "T"
+        
+        # V6.1 New Rule: Tie after a very short streak (e.g., PP or BB) followed by a chop
+        if len(main_history_pb) >= 3:
+            if filtered_history[-3:] == ["P", "P", "B"] or filtered_history[-3:] == ["B", "B", "P"]:
+                if not any(tie_flags[-5:]): 
+                    return "T"
+
+        return None
+
+class PockPredictor:
+    """
+    V6.5: Predicts the occurrence of any Natural (Pock 8 or 9) in the next round.
+    V6.6: Incorporates theoretical probability.
+    V6.7: Adjusts history requirement and probability-based logic to allow more predictions.
+    V6.8: Further refined history requirement and probability-based logic for more frequent predictions.
+    """
+    THEORETICAL_PROB = 0.17 # Approx. 17% for any natural (P or B) in 8 decks
+
+    def predict(self, history: List[RoundResult]) -> Optional[Literal["NATURAL"]]:
+        natural_flags = _get_side_bet_history_flags(history, "NATURAL")
+        main_history_pb = _get_main_outcome_history(history)
+
+        # V6.8: Reduced history requirement for Pock prediction even further
+        if len(natural_flags) < 5: # Changed from 10 to 5
+            return None
+        
+        # V6.8: Probability-based adjustment - more eager to predict when due
+        lookback_for_prob = min(len(natural_flags), 50) 
+        if lookback_for_prob > 0:
+            recent_natural_flags = natural_flags[-lookback_for_prob:]
+            actual_natural_count = recent_natural_flags.count(True)
+            expected_natural_count = lookback_for_prob * self.THEORETICAL_PROB
+
+            # If naturals are significantly "due" (e.g., less than 100% of expected)
+            if actual_natural_count < expected_natural_count * 1.0: # V6.8: Adjusted from 0.9 to 1.0 (more aggressive)
+                return "NATURAL"
+            # If naturals have been slightly more frequent than expected, stop predicting
+            elif actual_natural_count > expected_natural_count * 1.1: # V6.8: Adjusted from 1.2 to 1.1
+                return None
+
+        # Existing rules from V6.5/V6.7
+        # Rule 1: Natural just occurred, strong chance of another Natural soon (momentum)
+        if natural_flags[-1]:
+            return "NATURAL"
+        
+        # V6.8: New Rule: If no Naturals for a specific number of *main outcomes* (P/B) in a row, predict it's due
+        if len(main_history_pb) >= 10 and not any(r.is_any_natural for r in history[-10:]): # No natural in last 10 P/B rounds
+            return "NATURAL"
+
+        # Rule 2: If no Naturals for a long time (e.g., 15+ rounds of natural_flags), predict a Natural might be due
+        # This rule is now partially covered by the new rule above and probability check, but kept for longer lookback
+        if not any(natural_flags[-15:]):
+            return "NATURAL"
+            
+        # Rule 3: If Naturals are frequent in recent history (e.g., 4+ in last 10)
+        if natural_flags[-10:].count(True) >= 4:
+            return "NATURAL"
+        
+        # Rule 4: Natural after a specific main outcome pattern (e.g., long alternating or short streak)
+        if len(main_history_pb) >= 5:
+            recent_main = "".join(main_history_pb[-5:])
+            if recent_main == "PBPBP" or recent_main == "BPBPB": 
+                return "NATURAL"
+            if recent_main == "PPPPP" or recent_main == "BBBBB": 
+                return "NATURAL"
+        
+        # Rule 5: Natural after a tie (sometimes a natural follows a tie)
+        if len(history) >= 2 and history[-1].main_outcome == "T" and not natural_flags[-1]:
+            return "NATURAL"
+
+        return None
+
+
+class AdaptiveScorer:
+    """
+    Calculates the final prediction and its confidence based on module predictions
+    and their historical accuracy, with adaptive weighting.
+    This scorer is primarily for main P/B outcomes.
+    V6.1: Adjusted blending ratio for more responsiveness to recent accuracy.
+    V6.3: Give ChopDetector a slightly higher base weight.
+    """
+    def score(self, 
+              predictions: Dict[str, Optional[MainOutcome]], 
+              module_accuracies_all_time: Dict[str, float], # All-time accuracy for baseline
+              module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting (last 10)
+              history: List[RoundResult]) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]:
+        
+        total_score = {"P": 0.0, "B": 0.0}
+        
+        active_predictions = {name: pred for name, pred in predictions.items() if pred in ("P", "B")}
+
+        if not active_predictions:
+            return None, None, 0, None 
+
+        for name, pred in active_predictions.items():
+            all_time_acc_val = module_accuracies_all_time.get(name, 0.0)
+            recent_acc_val = module_accuracies_recent.get(name, 0.0)
+
+            # Use 50% (0.5 weight) if accuracy is 0.0 or module hasn't made enough predictions yet
+            all_time_weight = (all_time_acc_val if all_time_acc_val > 0.0 else 50.0) / 100.0
+            recent_weight = (recent_acc_val if recent_acc_val > 0.0 else 50.0) / 100.0
+            
+            # V6.1: Adjusted blend ratio - more emphasis on recent performance (80% recent, 20% all-time)
+            weight = (recent_weight * 0.8) + (all_time_weight * 0.2)
+            
+            # V6.3: Give ChopDetector a slightly higher base weight if it makes a prediction
+            if name == "ChopDetector" and predictions.get(name) is not None:
+                weight += 0.1 # Add a small bonus weight (can be tuned)
+            
+            total_score[pred] += weight
+
+        if not any(total_score.values()):
+            return None, None, 0, None 
+
+        best_prediction_outcome = max(total_score, key=total_score.get)
+        
+        sum_of_scores = sum(total_score.values())
+        raw_confidence = (total_score[best_prediction_outcome] / sum_of_scores) * 100
+        
+        # Confidence capped at 95% to avoid overconfidence
+        confidence = min(int(raw_confidence), 95)
+        
+        source_modules = [name for name, pred in active_predictions.items() if pred == best_prediction_outcome]
+        source_name = ", ".join(source_modules) if source_modules else "Combined"
+
+        pattern = self._extract_relevant_pattern(history, predictions)
+        
+        return best_prediction_outcome, source_name, confidence, pattern
+
+    def _extract_relevant_pattern(self, history: List[RoundResult], predictions: Dict[str, Optional[MainOutcome]]) -> Optional[str]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 4:
+            return None
+        
+        joined_filtered = "".join(filtered_history)
+
+        common_patterns = {
+            "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+            "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+            "PPPP": "มังกร", "BBBB": "มังกร",
+            "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
+            "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว", 
+            "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว", 
+            "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", 
+            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
+            "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", 
+            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
+        }
+
+        if len(filtered_history) >= 5:
+            if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
+                return "มังกรตัด" 
+
+        for length in range(6, 2, -1): 
+            if len(joined_filtered) >= length:
+                current_pattern_str = joined_filtered[-length:]
+                if current_pattern_str in common_patterns:
+                    return common_patterns[current_pattern_str]
+        return None
+
+
+class OracleBrain:
+    def __init__(self):
+        self.history: List[RoundResult] = [] 
+        self.prediction_log: List[Optional[MainOutcome]] = [] 
+        self.result_log: List[MainOutcome] = [] 
+        self.last_prediction: Optional[MainOutcome] = None 
+        self.last_module: Optional[str] = None 
+
+        self.individual_module_prediction_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
+        }
+        self.tie_module_prediction_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
+        self.pock_module_prediction_log: List[Tuple[Optional[Literal["NATURAL"]], bool]] = [] 
+
+
+        # Initialize all prediction modules (P/B)
+        self.rule_engine = RuleEngine()
+        self.pattern_analyzer = PatternAnalyzer()
+        self.trend_scanner = TrendScanner()
+        self.two_two_pattern = TwoTwoPattern()
+        self.sniper_pattern = SniperPattern() 
+        self.fallback_module = FallbackModule() 
+        self.chop_detector = ChopDetector() 
+
+        # Initialize side bet prediction modules
+        self.tie_predictor = TiePredictor()
+        self.pock_predictor = PockPredictor() 
+
+        self.scorer = AdaptiveScorer() 
+        self.show_initial_wait_message = True 
+
+    def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False):
+        """
+        Adds a new actual outcome to history and logs,
+        and updates module accuracy based on the last prediction.
+        """
+        new_round_result = RoundResult(main_outcome, is_any_natural)
+        
+        # --- Record individual main P/B module predictions *before* adding the new outcome ---
+        # V6.6: Calculate choppiness rate for the current history (before adding new result)
+        choppiness_rate_for_trend = self._calculate_choppiness_rate(self.history, 20)
+
+        current_predictions_from_modules_main = {
+            "Rule": self.rule_engine.predict(self.history),
+            "Pattern": self.pattern_analyzer.predict(self.history),
+            "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), # Pass choppiness rate
+            "2-2 Pattern": self.two_two_pattern.predict(self.history),
+            "Sniper": self.sniper_pattern.predict(self.history), 
+            "Fallback": self.fallback_module.predict(self.history),
+            "ChopDetector": self.chop_detector.predict(self.history) 
+        }
+        
+        for module_name, pred in current_predictions_from_modules_main.items():
+            if pred in ("P", "B") and main_outcome in ("P", "B"):
+                self.individual_module_prediction_log[module_name].append((pred, main_outcome))
+
+        # --- Record individual side bet module predictions *before* adding the new outcome ---
+        tie_pred_for_log = self.tie_predictor.predict(self.history)
+        pock_pred_for_log = self.pock_predictor.predict(self.history) 
+
+        self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
+        self.pock_module_prediction_log.append((pock_pred_for_log, is_any_natural)) 
+
+        # Now, add the actual outcome to main history and logs
+        self.history.append(new_round_result) 
+        self.prediction_log.append(self.last_prediction) 
+        self.result_log.append(main_outcome) 
+        
+        self._trim_logs() 
+
+    def remove_last(self):
+        if self.history: self.history.pop()
+        if self.result_log: self.result_log.pop()
+        if self.prediction_log: self.prediction_log.pop()
+        
+        for module_name in self.individual_module_prediction_log:
+            if self.individual_module_prediction_log[module_name]:
+                self.individual_module_prediction_log[module_name].pop()
+        
+        self.tie_module_prediction_log.pop() if self.tie_module_prediction_log else None
+        self.pock_module_prediction_log.pop() if self.pock_module_prediction_log else None 
+
+
+    def reset(self):
+        self.history.clear()
+        self.prediction_log.clear()
+        self.result_log.clear()
+        for module_name in self.individual_module_prediction_log:
+            self.individual_module_prediction_log[module_name].clear()
+        
+        self.tie_module_prediction_log.clear()
+        self.pock_module_prediction_log.clear() 
+
+        self.last_prediction = None
+        self.last_module = None
+        self.show_initial_wait_message = True
+
+    def _trim_logs(self, max_length=100):
+        self.history = self.history[-max_length:]
+        self.result_log = self.result_log[-max_length:]
+        self.prediction_log = self.prediction_log[-max_length:]
+        
+        for module_name in self.individual_module_prediction_log:
+            self.individual_module_prediction_log[module_name] = self.individual_module_prediction_log[module_name][-max_length:]
+        
+        self.tie_module_prediction_log = self.tie_module_prediction_log[-max_length:]
+        self.pock_module_prediction_log = self.pock_module_prediction_log[-max_length:] 
+
+
+    def calculate_miss_streak(self) -> int:
+        streak = 0
+        for pred, actual in zip(reversed(self.prediction_log), reversed(self.result_log)):
+            if pred is None or actual not in ("P", "B") or pred not in ("P", "B"):
+                continue 
+            
+            if pred != actual:
+                streak += 1
             else:
-                columns.append(current_col)
-                current_col = [(main_outcome, 0, is_any_natural)] 
-        else:
-            if current_col:
-                columns.append(current_col)
-            current_col = [(main_outcome, 0, is_any_natural)] 
-            last_non_tie_result = main_outcome
+                break 
+        return streak
+
+    def _calculate_main_module_accuracy(self, module_name: str, lookback: Optional[int] = None) -> float:
+        log = self.individual_module_prediction_log.get(module_name, [])
+        
+        relevant_preds = log
+        if lookback is not None:
+            relevant_preds = log[-lookback:]
+        
+        wins = 0
+        total_predictions = 0
+        
+        for predicted_val, actual_val in relevant_preds:
+            if predicted_val in ("P", "B") and actual_val in ("P", "B"):
+                total_predictions += 1
+                if predicted_val == actual_val:
+                    wins += 1
+        
+        return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
+
+    def _calculate_side_bet_module_accuracy(self, log: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
+        relevant_log = log
+        if lookback is not None:
+            relevant_log = log[-lookback:]
+        
+        wins = 0
+        total_predictions = 0
+        
+        for predicted_val, actual_flag in relevant_log:
+            if predicted_val is not None:
+                total_predictions += 1
+                if actual_flag: 
+                    wins += 1
+        
+        return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
+
+
+    def get_module_accuracy_all_time(self) -> Dict[str, float]:
+        accuracy_results = {}
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
+        for module_name in main_modules:
+            accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback=None)
+        
+        accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback=None)
+        accuracy_results["Pock"] = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, lookback=None) 
+
+        return accuracy_results
+
+    def get_module_accuracy_recent(self, lookback: int) -> Dict[str, float]:
+        accuracy_results = {}
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
+        for module_name in main_modules:
+            accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback)
+        
+        accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback)
+        accuracy_results["Pock"] = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, lookback) 
+
+        return accuracy_results
+
+    def get_module_accuracy_normalized(self) -> Dict[str, float]:
+        acc = self.get_module_accuracy_all_time() 
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "Tie", "Pock"] 
+        
+        if not acc:
+            return {name: 0.5 for name in all_known_modules_for_norm}
+        
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector"] and v > 0} 
+        
+        if not active_main_accuracies:
+            return {name: 0.5 for name in all_known_modules_for_norm}
             
-    if current_col:
-        columns.append(current_col)
-
-    # Limit columns to display only the most recent 14 columns
-    MAX_DISPLAY_COLUMNS = 14 
-    if len(columns) > MAX_DISPLAY_COLUMNS:
-        columns = columns[-MAX_DISPLAY_COLUMNS:] 
-
-    # Generate the full HTML string for Big Road
-    big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
-    for col in columns:
-        big_road_html += "<div class='big-road-column'>"
-        for cell_result, tie_count, natural_flag in col: 
-            emoji = "🔵" if cell_result == "P" else "🔴"
-            tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
+        max_val = max(active_main_accuracies.values()) 
+        if max_val == 0: 
+            max_val = 1 
             
-            # Natural indicator
-            natural_indicator = f"<span class='natural-indicator'>N</span>" if natural_flag else ""
-
-            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{natural_indicator}</div>" 
-        big_road_html += "</div>" 
-    big_road_html += "</div>" 
-    
-    st.markdown(big_road_html, unsafe_allow_html=True)
-
-else:
-    st.info("🔄 ยังไม่มีข้อมูล")
-
-# --- Input Buttons (Main Outcomes) ---
-st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
-with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
-with col3:
-    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
-
-# NEW: Checkboxes for Side Outcomes
-st.markdown("<b>ผลเสริม (เลือกก่อนกดปุ่มผลหลัก):</b>", unsafe_allow_html=True)
-col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3) 
-with col_checkbox1:
-    st.checkbox("🟢 ไพ่ป็อก", key="is_any_natural_checked") 
+        normalized_acc = {}
+        for k, v in acc.items():
+            if k in ["Fallback", "Tie", "Pock"]: 
+                normalized_acc[k] = (v / 100.0) if v > 0 else 0.5 
+            else: 
+                normalized_acc[k] = (v / max_val) if max_val > 0 else 0.5 
+        return normalized_acc
 
 
-# --- Control Buttons ---
-st.markdown("<hr>", unsafe_allow_html=True)
-col4, col5 = st.columns(2)
-with col4:
-    st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
-with col5:
-    st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
+    def get_best_recent_module(self, lookback: int = 10) -> Optional[str]:
+        modules_to_check = {
+            "Rule": self.rule_engine,
+            "Pattern": self.pattern_analyzer,
+            "Trend": self.trend_scanner, 
+            "2-2 Pattern": self.two_two_pattern,
+            "Sniper": self.sniper_pattern,
+            "Fallback": self.fallback_module,
+            "ChopDetector": self.chop_detector 
+        }
+        
+        module_scores: Dict[str, float] = {}
 
-# --- Debugging Toggle ---
-st.markdown("<hr>", unsafe_allow_html=True)
-st.session_state.show_debug_info = st.checkbox("แสดงข้อมูล Debugging")
+        min_history_for_module = 4 
+        start_index = max(min_history_for_module, len(self.history) - lookback) 
+        
+        for name, module in modules_to_check.items():
+            wins = 0
+            total_preds = 0
+            for j in range(start_index, len(self.history)):
+                current_sub_history = self.history[:j] 
+                
+                # V6.6: Special handling for TrendScanner when calculating its historical performance
+                if name == "Trend":
+                    # Calculate choppiness for the sub-history
+                    choppiness_for_sub_history = self._calculate_choppiness_rate(current_sub_history, 20) 
+                    module_pred = module.predict(current_sub_history, choppiness_for_sub_history)
+                else:
+                    module_pred = module.predict(current_sub_history)
 
-# --- Conditional Debugging Output ---
-if st.session_state.show_debug_info:
-    st.markdown("<h3>⚙️ ข้อมูล Debugging (สำหรับนักพัฒนา)</h3>", unsafe_allow_html=True)
-    st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
-    st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
-    st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
-    st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
-    st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
-    st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
-    st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
-    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
-    st.write(f"ทำนายไพ่ป็อก: {st.session_state.pock_prediction}, Sniper ไพ่ป็อก: {st.session_state.is_pock_sniper_opportunity}") 
-    st.write("---") 
+                actual_outcome_for_this_round = self.history[j].main_outcome 
+                
+                if module_pred in ("P", "B") and actual_outcome_for_this_round in ("P", "B"): 
+                    total_preds += 1
+                    if module_pred == actual_outcome_for_this_round:
+                        wins += 1
+            
+            if total_preds > 0:
+                module_scores[name] = wins / total_preds
+            else:
+                module_scores[name] = 0.0 
+
+        if not module_scores:
+            return None
+        
+        filtered_module_scores = {k: v for k, v in module_scores.items() if k != "Fallback"}
+        
+        if not filtered_module_scores:
+            return None
+
+        return max(filtered_module_scores, key=filtered_module_scores.get)
+
+    def _calculate_choppiness_rate(self, history: List[RoundResult], lookback: int) -> float:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 2:
+            return 0.0 
+
+        recent_history = filtered_history[-lookback:]
+        alternations = 0
+        for i in range(1, len(recent_history)):
+            if recent_history[i] != recent_history[i-1]:
+                alternations += 1
+        
+        if len(recent_history) <= 1: 
+            return 0.0
+        
+        return alternations / (len(recent_history) - 1)
 
 
-# --- Accuracy by Module ---
-st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) 
+    def predict_next(self) -> Tuple[
+        Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, # Main prediction
+        Optional[Literal["T"]], # Tie prediction
+        Optional[Literal["NATURAL"]], # Pock prediction
+        bool, bool # is_tie_sniper_opportunity, is_pock_sniper_opportunity 
+    ]:
+        """
+        Generates the next predictions for main outcome and side bets,
+        along with main outcome's source, confidence, miss streak, and Sniper opportunity flag.
+        """
+        main_history_filtered_for_pb = _get_main_outcome_history(self.history)
+        p_count = main_history_filtered_for_pb.count("P")
+        b_count = main_history_filtered_for_pb.count("B")
+        
+        current_miss_streak = self.calculate_miss_streak()
 
-all_time_accuracies = st.session_state.oracle.get_module_accuracy_all_time()
-recent_10_accuracies = st.session_state.oracle.get_module_accuracy_recent(10)
-recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
+        MIN_HISTORY_FOR_PREDICTION = 20 
+        MIN_HISTORY_FOR_SNIPER = 30 
+        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 
+        MIN_DISPLAY_CONFIDENCE = 55 
 
-if all_time_accuracies:
-    st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
-    for name in sorted_module_names:
-        acc = all_time_accuracies[name]
-        st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
-    
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    main_history_len = p_count + b_count
+        final_prediction_main = None
+        source_module_name_main = None
+        confidence_main = None
+        pattern_code_main = None
+        is_sniper_opportunity_main = False 
+        is_tie_sniper_opportunity = False
+        is_pock_sniper_opportunity = False 
 
-    if main_history_len >= 10: 
-        st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
-        for name in sorted_module_names_recent_10:
-            acc = recent_10_accuracies[name]
-            st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
+        if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
+            self.last_prediction = None
+            self.last_module = None
+            return None, None, None, None, current_miss_streak, False, None, None, False, False 
 
-    if main_history_len >= 20: 
-        st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
-        for name in sorted_module_names_recent_20:
-            acc = recent_20_accuracies[name]
-            st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
-else:
-    st.info("ยังไม่มีข้อมูลความแม่นยำ")
+        # V6.6: Calculate choppiness rate once for TrendScanner
+        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
+
+        predictions_from_modules = {
+            "Rule": self.rule_engine.predict(self.history),
+            "Pattern": self.pattern_analyzer.predict(self.history),
+            "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
+            "2-2 Pattern": self.two_two_pattern.predict(self.history),
+            "Sniper": self.sniper_pattern.predict(self.history), 
+            "Fallback": self.fallback_module.predict(self.history),
+            "ChopDetector": self.chop_detector.predict(self.history) 
+        }
+        
+        module_accuracies_all_time = self.get_module_accuracy_all_time()
+        module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
+
+        final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
+            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
+
+        # V6.2: Apply minimum display confidence
+        if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
+            final_prediction_main = None
+            source_module_name_main = None
+            confidence_main = None
+            pattern_code_main = None
+
+        if current_miss_streak in [3, 4]:
+            best_module_for_recovery = self.get_best_recent_module()
+            if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
+                final_prediction_main = predictions_from_modules[best_module_for_recovery]
+                source_module_name_main = f"{best_module_for_recovery}-Recovery"
+                confidence_main = 70 
+
+
+        # --- Main Outcome Sniper Opportunity Logic ---
+        if final_prediction_main in ("P", "B") and confidence_main is not None:
+            if confidence_main == 95 and current_miss_streak == 0 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
+                contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
+                all_contributing_modules_high_all_time_accuracy = True
+                
+                SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD = 90 
+
+                if not contributing_modules or "NoPrediction" in contributing_modules or "Fallback" in contributing_modules:
+                    all_contributing_modules_high_all_time_accuracy = False
+                else:
+                    for module_name in contributing_modules:
+                        mod_acc = self._calculate_main_module_accuracy(module_name, lookback=None) 
+                        if mod_acc < SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD:
+                            all_contributing_modules_high_all_time_accuracy = False
+                            break
+                
+                sniper_module_recent_accuracy_ok = True
+                if "Sniper" in contributing_modules:
+                    SNIPER_RECENT_PREDICTION_COUNT = 5 
+                    SNIPER_RECENT_ACCURACY_THRESHOLD = 90 
+
+                    sniper_recent_acc = self._calculate_main_module_accuracy("Sniper", SNIPER_RECENT_PREDICTION_COUNT) 
+                    
+                    if sniper_recent_acc < SNIPER_RECENT_ACCURACY_THRESHOLD:
+                        sniper_module_recent_accuracy_ok = False
+                
+                if all_contributing_modules_high_all_time_accuracy and sniper_module_recent_accuracy_ok:
+                    is_sniper_opportunity_main = True
+        # --- END Main Outcome Sniper Logic ---
+
+        self.last_prediction = final_prediction_main
+        self.last_module = source_module_name_main 
+
+        # --- Side Bet Predictions ---
+        tie_prediction = self.tie_predictor.predict(self.history)
+        pock_prediction = self.pock_predictor.predict(self.history) 
+
+        # --- Side Bet Sniper Opportunity Logic ---
+        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 90 
+        SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
+
+        # Tie Sniper
+        if tie_prediction == "T" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
+            tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
+            tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+            
+            if tie_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
+                is_tie_sniper_opportunity = True
+
+        # Pock Sniper
+        if pock_prediction == "NATURAL" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
+            pock_all_time_acc = module_accuracies_all_time.get("Pock", 0)
+            pock_recent_acc = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+            
+            if pock_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and pock_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
+                is_pock_sniper_opportunity = True
+
+        return (
+            final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
+            tie_prediction, pock_prediction, 
+            is_tie_sniper_opportunity, is_pock_sniper_opportunity 
+        )
 
