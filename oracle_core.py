@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.0 - Balanced Side Bet Predictions)
+# oracle_core.py (Oracle V7.2 - Refined Side Bet Balance)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -229,7 +229,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.8, V7.0) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.8, V7.0, V7.1, V7.2) ---
 
 class TiePredictor:
     """
@@ -238,6 +238,8 @@ class TiePredictor:
     V6.7: Adjusts probability-based logic to prevent constant Tie prediction.
     V6.8: Further refined probability-based logic for more balanced prediction.
     V7.0: Adjusted probability threshold to be more aggressive in predicting when due, and less aggressive in stopping.
+    V7.1: Further refined probability thresholds for better balance.
+    V7.2: Adjusted history requirement and probability thresholds for better balance.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -245,21 +247,22 @@ class TiePredictor:
         tie_flags = _get_side_bet_history_flags(history, "T")
         main_history_pb = _get_main_outcome_history(history) 
 
-        if len(tie_flags) < 25: # Still require a decent amount of Tie history for robust probability check
+        # V7.2: Reduced history requirement for Tie prediction to start earlier
+        if len(tie_flags) < 15: # Changed from 20 to 15
             return None
         
-        # V7.0: Probability-based adjustment - more aggressive in predicting when due
+        # V7.2: Probability-based adjustment - more aggressive when due, slightly less aggressive in stopping
         lookback_for_prob = min(len(tie_flags), 50) 
         if lookback_for_prob > 0:
             recent_tie_flags = tie_flags[-lookback_for_prob:]
             actual_tie_count = recent_tie_flags.count(True)
             expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            # If ties are significantly "due" (e.g., less than 95% of expected)
-            if actual_tie_count < expected_tie_count * 0.95: # V7.0: Adjusted from 0.9 to 0.95 (more aggressive when due)
+            # If ties are significantly "due" (e.g., less than 85% of expected)
+            if actual_tie_count < expected_tie_count * 0.85: # V7.2: Adjusted from 0.9 to 0.85 (more aggressive when due)
                 return "T"
             # If ties have been slightly more frequent than expected, stop predicting
-            elif actual_tie_count > expected_tie_count * 1.15: # V7.0: Adjusted from 1.0 to 1.15 (less aggressive stop)
+            elif actual_tie_count > expected_tie_count * 1.2: # V7.2: Adjusted from 1.25 to 1.2 (slightly less aggressive stop)
                 return None 
 
         # Existing rules from V6.1 (these will now be filtered by the probability check above)
@@ -313,6 +316,8 @@ class PockPredictor:
     V6.7: Adjusts history requirement and probability-based logic to allow more predictions.
     V6.8: Further refined history requirement and probability-based logic for more frequent predictions.
     V7.0: Adjusted history requirement and probability-based logic for more balanced predictions.
+    V7.1: Further refined probability thresholds and rules for better balance.
+    V7.2: Adjusted history requirement and probability thresholds for better balance.
     """
     THEORETICAL_PROB = 0.17 # Approx. 17% for any natural (P or B) in 8 decks
 
@@ -320,11 +325,11 @@ class PockPredictor:
         natural_flags = _get_side_bet_history_flags(history, "NATURAL")
         main_history_pb = _get_main_outcome_history(history)
 
-        # V7.0: Increased history requirement slightly for Pock prediction for more stability
-        if len(natural_flags) < 7: # Changed from 3 to 7
+        # V7.2: Adjusted history requirement for Pock prediction for better balance
+        if len(natural_flags) < 8: # Changed from 10 to 8
             return None
         
-        # V7.0: Probability-based adjustment - less eager to predict when slightly due, more aggressive in stopping
+        # V7.2: Probability-based adjustment - less eager to predict when slightly due, slightly more aggressive in stopping
         lookback_for_prob = min(len(natural_flags), 50) 
         if lookback_for_prob > 0:
             recent_natural_flags = natural_flags[-lookback_for_prob:]
@@ -332,20 +337,20 @@ class PockPredictor:
             expected_natural_count = lookback_for_prob * self.THEORETICAL_PROB
 
             # If naturals are significantly "due" (e.g., less than 90% of expected)
-            if actual_natural_count < expected_natural_count * 0.9: # V7.0: Adjusted from 1.0 to 0.9 (less aggressive when due)
+            if actual_natural_count < expected_natural_count * 0.9: # V7.2: Adjusted from 0.95 to 0.9 (less aggressive when due)
                 return "NATURAL"
             # If naturals have been slightly more frequent than expected, stop predicting
-            elif actual_natural_count > expected_natural_count * 1.15: # V7.0: Adjusted from 1.05 to 1.15 (more aggressive stop)
+            elif actual_natural_count > expected_natural_count * 1.1: # V7.2: Adjusted from 1.05 to 1.1 (slightly more aggressive stop)
                 return None
 
-        # Existing rules from V6.5/V6.7/V6.8
-        # Rule 1: Natural just occurred, strong chance of another Natural soon (momentum)
-        if natural_flags[-1]:
+        # Existing rules from V6.5/V6.7/V6.8/V7.0/V7.1
+        # V7.1: Adjusted Rule 1 to be less aggressive if naturals are already high
+        if natural_flags[-1] and actual_natural_count < expected_natural_count * 1.1: # Only predict if natural just occurred AND not too over-represented
             return "NATURAL"
         
         # V6.9: New Rule: If no Naturals for a specific number of *main outcomes* (P/B) in a row, predict it's due
         # This rule uses main_history_pb length, which grows faster than natural_flags length
-        if len(main_history_pb) >= 12 and not any(r.is_any_natural for r in history[-12:]): # V7.0: Increased lookback from 10 to 12
+        if len(main_history_pb) >= 15 and not any(r.is_any_natural for r in history[-15:]): 
             return "NATURAL"
 
         # Rule 2: If no Naturals for a long time (e.g., 15+ rounds of natural_flags), predict a Natural might be due
