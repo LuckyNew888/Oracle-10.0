@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.9.1 - Fix Tie Accuracy Calculation)
+# oracle_core.py (Oracle V7.9.2 - Fix NameError)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -228,7 +228,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2) ---
 
 class TiePredictor:
     """
@@ -266,7 +266,7 @@ class TiePredictor:
             else:
                 return None, None
         # V7.9.1: If ties have been slightly more frequent than expected, stop predicting.
-        elif actual_tie_count > expected_tie_count * 1.0: # Changed from 1.0 to 1.0 (no change, but keeping for clarity)
+        elif actual_tie_count > expected_tie_count * 1.0: 
             return None, None 
 
         # Pattern-based rules (these will now be filtered by the probability check above and confidence threshold)
@@ -286,7 +286,7 @@ class TiePredictor:
         
         # V7.9.1: Adjusted threshold for frequent ties to be more conservative
         # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20) - this might be caught by prob check
-        if tie_flags[-20:].count(True) >= 6 and actual_tie_count < expected_tie_count * 0.95: # Changed from 1.0 to 0.95
+        if tie_flags[-20:].count(True) >= 6 and actual_tie_count < expected_tie_count * 0.95: 
             return "T", 60
             
         # Rule 5: Tie after a specific main outcome sequence (e.g., P B B P, then T)
@@ -396,7 +396,7 @@ class AdaptiveScorer:
         }
 
         if len(filtered_history) >= 5:
-            if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
+            if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_filtered[-2] != filtered_history[-1]:
                 return "มังกรตัด" 
 
         for length in range(6, 2, -1): 
@@ -747,7 +747,8 @@ class OracleBrain:
         if current_miss_streak in [3, 4]:
             best_module_for_recovery = self.get_best_recent_module()
             if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
-                final_prediction_main = predictions[best_module_for_recovery]
+                # V7.9.2: Fixed NameError: 'predictions' was undefined. Changed to 'predictions_from_modules'.
+                final_prediction_main = predictions_from_modules[best_module_for_recovery] 
                 source_module_name_main = f"{best_module_for_recovery}-Recovery"
                 confidence_main = 70 
 
@@ -803,7 +804,7 @@ class OracleBrain:
             
             # If the system *predicted* Tie in the last round (last_logged_tie_pred == "T")
             # AND the *actual* result of the last round was NOT a Tie (not last_actual_is_tie)
-            # Then, suppress the Tie prediction for the *current* round.
+            # Then, suppress the current Tie prediction for this round
             if last_logged_tie_pred == "T" and not last_actual_is_tie:
                 tie_prediction = None
                 tie_confidence = None
