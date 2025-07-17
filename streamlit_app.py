@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V7.4", layout="centered") # Updated version to V7.4
+st.set_page_config(page_title="🔮 Oracle V7.6", layout="centered") # Updated version to V7.6
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -278,20 +278,15 @@ if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
 if 'tie_confidence' not in st.session_state: # New for V7.3
     st.session_state.tie_confidence = None
-if 'pock_prediction' not in st.session_state: 
-    st.session_state.pock_prediction = None
-if 'pock_confidence' not in st.session_state: # New for V7.3
-    st.session_state.pock_confidence = None
+# Removed pock_prediction and pock_confidence
 
 # NEW: Session state for side bet sniper opportunities
 if 'is_tie_sniper_opportunity' not in st.session_state:
     st.session_state.is_tie_sniper_opportunity = False
-if 'is_pock_sniper_opportunity' not in st.session_state: 
-    st.session_state.is_pock_sniper_opportunity = False
+# Removed is_pock_sniper_opportunity
 
 # Session state for checkboxes (to control their state)
-if 'is_any_natural_checked' not in st.session_state: 
-    st.session_state.is_any_natural_checked = False
+# Removed is_any_natural_checked as it's only for Pock
 
 
 # --- UI Callback Functions ---
@@ -301,19 +296,20 @@ def handle_click(main_outcome_str: MainOutcome):
     Reads checkbox states for side bets.
     Adds the result to OracleBrain and updates all predictions.
     """
-    # Read current checkbox states
-    is_any_natural = st.session_state.is_any_natural_checked 
+    # is_any_natural is no longer needed for Pock, but RoundResult still expects it.
+    # We can pass False as a default since Pock is removed.
+    is_any_natural = False 
 
     # Call add_result with all information
     st.session_state.oracle.add_result(main_outcome_str, is_any_natural)
     
-    # Reset checkboxes after adding result
-    st.session_state.is_any_natural_checked = False
+    # Reset checkboxes after adding result (no checkboxes now, but keep for consistency if needed later)
+    # st.session_state.is_any_natural_checked = False # This line is removed as the checkbox is removed
 
     # Unpack all return values from predict_next (now includes side bet confidences)
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, tie_conf, pock_pred, pock_conf, 
-     is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
+     tie_pred, tie_conf, 
+     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() # Adjusted unpacking
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -323,12 +319,11 @@ def handle_click(main_outcome_str: MainOutcome):
     # Update side bet predictions and their confidences
     st.session_state.tie_prediction = tie_pred
     st.session_state.tie_confidence = tie_conf
-    st.session_state.pock_prediction = pock_pred
-    st.session_state.pock_confidence = pock_conf
+    # Removed pock_prediction and pock_confidence
 
     # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
+    # Removed is_pock_sniper_opportunity
 
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -364,8 +359,8 @@ def handle_remove():
     st.session_state.oracle.remove_last()
     # Unpack all return values from predict_next (now includes side bet confidences)
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, tie_conf, pock_pred, pock_conf, 
-     is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
+     tie_pred, tie_conf, 
+     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() # Adjusted unpacking
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -375,12 +370,11 @@ def handle_remove():
     # Update side bet predictions and their confidences
     st.session_state.tie_prediction = tie_pred
     st.session_state.tie_confidence = tie_conf
-    st.session_state.pock_prediction = pock_pred
-    st.session_state.pock_confidence = pock_conf
+    # Removed pock_prediction and pock_confidence
     
     # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
+    # Removed is_pock_sniper_opportunity
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -407,7 +401,7 @@ def handle_remove():
         st.session_state.initial_shown = False
     
     # Reset checkboxes on remove, as the last round's state is gone
-    st.session_state.is_any_natural_checked = False
+    # st.session_state.is_any_natural_checked = False # This line is removed as the checkbox is removed
 
     st.query_params["_t"] = f"{time.time()}"
 
@@ -427,20 +421,19 @@ def handle_reset():
     # Reset side bet predictions and confidences
     st.session_state.tie_prediction = None
     st.session_state.tie_confidence = None
-    st.session_state.pock_prediction = None
-    st.session_state.pock_confidence = None
+    # Removed pock_prediction and pock_confidence
 
     # Reset side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = False
-    st.session_state.is_pock_sniper_opportunity = False
+    # Removed is_pock_sniper_opportunity
 
     # Reset checkboxes on full reset
-    st.session_state.is_any_natural_checked = False
+    # st.session_state.is_any_natural_checked = False # This line is removed as the checkbox is removed
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V7.4</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V7.6</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -482,7 +475,8 @@ if st.session_state.is_sniper_opportunity_main:
 
 # --- Side Bet Prediction Display ---
 st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
-col_side1, col_side2 = st.columns(2) 
+# Adjusted to use a single column for Tie prediction
+col_side1, col_side_empty = st.columns(2) 
 
 # Display Tie prediction only if it exists and confidence is met
 with col_side1:
@@ -498,20 +492,9 @@ with col_side1:
     else:
         st.markdown("<p style='text-align:center; color:#495057;'>⚪ เสมอ (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
 
-
-# Display Pock prediction only if it exists and confidence is met
-with col_side2:
-    if st.session_state.pock_prediction and st.session_state.pock_confidence is not None:
-        st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>🟢 ไพ่ป็อก</p>", unsafe_allow_html=True)
-        st.caption(f"🔎 ความมั่นใจ: {st.session_state.pock_confidence:.1f}%")
-        if st.session_state.is_pock_sniper_opportunity:
-            st.markdown("""
-                <div class="side-bet-sniper-message">
-                    🎯 SNIPER ไพ่ป็อก!
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.markdown("<p style='text-align:center; color:#495057;'>🟢 ไพ่ป็อก (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
+# The second column is now intentionally empty for Pock, as it's removed
+with col_side_empty:
+    st.markdown("<p style='text-align:center; color:#495057;'>❌ ไพ่ป็อก (ยกเลิก)</p>", unsafe_allow_html=True)
 
 
 st.markdown("<hr>", unsafe_allow_html=True)
@@ -585,7 +568,9 @@ if history_results:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
             
-            # Natural indicator
+            # Natural indicator is still passed in RoundResult, but Pock is removed.
+            # So, natural_flag will always be False unless the user manually sets it in the future.
+            # For now, it will not display as Pock is removed.
             natural_indicator = f"<span class='natural-indicator'>N</span>" if natural_flag else ""
 
             big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{natural_indicator}</div>" 
@@ -609,11 +594,11 @@ with col2:
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
-# NEW: Checkboxes for Side Outcomes
-st.markdown("<b>ผลเสริม (เลือกก่อนกดปุ่มผลหลัก):</b>", unsafe_allow_html=True)
-col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3) 
-with col_checkbox1:
-    st.checkbox("🟢 ไพ่ป็อก", key="is_any_natural_checked") 
+# Removed checkboxes for side outcomes
+# st.markdown("<b>ผลเสริม (เลือกก่อนกดปุ่มผลหลัก):</b>", unsafe_allow_html=True)
+# col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3) 
+# with col_checkbox1:
+#     st.checkbox("🟢 ไพ่ป็อก", key="is_any_natural_checked") 
 
 
 # --- Control Buttons ---
@@ -639,7 +624,7 @@ if st.session_state.show_debug_info:
     st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") # Updated debug info
-    st.write(f"ทำนายไพ่ป็อก: {st.session_state.pock_prediction}, ความมั่นใจไพ่ป็อก: {st.session_state.pock_confidence}, Sniper ไพ่ป็อก: {st.session_state.is_pock_sniper_opportunity}") # Updated debug info
+    # Removed Pock debug info
     st.write("---") 
 
 
@@ -652,7 +637,7 @@ recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
+    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) # Adjusted sort key
     for name in sorted_module_names:
         acc = all_time_accuracies[name]
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
@@ -663,14 +648,14 @@ if all_time_accuracies:
 
     if main_history_len >= 10: 
         st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
+        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) # Adjusted sort key
         for name in sorted_module_names_recent_10:
             acc = recent_10_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 
     if main_history_len >= 20: 
         st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie", "Pock"], x))
+        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) # Adjusted sort key
         for name in sorted_module_names_recent_20:
             acc = recent_20_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
