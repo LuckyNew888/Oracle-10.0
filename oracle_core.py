@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.6 - Side Bet Probabilities & Dynamic Trend)
+# oracle_core.py (Oracle V6.7 - Side Bet & Main Prediction Refinements)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -126,7 +126,7 @@ class TrendScanner:
         if b_count / lookback_len >= 0.6:
             return "B"
         
-        # V6.1: Consider a shorter, very strong recent trend (e.g., 4 out of last 5)
+        # V6.1 New: Consider a shorter, very strong recent trend (e.g., 4 out of last 5)
         if len(filtered_history) >= 5:
             last_5 = filtered_history[-5:]
             p_count_5 = last_5.count("P")
@@ -229,12 +229,13 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.7) ---
 
 class TiePredictor:
     """
     Predicts Tie outcomes with further enhanced logic for V6.1.
     V6.6: Incorporates theoretical probability.
+    V6.7: Adjusts probability-based logic to prevent constant Tie prediction.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -246,19 +247,20 @@ class TiePredictor:
             return None
         
         # V6.6: Probability-based adjustment
-        # Check recent history for deviation from theoretical probability
         lookback_for_prob = min(len(tie_flags), 50) # Look back up to 50 rounds
         if lookback_for_prob > 0:
             recent_tie_flags = tie_flags[-lookback_for_prob:]
             actual_tie_count = recent_tie_flags.count(True)
             expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            if actual_tie_count < expected_tie_count * 0.7: # If ties are significantly "due" (e.g., less than 70% of expected)
+            # V6.7: Adjusted threshold for stopping Tie prediction
+            if actual_tie_count < expected_tie_count * 0.8: # If ties are significantly "due" (e.g., less than 80% of expected)
                 return "T"
-            elif actual_tie_count > expected_tie_count * 1.5: # If ties have been very frequent, reduce prediction
+            # V6.7: Lowered multiplier to stop predicting Tie sooner if it's over-represented
+            elif actual_tie_count > expected_tie_count * 1.2: # If ties have been very frequent, reduce prediction
                 return None # Don't predict T if it's been over-represented
 
-        # Existing rules from V6.1
+        # Existing rules from V6.1 (these will now be filtered by the probability check above)
         # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
         if len(main_history_pb) >= 12 and not any(tie_flags[-12:]):
             return "T"
@@ -306,6 +308,7 @@ class PockPredictor:
     """
     V6.5: Predicts the occurrence of any Natural (Pock 8 or 9) in the next round.
     V6.6: Incorporates theoretical probability.
+    V6.7: Adjusts history requirement and probability-based logic to allow more predictions.
     """
     THEORETICAL_PROB = 0.17 # Approx. 17% for any natural (P or B) in 8 decks
 
@@ -313,7 +316,8 @@ class PockPredictor:
         natural_flags = _get_side_bet_history_flags(history, "NATURAL")
         main_history_pb = _get_main_outcome_history(history)
 
-        if len(natural_flags) < 20: 
+        # V6.7: Reduced history requirement for Pock prediction
+        if len(natural_flags) < 10: # Changed from 20 to 10
             return None
         
         # V6.6: Probability-based adjustment
@@ -323,9 +327,11 @@ class PockPredictor:
             actual_natural_count = recent_natural_flags.count(True)
             expected_natural_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            if actual_natural_count < expected_natural_count * 0.7: 
+            # V6.7: Adjusted threshold for predicting Pock when "due"
+            if actual_natural_count < expected_natural_count * 0.9: # If naturals are significantly "due" (e.g., less than 90% of expected)
                 return "NATURAL"
-            elif actual_natural_count > expected_natural_count * 1.5: 
+            # V6.7: Added a threshold to stop predicting if it's over-represented
+            elif actual_natural_count > expected_natural_count * 1.2: # If naturals have been very frequent
                 return None
 
         # Existing rules from V6.5
@@ -333,7 +339,12 @@ class PockPredictor:
         if natural_flags[-1]:
             return "NATURAL"
         
+        # V6.7: New Rule: If no Naturals for a specific number of rounds, predict it's due
+        if len(natural_flags) >= 10 and not any(natural_flags[-10:]): # No natural in last 10 rounds
+            return "NATURAL"
+
         # Rule 2: If no Naturals for a long time (e.g., 15+ rounds), predict a Natural might be due
+        # This rule is now partially covered by the new rule above and probability check, but kept for longer lookback
         if not any(natural_flags[-15:]):
             return "NATURAL"
             
@@ -702,11 +713,10 @@ class OracleBrain:
 
         return max(filtered_module_scores, key=filtered_module_scores.get)
 
-    # V6.6: New helper method to calculate choppiness rate
     def _calculate_choppiness_rate(self, history: List[RoundResult], lookback: int) -> float:
         filtered_history = _get_main_outcome_history(history)
         if len(filtered_history) < 2:
-            return 0.0 # Not enough history to calculate choppiness
+            return 0.0 
 
         recent_history = filtered_history[-lookback:]
         alternations = 0
@@ -714,10 +724,9 @@ class OracleBrain:
             if recent_history[i] != recent_history[i-1]:
                 alternations += 1
         
-        if len(recent_history) <= 1: # Avoid division by zero for very short histories
+        if len(recent_history) <= 1: 
             return 0.0
         
-        # Choppiness is the ratio of alternations to the number of transitions
         return alternations / (len(recent_history) - 1)
 
 
@@ -756,12 +765,12 @@ class OracleBrain:
             return None, None, None, None, current_miss_streak, False, None, None, False, False 
 
         # V6.6: Calculate choppiness rate once for TrendScanner
-        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) # Look back 20 rounds for overall choppiness
+        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
 
         predictions_from_modules = {
             "Rule": self.rule_engine.predict(self.history),
             "Pattern": self.pattern_analyzer.predict(self.history),
-            "Trend": self.trend_scanner.predict(self.history, choppiness_rate), # Pass choppiness rate
+            "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
             "Fallback": self.fallback_module.predict(self.history),
