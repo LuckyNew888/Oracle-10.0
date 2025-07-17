@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V8.0.3 - Adjusted Tie Predictor Lookback)
+# oracle_core.py (Oracle V8.0.5 - Persistent Module Accuracy)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -204,7 +204,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3, V8.0.4, V8.0.5) ---
 
 class TiePredictor:
     """
@@ -212,6 +212,7 @@ class TiePredictor:
     V8.0.0: Significantly enhanced logic for better accuracy and more proactive predictions.
     V8.0.1: Adjusted long_lookback_for_prob to be more realistic for a Baccarat shoe.
     V8.0.3: Further adjusted long_lookback_for_prob to 50 for faster responsiveness within a shoe.
+    V8.0.4: Added min_tie_occurrences and enhanced cooldown logic for more reliable predictions.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -221,12 +222,12 @@ class TiePredictor:
         
         tie_confidence = 0
 
+        # V8.0.4: Minimum history for any Tie prediction
         if len(tie_flags) < 25: 
             return None, None
         
-        # V8.0.3: Adjusted long_lookback_for_prob to 50 (from 70) for faster responsiveness
-        long_lookback_for_prob = min(len(tie_flags), 50) # Look at last 50 rounds
-        short_lookback_for_prob = min(len(tie_flags), 20) # Look at last 20 rounds
+        long_lookback_for_prob = min(len(tie_flags), 50) 
+        short_lookback_for_prob = min(len(tie_flags), 20) 
 
         actual_tie_count_long = tie_flags[-long_lookback_for_prob:].count(True)
         actual_tie_count_short = tie_flags[-short_lookback_for_prob:].count(True)
@@ -234,30 +235,36 @@ class TiePredictor:
         expected_tie_count_long = long_lookback_for_prob * self.THEORETICAL_PROB
         expected_tie_count_short = short_lookback_for_prob * self.THEORETICAL_PROB
 
-        # Rule 1: Ties are "due" based on long-term underperformance
-        if actual_tie_count_long < expected_tie_count_long * 0.9: # Ties significantly underperformed long-term
-            # Boost confidence based on how "due" they are
-            due_factor = (expected_tie_count_long * 0.9 - actual_tie_count_long) / expected_tie_count_long
-            tie_confidence = min(90, 60 + int(due_factor * 100 * 0.7)) # Base 60, significant boost
-            if tie_confidence >= 55: return "T", tie_confidence
+        # V8.0.4: New rule - require at least one tie occurrence in the long lookback for "due" prediction
+        MIN_TIE_OCCURRENCES_FOR_DUE = 1 
+        if actual_tie_count_long < MIN_TIE_OCCURRENCES_FOR_DUE and len(tie_flags) >= long_lookback_for_prob:
+            # If no ties have occurred in the long lookback, and we have enough history, don't predict "due"
+            # This prevents predicting "due" too early in a shoe where ties are simply not appearing yet.
+            pass # Skip due rules, proceed to pattern rules
+        else:
+            # Rule 1: Ties are "due" based on long-term underperformance
+            if actual_tie_count_long < expected_tie_count_long * 0.9: 
+                due_factor = (expected_tie_count_long * 0.9 - actual_tie_count_long) / expected_tie_count_long
+                tie_confidence = min(90, 60 + int(due_factor * 100 * 0.7)) 
+                if tie_confidence >= 55: return "T", tie_confidence
 
-        # Rule 2: Ties are "due" based on short-term underperformance, even if long-term is okay
-        if actual_tie_count_short < expected_tie_count_short * 0.8: # Ties significantly underperformed short-term
-            due_factor_short = (expected_tie_count_short * 0.8 - actual_tie_count_short) / expected_tie_count_short
-            tie_confidence = min(85, 55 + int(due_factor_short * 100 * 0.6)) # Base 55, moderate boost
-            if tie_confidence >= 55: return "T", tie_confidence
+            # Rule 2: Ties are "due" based on short-term underperformance, even if long-term is okay
+            if actual_tie_count_short < expected_tie_count_short * 0.8: 
+                due_factor_short = (expected_tie_count_short * 0.8 - actual_tie_count_short) / expected_tie_count_short
+                tie_confidence = min(85, 55 + int(due_factor_short * 100 * 0.6)) 
+                if tie_confidence >= 55: return "T", tie_confidence
 
         # Rule 3: Tie Clustering - if a tie occurred recently
-        if len(tie_flags) >= 2 and tie_flags[-1] == True: # Last round was a Tie
-            return "T", 70 # High confidence for immediate repeat
-        if len(tie_flags) >= 3 and tie_flags[-2] == True and not tie_flags[-1]: # Tie 2 rounds ago, then no tie
-            return "T", 60 # Moderate confidence for a tie after one non-tie
-        if len(tie_flags) >= 4 and tie_flags[-3] == True and not tie_flags[-1] and not tie_flags[-2]: # Tie 3 rounds ago, then two non-ties
-            return "T", 55 # Lower confidence, but still a pattern
+        if len(tie_flags) >= 2 and tie_flags[-1] == True: 
+            return "T", 70 
+        if len(tie_flags) >= 3 and tie_flags[-2] == True and not tie_flags[-1]: 
+            return "T", 60 
+        if len(tie_flags) >= 4 and tie_flags[-3] == True and not tie_flags[-1] and not tie_flags[-2]: 
+            return "T", 55 
 
         # Rule 4: Tie after a long streak of P/B (e.g., 10+ non-tie outcomes)
         if len(main_history_pb) >= 10 and not any(tie_flags[-10:]):
-            return "T", 75 # High confidence if due after a long non-tie streak
+            return "T", 75 
 
         # Rule 5: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
         if len(main_history_pb) >= 6:
@@ -274,7 +281,7 @@ class TiePredictor:
         if actual_tie_count_long > expected_tie_count_long * 1.1: 
             return None, None 
 
-        return None, None # No confident prediction
+        return None, None 
 
 class AdaptiveScorer:
     """
@@ -388,13 +395,17 @@ class OracleBrain:
         self.last_prediction: Optional[MainOutcome] = None 
         self.last_module: Optional[str] = None 
 
-        # V8.0.2: These logs are now *only* for the current shoe.
-        # Accuracy calculations will be based on these, but they are reset per shoe.
-        # The underlying "knowledge" of module performance is implicit in how AdaptiveScorer uses the accuracies.
-        self.individual_module_prediction_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
+        # V8.0.5: Global logs for all-time accuracy (persistent across shoes)
+        self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
         }
-        self.tie_module_prediction_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
+        self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
+
+        # V8.0.5: Per-shoe logs for recent accuracy and current shoe display
+        self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
+        }
+        self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
 
         # Initialize all prediction modules (P/B)
@@ -434,50 +445,63 @@ class OracleBrain:
         
         for module_name, pred in current_predictions_from_modules_main.items():
             if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
-                self.individual_module_prediction_log[module_name].append((pred, main_outcome))
+                # V8.0.5: Log to both global and current shoe logs
+                self.module_accuracy_global_log[module_name].append((pred, main_outcome))
+                self.individual_module_prediction_log_current_shoe[module_name].append((pred, main_outcome))
 
         # --- Record individual side bet module predictions *before* adding the new outcome ---
         tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
 
         if tie_pred_for_log is not None:
-            self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
+            # V8.0.5: Log to both global and current shoe logs
+            self.tie_module_accuracy_global_log.append((tie_pred_for_log, main_outcome == "T"))
+            self.tie_module_prediction_log_current_shoe.append((tie_pred_for_log, main_outcome == "T"))
 
         # Now, add the actual outcome to main history and logs
         self.history.append(new_round_result) 
         self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
         
-        # V8.0.2: Trim logs to MAX_LENGTH (which is 100) to keep history relevant to the shoe.
-        # This is important for preventing old shoe data from influencing current shoe analysis.
-        self._trim_logs() 
+        # V8.0.5: Trim only global logs to prevent indefinite growth
+        self._trim_global_logs() 
+        # Current shoe logs are implicitly trimmed by `start_new_shoe` and `remove_last`
 
     def remove_last(self):
         if self.history: self.history.pop()
         if self.result_log: self.result_log.pop()
         if self.prediction_log: self.prediction_log.pop()
         
-        # V8.0.2: When removing, also remove from module logs
-        for module_name in self.individual_module_prediction_log:
-            if self.individual_module_prediction_log[module_name]:
-                self.individual_module_prediction_log[module_name].pop()
+        # V8.0.5: When removing, also remove from both global and current shoe logs
+        for module_name in self.module_accuracy_global_log:
+            if self.module_accuracy_global_log[module_name]:
+                self.module_accuracy_global_log[module_name].pop()
+        for module_name in self.individual_module_prediction_log_current_shoe:
+            if self.individual_module_prediction_log_current_shoe[module_name]:
+                self.individual_module_prediction_log_current_shoe[module_name].pop()
         
-        if self.tie_module_prediction_log:
-            self.tie_module_prediction_log.pop()
+        if self.tie_module_accuracy_global_log:
+            self.tie_module_accuracy_global_log.pop()
+        if self.tie_module_prediction_log_current_shoe:
+            self.tie_module_prediction_log_current_shoe.pop()
 
 
     def reset_all_data(self):
         """
-        V8.0.2: This method now explicitly resets ALL data, including module accuracy logs.
+        V8.0.5: This method now explicitly resets ALL data, including global and current shoe accuracy logs.
         Use with caution, typically for a full system restart or debugging.
         """
         self.history.clear()
         self.prediction_log.clear()
         self.result_log.clear()
         
-        # Clear all module prediction logs as well
-        for module_name in self.individual_module_prediction_log:
-            self.individual_module_prediction_log[module_name].clear()
-        self.tie_module_prediction_log.clear()
+        # Clear all module prediction logs (global and current shoe)
+        for module_name in self.module_accuracy_global_log:
+            self.module_accuracy_global_log[module_name].clear()
+        self.tie_module_accuracy_global_log.clear()
+
+        for module_name in self.individual_module_prediction_log_current_shoe:
+            self.individual_module_prediction_log_current_shoe[module_name].clear()
+        self.tie_module_prediction_log_current_shoe.clear()
 
         self.last_prediction = None
         self.last_module = None
@@ -485,56 +509,37 @@ class OracleBrain:
 
     def start_new_shoe(self):
         """
-        V8.0.2: This method resets the current shoe's history and prediction logs,
-        but retains the historical accuracy data of the modules.
+        V8.0.5: This method resets the current shoe's history and prediction logs,
+        but retains the global historical accuracy data of the modules.
         """
         self.history.clear()
         self.prediction_log.clear()
         self.result_log.clear()
         
         # Clear only the *current* shoe's prediction logs for modules
-        # This allows accuracy calculation to restart for the new shoe
-        for module_name in self.individual_module_prediction_log:
-            self.individual_module_prediction_log[module_name].clear()
-        self.tie_module_prediction_log.clear()
+        for module_name in self.individual_module_prediction_log_current_shoe:
+            self.individual_module_prediction_log_current_shoe[module_name].clear()
+        self.tie_module_prediction_log_current_shoe.clear()
 
         self.last_prediction = None
         self.last_module = None
         self.show_initial_wait_message = True
 
 
-    def _trim_logs(self, max_length=100):
-        # V8.0.2: This trimming is now primarily to keep the history within a reasonable shoe length
-        # and prevent excessive memory usage. The shoe reset handles clearing for new shoes.
-        self.history = self.history[-max_length:]
-        self.result_log = self.result_log[-max_length:]
-        self.prediction_log = self.prediction_log[-max_length:]
+    def _trim_global_logs(self, max_length=1000): # V8.0.5: Increased max_length for global logs
+        """
+        V8.0.5: Trims global accuracy logs to prevent indefinite growth.
+        """
+        for module_name in self.module_accuracy_global_log:
+            self.module_accuracy_global_log[module_name] = self.module_accuracy_global_log[module_name][-max_length:]
         
-        # Individual module logs are also trimmed to ensure they don't grow indefinitely
-        for module_name in self.individual_module_prediction_log:
-            self.individual_module_prediction_log[module_name] = self.individual_module_prediction_log[module_name][-max_length:]
-        
-        self.tie_module_prediction_log = self.tie_module_prediction_log[-max_length:]
+        self.tie_module_accuracy_global_log = self.tie_module_accuracy_global_log[-max_length:]
 
-
-    def calculate_miss_streak(self) -> int:
-        streak = 0
-        for pred, actual in zip(reversed(self.prediction_log), reversed(self.result_log)):
-            if pred is None or actual not in ("P", "B") or pred not in ("P", "B"):
-                continue 
-            
-            if pred != actual:
-                streak += 1
-            else:
-                break 
-        return streak
-
-    def _calculate_main_module_accuracy(self, module_name: str, lookback: Optional[int] = None) -> float:
-        log = self.individual_module_prediction_log.get(module_name, [])
-        
-        relevant_preds = log
+    # V8.0.5: Renamed to specify which log is being calculated from
+    def _calculate_main_module_accuracy_from_log(self, log_data: List[Tuple[MainOutcome, MainOutcome]], lookback: Optional[int] = None) -> float:
+        relevant_preds = log_data
         if lookback is not None:
-            relevant_preds = log[-lookback:]
+            relevant_preds = log_data[-lookback:]
         
         wins = 0
         total_predictions = 0
@@ -547,10 +552,11 @@ class OracleBrain:
         
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
-    def _calculate_side_bet_module_accuracy(self, log: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
-        relevant_log = log
+    # V8.0.5: Renamed to specify which log is being calculated from
+    def _calculate_side_bet_module_accuracy_from_log(self, log_data: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
+        relevant_log = log_data
         if lookback is not None:
-            relevant_log = log[-lookback:]
+            relevant_log = log_data[-lookback:]
         
         wins = 0
         total_predictions = 0
@@ -565,30 +571,33 @@ class OracleBrain:
 
 
     def get_module_accuracy_all_time(self) -> Dict[str, float]:
-        # V8.0.2: All-time accuracy is now calculated from the full individual_module_prediction_log
-        # which is only trimmed, not reset by start_new_shoe. This ensures accumulated knowledge.
+        """
+        V8.0.5: Calculates all-time accuracy from global logs.
+        """
         accuracy_results = {}
         main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
         for module_name in main_modules:
-            accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback=None)
+            accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
         
-        accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback=None)
+        accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_accuracy_global_log, lookback=None)
 
         return accuracy_results
 
     def get_module_accuracy_recent(self, lookback: int) -> Dict[str, float]:
-        # V8.0.2: Recent accuracy is calculated from the individual_module_prediction_log,
-        # which is cleared at the start of a new shoe. This means recent accuracy reflects the current shoe.
+        """
+        V8.0.5: Calculates recent accuracy from current shoe logs.
+        """
         accuracy_results = {}
         main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
         for module_name in main_modules:
-            accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback)
+            accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
         
-        accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback)
+        accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_prediction_log_current_shoe, lookback)
 
         return accuracy_results
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
+        # V8.0.5: This should use all-time accuracy for normalization
         acc = self.get_module_accuracy_all_time() 
         all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "Tie"] 
         
@@ -614,48 +623,48 @@ class OracleBrain:
 
 
     def get_best_recent_module(self, lookback: int = 10) -> Optional[str]:
+        # V8.0.5: This should use current shoe logs for recent performance
         modules_to_check = {
             "Rule": self.rule_engine,
             "Pattern": self.pattern_analyzer,
             "Trend": self.trend_scanner, 
             "2-2 Pattern": self.two_two_pattern,
             "Sniper": self.sniper_pattern,
-            "Fallback": self.fallback_module,
             "ChopDetector": self.chop_detector 
         }
         
         module_scores: Dict[str, float] = {}
 
         min_history_for_module = 4 
-        start_index = max(min_history_for_module, len(self.history) - lookback) 
         
-        for name, module in modules_to_check.items():
+        # Calculate recent accuracy for each module from current shoe logs
+        for name in modules_to_check.keys():
+            if name == "Fallback": continue # Fallback is not a "best" module for recovery
+            
+            log_for_module = self.individual_module_prediction_log_current_shoe.get(name, [])
+            
+            relevant_preds = log_for_module
+            if lookback is not None:
+                relevant_preds = log_for_module[-lookback:]
+            
             wins = 0
-            total_preds = 0
-            for j in range(start_index, len(self.history)):
-                current_sub_history = self.history[:j] 
-                
-                if name == "Trend":
-                    choppiness_for_sub_history = self._calculate_choppiness_rate(current_sub_history, 20) 
-                    module_pred = module.predict(current_sub_history, choppiness_for_sub_history)
-                else:
-                    module_pred = module.predict(current_sub_history)
-
-                actual_outcome_for_this_round = self.history[j].main_outcome 
-                
-                if module_pred is not None and module_pred in ("P", "B") and actual_outcome_for_this_round in ("P", "B"): 
-                    total_preds += 1
-                    if module_pred == actual_outcome_for_this_round:
+            total_predictions = 0
+            
+            for predicted_val, actual_val in relevant_preds:
+                if predicted_val is not None and predicted_val in ("P", "B") and actual_val in ("P", "B"):
+                    total_predictions += 1
+                    if predicted_val == actual_val:
                         wins += 1
             
-            if total_preds > 0:
-                module_scores[name] = wins / total_preds
+            if total_predictions > 0:
+                module_scores[name] = wins / total_predictions
             else:
                 module_scores[name] = 0.0 
 
         if not module_scores:
             return None
         
+        # Filter out Fallback and find the best performing module
         filtered_module_scores = {k: v for k, v in module_scores.items() if k != "Fallback"}
         
         if not filtered_module_scores:
@@ -730,6 +739,7 @@ class OracleBrain:
             "ChopDetector": self.chop_detector.predict(self.history) 
         }
         
+        # V8.0.5: Use global accuracy for all-time, current shoe for recent
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
@@ -781,14 +791,20 @@ class OracleBrain:
         # --- Side Bet Predictions with Confidence ---
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
 
-        # V8.0.0: Refined cooldown logic for Tie prediction.
-        # Instead of full suppression, reduce confidence for a few rounds after a miss.
-        if self.tie_module_prediction_log:
-            last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log[-1]
+        # V8.0.4: Enhanced cooldown logic for Tie prediction.
+        # If last tie prediction was wrong, reduce current tie confidence more aggressively.
+        # Also, check for consecutive misses.
+        if self.tie_module_prediction_log_current_shoe: # V8.0.5: Use current shoe log for cooldown
+            last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log_current_shoe[-1]
             if last_logged_tie_pred == "T" and not last_actual_is_tie:
-                # If last tie prediction was wrong, reduce current tie confidence
                 if tie_conf_raw is not None:
-                    tie_conf_raw = max(0, tie_conf_raw - 20) 
+                    tie_conf_raw = max(0, tie_conf_raw - 30) 
+                
+                # Check if the tie predictor missed the last 2 consecutive predictions
+                if len(self.tie_module_prediction_log_current_shoe) >= 2:
+                    prev_logged_tie_pred, prev_actual_is_tie = self.tie_module_prediction_log_current_shoe[-2]
+                    if prev_logged_tie_pred == "T" and not prev_actual_is_tie:
+                        tie_conf_raw = 0 
         
         if tie_pred_raw is not None and tie_conf_raw is not None and tie_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
             tie_prediction = tie_pred_raw
@@ -804,8 +820,8 @@ class OracleBrain:
         # Tie Sniper
         if tie_prediction == "T" and tie_confidence is not None:
             if tie_confidence >= 50 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
-                if len(self.tie_module_prediction_log) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
-                    tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+                if len(self.tie_module_prediction_log_current_shoe) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
+                    tie_recent_acc = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_prediction_log_current_shoe, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
                 else:
                     tie_recent_acc = 0 
                 
