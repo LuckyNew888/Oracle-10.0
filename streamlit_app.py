@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.1.4 - Smarter Real-time Analysis)
+# streamlit_app.py (Oracle V8.1.6 - Fix NameError)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -237,10 +237,19 @@ class DragonTailDetector:
 class AdvancedChopPredictor:
     """
     Predicts a 'chop' (break) after established long streaks (Dragon) or alternating patterns (Ping-Pong).
+    V8.1.5: Enhanced to specifically handle PPPBBB/BBBPPP ("สามตัวตัด") patterns.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
         
+        # V8.1.5: Specific handling for PPPBBB / BBBPPP ("สามตัวตัด")
+        if len(filtered_history) >= 6:
+            last_6 = filtered_history[-6:]
+            if last_6 == ["P", "P", "P", "B", "B", "B"]:
+                return "B" # Predict B after PPPBBB
+            if last_6 == ["B", "B", "B", "P", "P", "P"]:
+                return "P" # Predict P after BBBPPP
+
         # --- Dragon Chop Detection ---
         # Look for a streak of at least 4, followed by an opposite, and predict that opposite
         # Example: PPPPP B -> Predict B
@@ -376,6 +385,7 @@ class AdaptiveScorer:
     V8.1.1: More aggressive blending towards recent performance for faster adaptation.
     V8.1.2: Improved miss streak penalty logic.
     V8.1.3: Even more aggressive blending for real-time adaptation and confidence adjustment based on volatility.
+    V8.1.5: Further refined weighting for AdvancedChopPredictor on specific patterns.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -383,7 +393,7 @@ class AdaptiveScorer:
               module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting (last 10)
               history: List[RoundResult],
               current_miss_streak: int,
-              choppiness_rate: float) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]: # V8.1.3: Added choppiness_rate
+              choppiness_rate: float) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]: 
         
         total_score = {"P": 0.0, "B": 0.0}
         
@@ -411,9 +421,17 @@ class AdaptiveScorer:
 
             weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
             
-            # Give ChopDetector and AdvancedChopPredictor a slightly higher base weight if it makes a prediction
-            if name in ["ChopDetector", "AdvancedChop"] and predictions.get(name) is not None:
-                weight += 0.1 
+            # V8.1.5: Give AdvancedChopPredictor a higher base weight if it makes a prediction, especially for "สามตัวตัด"
+            if name == "AdvancedChop" and predictions.get(name) is not None:
+                filtered_history = _get_main_outcome_history(history)
+                if len(filtered_history) >= 6:
+                    last_6 = filtered_history[-6:]
+                    if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
+                        weight += 0.2 # Extra weight for "สามตัวตัด" pattern
+                    else:
+                        weight += 0.1 # Standard extra weight for other AdvancedChop patterns
+            elif name == "ChopDetector" and predictions.get(name) is not None:
+                weight += 0.1 # Standard extra weight for ChopDetector
             
             # V8.1.2: Apply miss streak penalty to module weights
             if current_miss_streak > 0:
@@ -468,6 +486,11 @@ class AdaptiveScorer:
             "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
         }
 
+        if len(filtered_history) >= 6: # V8.1.5: Check for "สามตัวตัด" pattern name
+            last_6 = filtered_history[-6:]
+            if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
+                return "สามตัวตัด"
+        
         if len(filtered_history) >= 5:
             if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
                 return "มังกรตัด" 
@@ -872,7 +895,7 @@ class OracleBrain:
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
-            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) # V8.1.3: Pass miss streak and choppiness_rate
+            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
 
         if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
             final_prediction_main = None
@@ -925,7 +948,7 @@ class OracleBrain:
                     
                     effective_recent_acc = max(acc_10, acc_20)
 
-                    if effective_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD:
+                    if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD: # CORRECTED LINE
                         high_accuracy_contributing_count += 1
                 
                 if high_accuracy_contributing_count >= 3:
@@ -980,7 +1003,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.1.4", layout="centered") # Updated version to V8.1.4
+st.set_page_config(page_title="🔮 Oracle V8.1.6", layout="centered") # Updated version to V8.1.6
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1373,7 +1396,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.1.4</div>', unsafe_allow_html=True) # Updated version to V8.1.4
+st.markdown('<div class="big-title">🔮 Oracle V8.1.6</div>', unsafe_allow_html=True) # Updated version to V8.1.6
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
