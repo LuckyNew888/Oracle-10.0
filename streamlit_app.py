@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V7.9.4", layout="centered") # Updated version to V7.9.4
+st.set_page_config(page_title="🔮 Oracle V7.9.5", layout="centered") # Updated version to V7.9.5
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -433,7 +433,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V7.9.4</div>', unsafe_allow_html=True) # Updated version to V7.9.4
+st.markdown('<div class="big-title">🔮 ORACLE V7.9.5</div>', unsafe_allow_html=True) # Updated version to V7.9.5
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
