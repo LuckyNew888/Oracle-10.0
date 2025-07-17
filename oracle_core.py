@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.9.4 - Fix Module Accuracy)
+# oracle_core.py (Oracle V7.9.5 - Further Fix Module Accuracy)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -228,7 +228,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4, V7.9.5) ---
 
 class TiePredictor:
     """
@@ -461,7 +461,8 @@ class OracleBrain:
         }
         
         for module_name, pred in current_predictions_from_modules_main.items():
-            if pred in ("P", "B") and main_outcome in ("P", "B"):
+            # V7.9.5: Only log if a prediction was actually made by the module
+            if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
                 self.individual_module_prediction_log[module_name].append((pred, main_outcome))
 
         # --- Record individual side bet module predictions *before* adding the new outcome ---
@@ -469,7 +470,9 @@ class OracleBrain:
         tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
         # Removed pock_pred_for_log, _ = self.pock_predictor.predict(self.history) 
 
-        self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
+        # V7.9.5: Only log Tie prediction if it was actually made
+        if tie_pred_for_log is not None:
+            self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
         # Removed self.pock_module_prediction_log.append((pock_pred_for_log, is_any_natural)) 
 
         # Now, add the actual outcome to main history and logs
@@ -488,7 +491,9 @@ class OracleBrain:
             if self.individual_module_prediction_log[module_name]:
                 self.individual_module_prediction_log[module_name].pop()
         
-        self.tie_module_prediction_log.pop() if self.tie_module_prediction_log else None
+        # V7.9.5: Ensure pop only if list is not empty
+        if self.tie_module_prediction_log:
+            self.tie_module_prediction_log.pop()
         # Removed self.pock_module_prediction_log.pop() if self.pock_module_prediction_log else None 
 
 
@@ -541,7 +546,8 @@ class OracleBrain:
         total_predictions = 0
         
         for predicted_val, actual_val in relevant_preds:
-            if predicted_val in ("P", "B") and actual_val in ("P", "B"):
+            # V7.9.5: Ensure predicted_val is not None before counting
+            if predicted_val is not None and predicted_val in ("P", "B") and actual_val in ("P", "B"):
                 total_predictions += 1
                 if predicted_val == actual_val:
                     wins += 1
@@ -644,7 +650,8 @@ class OracleBrain:
 
                 actual_outcome_for_this_round = self.history[j].main_outcome 
                 
-                if module_pred in ("P", "B") and actual_outcome_for_this_round in ("P", "B"): 
+                # V7.9.5: Ensure module_pred is not None before counting
+                if module_pred is not None and module_pred in ("P", "B") and actual_outcome_for_this_round in ("P", "B"): 
                     total_preds += 1
                     if module_pred == actual_outcome_for_this_round:
                         wins += 1
