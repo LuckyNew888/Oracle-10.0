@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.6 - Tie Only, No Pock)
+# oracle_core.py (Oracle V7.8 - Simplified Sniper Conditions)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -228,7 +228,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8) ---
 
 class TiePredictor:
     """
@@ -237,6 +237,7 @@ class TiePredictor:
     V7.4: Fixed NameError.
     V7.5: Enhanced confidence and filtering for more accurate predictions.
     V7.6: Further refined probability and pattern based logic for Tie.
+    V7.8: Adjusted confidence thresholds for easier Sniper trigger.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -247,7 +248,7 @@ class TiePredictor:
         tie_confidence = 0
 
         # V7.5: Increased history requirement for Tie prediction for more reliable probability calculation
-        if len(tie_flags) < 25: # Changed from 20 to 25
+        if len(tie_flags) < 25: 
             return None, None
         
         lookback_for_prob = min(len(tie_flags), 50) 
@@ -255,15 +256,15 @@ class TiePredictor:
         expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
 
         # V7.5: Probability-based confidence and prediction - more conservative when due, more aggressive in stopping
-        if actual_tie_count < expected_tie_count * 0.9: # Ties are significantly "due" (changed from 0.8 to 0.9)
+        if actual_tie_count < expected_tie_count * 0.9: # Ties are significantly "due"
             # Confidence calculation: Base 65, boost if very due. Max 90.
             tie_confidence = min(90, 65 + int((expected_tie_count * 0.9 - actual_tie_count) / expected_tie_count * 100)) 
             if tie_confidence >= 60: # Only predict if confidence meets minimum display threshold
                 return "T", tie_confidence
             else:
                 return None, None
-        elif actual_tie_count > expected_tie_count * 1.05: # Ties have been more frequent than expected (changed from 1.1 to 1.05)
-            return None, None # Stop predicting more aggressively
+        elif actual_tie_count > expected_tie_count * 1.05: # Ties have been more frequent than expected
+            return None, None 
 
         # Pattern-based rules (these will now be filtered by the probability check above and confidence threshold)
         # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
@@ -281,7 +282,7 @@ class TiePredictor:
                 return "T", 75
         
         # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20) - this might be caught by prob check
-        if tie_flags[-20:].count(True) >= 6 and actual_tie_count < expected_tie_count * 1.0: # Only if not *too* over-represented (changed from 1.05 to 1.0)
+        if tie_flags[-20:].count(True) >= 6 and actual_tie_count < expected_tie_count * 1.0: 
             return "T", 60
             
         # Rule 5: Tie after a specific main outcome sequence (e.g., P B B P, then T)
@@ -396,9 +397,9 @@ class AdaptiveScorer:
 
         for length in range(6, 2, -1): 
             if len(joined_filtered) >= length:
-                current_pattern = joined_filtered[-length:]
-                if current_pattern in common_patterns:
-                    return common_patterns[current_pattern]
+                current_pattern_str = joined_filtered[-length:]
+                if current_pattern_str in common_patterns:
+                    return common_patterns[current_pattern_str]
         return None
 
 
@@ -692,9 +693,9 @@ class OracleBrain:
 
         MIN_HISTORY_FOR_PREDICTION = 20 
         MIN_HISTORY_FOR_SNIPER = 30 
-        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 
+        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 30 # V7.8: Changed from 40 to 30
         MIN_DISPLAY_CONFIDENCE = 55 
-        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 60 # V7.3: New minimum confidence for side bets
+        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 60 
 
         final_prediction_main = None
         source_module_name_main = None
@@ -704,11 +705,8 @@ class OracleBrain:
         
         tie_prediction = None
         tie_confidence = None
-        # Removed pock_prediction = None
-        # Removed pock_confidence = None
 
         is_tie_sniper_opportunity = False
-        # Removed is_pock_sniper_opportunity = False 
 
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
@@ -752,11 +750,13 @@ class OracleBrain:
 
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            if confidence_main == 95 and current_miss_streak == 0 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
+            # V7.8: Changed miss streak condition from == 0 to <= 2
+            if confidence_main == 95 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 all_contributing_modules_high_all_time_accuracy = True
                 
-                SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD = 90 
+                # V7.8: Changed threshold from 90 to 80
+                SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD = 80 
 
                 if not contributing_modules or "NoPrediction" in contributing_modules or "Fallback" in contributing_modules:
                     all_contributing_modules_high_all_time_accuracy = False
@@ -770,7 +770,8 @@ class OracleBrain:
                 sniper_module_recent_accuracy_ok = True
                 if "Sniper" in contributing_modules:
                     SNIPER_RECENT_PREDICTION_COUNT = 5 
-                    SNIPER_RECENT_ACCURACY_THRESHOLD = 90 
+                    # V7.8: Changed threshold from 90 to 80
+                    SNIPER_RECENT_ACCURACY_THRESHOLD = 80 
 
                     sniper_recent_acc = self._calculate_main_module_accuracy("Sniper", SNIPER_RECENT_PREDICTION_COUNT) 
                     
@@ -786,33 +787,32 @@ class OracleBrain:
 
         # --- Side Bet Predictions with Confidence ---
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
-        # Removed pock_pred_raw, pock_conf_raw = self.pock_predictor.predict(self.history) 
 
         # V7.3: Apply minimum display confidence for side bets
         if tie_pred_raw is not None and tie_conf_raw is not None and tie_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
             tie_prediction = tie_pred_raw
             tie_confidence = tie_conf_raw
         
-        # Removed pock prediction logic
-
         # --- Side Bet Sniper Opportunity Logic ---
+        # V7.8: Changed threshold from 80 to 80 (implicitly aligned with main)
         SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 
-        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 90 
+        # V7.8: Changed threshold from 90 to 80
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 80 
         SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
 
         # Tie Sniper
-        if tie_prediction == "T" and tie_confidence is not None and tie_confidence >= 90 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: # V7.3: Added confidence check
-            tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
-            tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
-            
-            if tie_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
-                is_tie_sniper_opportunity = True
-
-        # Removed Pock Sniper logic
+        if tie_prediction == "T" and tie_confidence is not None:
+            # V7.8: Changed confidence threshold from 90 to 85
+            if tie_confidence >= 85 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
+                tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
+                tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
+                
+                if tie_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
+                    is_tie_sniper_opportunity = True
 
         return (
             final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
             tie_prediction, tie_confidence, 
-            is_tie_sniper_opportunity # Removed is_pock_sniper_opportunity
+            is_tie_sniper_opportunity 
         )
 
