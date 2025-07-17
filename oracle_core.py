@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V6.7 - Side Bet & Main Prediction Refinements)
+# oracle_core.py (Oracle V6.8 - Enhanced Side Bet Logic)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -229,13 +229,14 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.7) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.8) ---
 
 class TiePredictor:
     """
     Predicts Tie outcomes with further enhanced logic for V6.1.
     V6.6: Incorporates theoretical probability.
     V6.7: Adjusts probability-based logic to prevent constant Tie prediction.
+    V6.8: Further refined probability-based logic for more balanced prediction.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -243,22 +244,22 @@ class TiePredictor:
         tie_flags = _get_side_bet_history_flags(history, "T")
         main_history_pb = _get_main_outcome_history(history) 
 
-        if len(tie_flags) < 25: 
+        if len(tie_flags) < 25: # Still require a decent amount of Tie history for robust probability check
             return None
         
-        # V6.6: Probability-based adjustment
-        lookback_for_prob = min(len(tie_flags), 50) # Look back up to 50 rounds
+        # V6.8: Probability-based adjustment - more sensitive to over-representation
+        lookback_for_prob = min(len(tie_flags), 50) 
         if lookback_for_prob > 0:
             recent_tie_flags = tie_flags[-lookback_for_prob:]
             actual_tie_count = recent_tie_flags.count(True)
             expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            # V6.7: Adjusted threshold for stopping Tie prediction
-            if actual_tie_count < expected_tie_count * 0.8: # If ties are significantly "due" (e.g., less than 80% of expected)
+            # If ties are significantly "due" (e.g., less than 90% of expected)
+            if actual_tie_count < expected_tie_count * 0.9: # V6.8: Adjusted from 0.8 to 0.9
                 return "T"
-            # V6.7: Lowered multiplier to stop predicting Tie sooner if it's over-represented
-            elif actual_tie_count > expected_tie_count * 1.2: # If ties have been very frequent, reduce prediction
-                return None # Don't predict T if it's been over-represented
+            # If ties have been slightly more frequent than expected, stop predicting
+            elif actual_tie_count > expected_tie_count * 1.05: # V6.8: Adjusted from 1.2 to 1.05
+                return None 
 
         # Existing rules from V6.1 (these will now be filtered by the probability check above)
         # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
@@ -309,6 +310,7 @@ class PockPredictor:
     V6.5: Predicts the occurrence of any Natural (Pock 8 or 9) in the next round.
     V6.6: Incorporates theoretical probability.
     V6.7: Adjusts history requirement and probability-based logic to allow more predictions.
+    V6.8: Further refined history requirement and probability-based logic for more frequent predictions.
     """
     THEORETICAL_PROB = 0.17 # Approx. 17% for any natural (P or B) in 8 decks
 
@@ -316,34 +318,34 @@ class PockPredictor:
         natural_flags = _get_side_bet_history_flags(history, "NATURAL")
         main_history_pb = _get_main_outcome_history(history)
 
-        # V6.7: Reduced history requirement for Pock prediction
-        if len(natural_flags) < 10: # Changed from 20 to 10
+        # V6.8: Reduced history requirement for Pock prediction even further
+        if len(natural_flags) < 5: # Changed from 10 to 5
             return None
         
-        # V6.6: Probability-based adjustment
+        # V6.8: Probability-based adjustment - more eager to predict when due
         lookback_for_prob = min(len(natural_flags), 50) 
         if lookback_for_prob > 0:
             recent_natural_flags = natural_flags[-lookback_for_prob:]
             actual_natural_count = recent_natural_flags.count(True)
             expected_natural_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            # V6.7: Adjusted threshold for predicting Pock when "due"
-            if actual_natural_count < expected_natural_count * 0.9: # If naturals are significantly "due" (e.g., less than 90% of expected)
+            # If naturals are significantly "due" (e.g., less than 100% of expected)
+            if actual_natural_count < expected_natural_count * 1.0: # V6.8: Adjusted from 0.9 to 1.0 (more aggressive)
                 return "NATURAL"
-            # V6.7: Added a threshold to stop predicting if it's over-represented
-            elif actual_natural_count > expected_natural_count * 1.2: # If naturals have been very frequent
+            # If naturals have been slightly more frequent than expected, stop predicting
+            elif actual_natural_count > expected_natural_count * 1.1: # V6.8: Adjusted from 1.2 to 1.1
                 return None
 
-        # Existing rules from V6.5
+        # Existing rules from V6.5/V6.7
         # Rule 1: Natural just occurred, strong chance of another Natural soon (momentum)
         if natural_flags[-1]:
             return "NATURAL"
         
-        # V6.7: New Rule: If no Naturals for a specific number of rounds, predict it's due
-        if len(natural_flags) >= 10 and not any(natural_flags[-10:]): # No natural in last 10 rounds
+        # V6.8: New Rule: If no Naturals for a specific number of *main outcomes* (P/B) in a row, predict it's due
+        if len(main_history_pb) >= 10 and not any(r.is_any_natural for r in history[-10:]): # No natural in last 10 P/B rounds
             return "NATURAL"
 
-        # Rule 2: If no Naturals for a long time (e.g., 15+ rounds), predict a Natural might be due
+        # Rule 2: If no Naturals for a long time (e.g., 15+ rounds of natural_flags), predict a Natural might be due
         # This rule is now partially covered by the new rule above and probability check, but kept for longer lookback
         if not any(natural_flags[-15:]):
             return "NATURAL"
