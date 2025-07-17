@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V8.0.5 - Consolidated & Verified)
+# oracle_core.py (Oracle V8.0.5 - Final Check)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
