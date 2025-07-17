@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.1.1 - Faster Analysis)
+# streamlit_app.py (Oracle V8.1.4 - Smarter Real-time Analysis)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -374,12 +374,16 @@ class AdaptiveScorer:
     This scorer is primarily for main P/B outcomes.
     V8.0.0: Enhanced dynamic blending ratio for more accurate weighting.
     V8.1.1: More aggressive blending towards recent performance for faster adaptation.
+    V8.1.2: Improved miss streak penalty logic.
+    V8.1.3: Even more aggressive blending for real-time adaptation and confidence adjustment based on volatility.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
               module_accuracies_all_time: Dict[str, float], # All-time accuracy for baseline
               module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting (last 10)
-              history: List[RoundResult]) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]:
+              history: List[RoundResult],
+              current_miss_streak: int,
+              choppiness_rate: float) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]: # V8.1.3: Added choppiness_rate
         
         total_score = {"P": 0.0, "B": 0.0}
         
@@ -392,25 +396,29 @@ class AdaptiveScorer:
             all_time_acc_val = module_accuracies_all_time.get(name, 0.0)
             recent_acc_val = module_accuracies_recent.get(name, 0.0)
 
-            # V8.1.1: More aggressive dynamic blend ratio for faster adaptation
+            # V8.1.3: Even more aggressive dynamic blend ratio for faster adaptation
             # Normalize accuracies to a 0-1 scale for ratio calculation
             all_time_norm = all_time_acc_val / 100.0 if all_time_acc_val > 0 else 0.5
             recent_norm = recent_acc_val / 100.0 if recent_acc_val > 0 else 0.5
 
-            # Calculate a dynamic blend_recent_ratio (e.g., from 0.4 to 0.95)
-            # A higher difference (recent_norm - all_time_norm) means recent is performing better
-            # Map difference from -0.2 to 0.2 (approx) to blend_recent_ratio from 0.4 to 0.95
+            # Calculate a dynamic blend_recent_ratio (e.g., from 0.5 to 0.98)
+            # Map difference from -0.2 to 0.2 (approx) to blend_recent_ratio from 0.5 to 0.98
             diff = max(-0.2, min(0.2, recent_norm - all_time_norm)) # Clamp diff to -0.2 to 0.2
             
-            # Linear mapping: if diff is -0.2, ratio is 0.4. If diff is 0.2, ratio is 0.95.
-            blend_recent_ratio = 0.675 + (diff * 1.375) # Base 0.675, adjusted by diff (range 0.4 to 0.95)
-            blend_recent_ratio = max(0.4, min(0.95, blend_recent_ratio)) # Ensure bounds
+            # Linear mapping: if diff is -0.2, ratio is 0.5. If diff is 0.2, ratio is 0.98.
+            blend_recent_ratio = 0.74 + (diff * 1.2) 
+            blend_recent_ratio = max(0.5, min(0.98, blend_recent_ratio)) # Ensure bounds
 
             weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
             
             # Give ChopDetector and AdvancedChopPredictor a slightly higher base weight if it makes a prediction
             if name in ["ChopDetector", "AdvancedChop"] and predictions.get(name) is not None:
                 weight += 0.1 
+            
+            # V8.1.2: Apply miss streak penalty to module weights
+            if current_miss_streak > 0:
+                penalty_factor = 1.0 - (current_miss_streak * 0.05) # 5% penalty per miss
+                weight *= max(0.1, penalty_factor) # Don't let weight drop below 10%
             
             total_score[pred] += weight
 
@@ -424,6 +432,11 @@ class AdaptiveScorer:
         
         # Confidence capped at 95% to avoid overconfidence
         confidence = min(int(raw_confidence), 95)
+
+        # V8.1.3: Adjust confidence based on choppiness
+        # If choppiness is high (e.g., > 0.6), reduce confidence slightly
+        if choppiness_rate > 0.6:
+            confidence = max(50, int(confidence * (1 - (choppiness_rate - 0.6) * 0.5))) # Reduce by up to 20% if very choppy
         
         source_modules = [name for name, pred in active_predictions.items() if pred == best_prediction_outcome]
         source_name = ", ".join(source_modules) if source_modules else "Combined"
@@ -859,7 +872,7 @@ class OracleBrain:
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
-            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
+            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) # V8.1.3: Pass miss streak and choppiness_rate
 
         if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
             final_prediction_main = None
@@ -867,12 +880,32 @@ class OracleBrain:
             confidence_main = None
             pattern_code_main = None
 
-        if current_miss_streak in [3, 4, 5]: 
-            best_module_for_recovery = self.get_best_recent_module()
-            if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
-                final_prediction_main = predictions_from_modules[best_module_for_recovery] 
-                source_module_name_main = f"{best_module_for_recovery}-Recovery"
-                confidence_main = 70 
+        # V8.1.3: Enhanced Miss Streak Recovery Logic
+        if current_miss_streak >= 3:
+            # If the main prediction is not confident enough OR it's None
+            if final_prediction_main is None or (confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE):
+                filtered_history_pb = _get_main_outcome_history(self.history)
+                
+                if len(filtered_history_pb) >= 2 and len(self.prediction_log) >= 1:
+                    last_actual_outcome = filtered_history_pb[-1]
+                    # Check if the last actual outcome was a miss and if it started a new mini-streak
+                    # This means the previous prediction was wrong, and the last two actual outcomes are the same
+                    if self.prediction_log[-1] is not None and last_actual_outcome != self.prediction_log[-1] and filtered_history_pb[-1] == filtered_history_pb[-2]:
+                        final_prediction_main = last_actual_outcome # Predict continuation of this new mini-streak
+                        source_module_name_main = "Recovery-NewStreak"
+                        confidence_main = 70 # Higher confidence for detected new streak after a miss
+                    else:
+                        # If no clear new streak, try to find the best recent module
+                        best_module_for_recovery = self.get_best_recent_module()
+                        if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
+                            final_prediction_main = predictions_from_modules[best_module_for_recovery]
+                            source_module_name_main = f"{best_module_for_recovery}-Recovery"
+                            confidence_main = 60 # Moderate confidence for module-based recovery
+                        else:
+                            # As a last resort, use Fallback if nothing else is confident
+                            final_prediction_main = self.fallback_module.predict(self.history)
+                            source_module_name_main = "Fallback-Recovery"
+                            confidence_main = 50 # Base confidence for pure fallback
 
 
         # --- Main Outcome Sniper Opportunity Logic ---
@@ -892,7 +925,7 @@ class OracleBrain:
                     
                     effective_recent_acc = max(acc_10, acc_20)
 
-                    if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD:
+                    if effective_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD:
                         high_accuracy_contributing_count += 1
                 
                 if high_accuracy_contributing_count >= 3:
@@ -947,7 +980,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.1.1", layout="centered") # Updated version to V8.1.1
+st.set_page_config(page_title="🔮 Oracle V8.1.4", layout="centered") # Updated version to V8.1.4
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1340,7 +1373,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.1.1</div>', unsafe_allow_html=True) # Updated version to V8.1.1
+st.markdown('<div class="big-title">🔮 Oracle V8.1.4</div>', unsafe_allow_html=True) # Updated version to V8.1.4
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
