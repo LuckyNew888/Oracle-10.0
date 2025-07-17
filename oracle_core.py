@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.9.8 - Relaxed Sniper Conditions)
+# oracle_core.py (Oracle V8.0.3 - Adjusted Tie Predictor Lookback)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -22,7 +22,6 @@ def _get_main_outcome_history(history: List[RoundResult]) -> List[MainOutcome]:
 def _get_side_bet_history_flags(history: List[RoundResult], bet_type: str) -> List[bool]:
     if bet_type == "T":
         return [r.main_outcome == "T" for r in history]
-    # Removed 'NATURAL' type as PockPredictor is removed
     return []
 
 
@@ -30,7 +29,6 @@ class RuleEngine:
     """
     Predicts based on simple repeating patterns (e.g., P P P -> P, B B B -> B)
     or alternating patterns (e.g., P B P -> P).
-    V6.1: Added more basic rule patterns.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
@@ -46,7 +44,7 @@ class RuleEngine:
             if filtered_history[-1] == filtered_history[-3]: # P B P, B P B
                 return "P" if filtered_history[-1] == "B" else "B"
         
-        # V6.1 New Rule: Two consecutive, then chop (P P B -> P, B B P -> B)
+        # Rule: Two consecutive, then chop (P P B -> P, B B P -> B)
         if len(filtered_history) >= 3:
             if filtered_history[-1] != filtered_history[-2] and filtered_history[-2] == filtered_history[-3]:
                 return filtered_history[-2] # Predict a return to the streak that was chopped
@@ -56,7 +54,6 @@ class RuleEngine:
 class PatternAnalyzer:
     """
     Predicts based on specific predefined patterns in the recent history.
-    V6.1: Expanded the dictionary of known patterns for better coverage.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
@@ -65,30 +62,23 @@ class PatternAnalyzer:
 
         joined_filtered = "".join(filtered_history)
         
-        # V6.1: Expanded patterns
         patterns_and_predictions = {
-            # Basic Repeating/Alternating
             "PBPB": "P", "BPBP": "B",       
             "PPBB": "P", "BBPP": "B",       
             "PPPP": "P", "BBBB": "B",       
-            
-            # Longer Streaks/Chops
-            "PPPPP": "P", "BBBBB": "B", # 5 in a row
-            "PBPBP": "B", "BPBPB": "P", # Longer alternating
-            
-            # Specific Combinations
-            "PBB": "P", "BPP": "B", # Two of one, then one of other, predict first
-            "PPBP": "P", "BBPA": "B", # Two, chop, one, predict first
-            "PBPP": "P", "BPPB": "B", # Chop, two, chop, predict first
-            "PBBPP": "P", "BPBB": "B", # Two, two, then chop, predict first
-            "PBPBPB": "P", "BPBPBP": "B", # Longer alternating, predict next
-            "PPPBBB": "B", "BBBPBB": "P", # Three of one, three of other, predict chop
-            "PPBPP": "P", "BBPBB": "B", # Two, chop, two, predict first
-            "PBBP": "B", "BPPB": "P" # Specific chop pattern
+            "PPPPP": "P", "BBBBB": "B", 
+            "PBPBP": "B", "BPBPB": "P",       
+            "PBB": "P", "BPP": "B", 
+            "PPBP": "P", "BBPA": "B", 
+            "PBPP": "P", "BPPB": "B", 
+            "PBBPP": "P", "BPBB": "B", 
+            "PBPBPB": "P", "BPBPBP": "B", 
+            "PPPBBB": "B", "BBBPBB": "P", 
+            "PPBPP": "P", "BBPBB": "B", 
+            "PBBP": "B", "BPPB": "P" 
         }
 
-        # Iterate from longest to shortest pattern for matching
-        for length in range(6, 2, -1): # Check patterns from length 6 down to 3
+        for length in range(6, 2, -1): 
             if len(joined_filtered) >= length:
                 current_pattern = joined_filtered[-length:]
                 if current_pattern in patterns_and_predictions:
@@ -98,19 +88,18 @@ class PatternAnalyzer:
 class TrendScanner:
     """
     Predicts based on the dominant outcome in the recent history.
-    V6.1: Made trend detection slightly more sensitive and added a "minority trend" consideration.
-    V6.6: Implemented dynamic lookback based on choppiness.
+    V8.0.0: Refined dynamic lookback for smoother scaling and improved trend detection.
     """
     def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
         
-        # V6.6: Dynamic lookback based on choppiness
-        if choppiness_rate > 0.6: # High choppiness, focus on very recent
-            lookback_len = 5
-        elif choppiness_rate < 0.3: # Low choppiness (streaky), use a longer lookback
-            lookback_len = 15
-        else: # Moderate choppiness
-            lookback_len = 10
+        # V8.0.0: More precise dynamic lookback based on choppiness
+        # Scale lookback_len from 5 (very choppy) to 20 (very streaky)
+        # choppiness_rate ranges from 0.0 (streaky) to 1.0 (choppy)
+        # (1 - choppiness_rate) will range from 1.0 (streaky) to 0.0 (choppy)
+        # lookback_len will range from 20 (streaky) down to 5 (choppy)
+        lookback_len = int(5 + (1 - choppiness_rate) * 15) # Min 5, Max 20
+        lookback_len = max(5, min(20, lookback_len)) # Ensure bounds
 
         if len(filtered_history) < lookback_len:
             return None
@@ -125,7 +114,7 @@ class TrendScanner:
         if b_count / lookback_len >= 0.6:
             return "B"
         
-        # V6.1 New: Consider a shorter, very strong recent trend (e.g., 4 out of last 5)
+        # Consider a shorter, very strong recent trend (e.g., 4 out of last 5)
         if len(filtered_history) >= 5:
             last_5 = filtered_history[-5:]
             p_count_5 = last_5.count("P")
@@ -140,7 +129,6 @@ class TrendScanner:
 class TwoTwoPattern:
     """
     Predicts based on a specific 2-2 alternating pattern (e.g., PPBB -> P).
-    V6.1: No significant changes, already robust.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
@@ -155,7 +143,6 @@ class TwoTwoPattern:
 class SniperPattern:
     """
     A more aggressive pattern matching module, often looking for specific "sniper" setups.
-    V6.1: Expanded known patterns for sniper opportunities.
     """
     def __init__(self):
         self.known_patterns = {
@@ -165,11 +152,10 @@ class SniperPattern:
             "PPPBBB": "B", "BBBPBB": "P", 
             "PPPP": "P", "BBBB": "B",
             "PBBP": "B", "BPPB": "P",
-            # V6.1 Added more sniper patterns
-            "PBBBP": "B", "BPBPP": "P", # Specific reversal points
             "PBBBP": "B", "BPBPP": "P", 
-            "PBPBPP": "P", "BPBPBB": "B", # Alternating then streak
-            "PPPPB": "B", "BBBB P": "P" # End of long streak
+            "PBBBP": "B", "BPBPP": "P", 
+            "PBPBPP": "P", "BPBPBB": "B", 
+            "PPPPB": "B", "BBBB P": "P" 
         }
 
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
@@ -179,7 +165,7 @@ class SniperPattern:
         
         joined = "".join(filtered_history)
         
-        for length in range(6, 3, -1): # Check patterns from length 6 down to 4
+        for length in range(6, 3, -1): 
             if len(joined) >= length:
                 current_pattern = joined[-length:]
                 if current_pattern in self.known_patterns:
@@ -189,57 +175,43 @@ class SniperPattern:
 class FallbackModule:
     """
     Provides a random prediction if no other module can make a prediction.
-    V6.1: No change, its purpose is to always provide an answer.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        # This module should always return a prediction unless history is empty, which is handled
-        # by MIN_HISTORY_FOR_PREDICTION in OracleBrain.predict_next
         return random.choice(["P", "B"])
 
 class ChopDetector:
     """
-    V6.3: Specifically designed to detect "chop" patterns (long streak broken by opposite).
+    Specifically designed to detect "chop" patterns (long streak broken by opposite).
     When a chop is detected, it predicts the outcome that broke the streak.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
         
-        # Look for a streak of at least 4-5, followed by a single opposite outcome
-        # Example: BBBBB P (predict P), PPPPP B (predict B)
-        if len(filtered_history) >= 6: # Need at least 5 for streak + 1 for chop
+        if len(filtered_history) >= 6: 
             last_6 = filtered_history[-6:]
-            # Check for 5 of one, then 1 of other
             if last_6[0] == last_6[1] == last_6[2] == last_6[3] == last_6[4] and last_6[4] != last_6[5]:
-                return last_6[5] # Predict the outcome that broke the streak
+                return last_6[5] 
         
-        if len(filtered_history) >= 5: # Look for 4 of one, then 1 of other
+        if len(filtered_history) >= 5: 
             last_5 = filtered_history[-5:]
             if last_5[0] == last_5[1] == last_5[2] == last_5[3] and last_5[3] != last_5[4]:
-                return last_5[4] # Predict the outcome that broke the streak
+                return last_5[4] 
 
-        # V6.3: Also detect shorter, immediate chops after a pair
-        # Example: PP B (predict P), BB P (predict B) - this might be handled by RuleEngine, but reinforce
         if len(filtered_history) >= 3:
             if filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
-                # If the last two were the same, and then it chopped, predict the original streak to continue
-                # This is a common "chop" scenario where the streak tries to re-establish
-                return filtered_history[-2] # Predict P for PPB, B for BBP
+                return filtered_history[-2] 
 
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4, V7.9.5, V7.9.6, V7.9.7, V7.9.8) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3) ---
 
 class TiePredictor:
     """
     Predicts Tie outcomes with confidence.
-    V7.3: Returns confidence score. Logic adjusted for balance.
-    V7.4: Fixed NameError.
-    V7.5: Enhanced confidence and filtering for more accurate predictions.
-    V7.6: Further refined probability and pattern based logic for Tie.
-    V7.8: Adjusted confidence thresholds for easier Sniper trigger.
-    V7.9: Added more aggressive filtering to prevent continuous incorrect predictions.
-    V7.9.1: Refined probability thresholds for Tie prediction to improve accuracy and reduce over-prediction.
+    V8.0.0: Significantly enhanced logic for better accuracy and more proactive predictions.
+    V8.0.1: Adjusted long_lookback_for_prob to be more realistic for a Baccarat shoe.
+    V8.0.3: Further adjusted long_lookback_for_prob to 50 for faster responsiveness within a shoe.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -249,80 +221,67 @@ class TiePredictor:
         
         tie_confidence = 0
 
-        # V7.5: Increased history requirement for Tie prediction for more reliable probability calculation
         if len(tie_flags) < 25: 
             return None, None
         
-        lookback_for_prob = min(len(tie_flags), 50) 
-        actual_tie_count = recent_tie_flags.count(True) if (recent_tie_flags := tie_flags[-lookback_for_prob:]) else 0
-        expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
+        # V8.0.3: Adjusted long_lookback_for_prob to 50 (from 70) for faster responsiveness
+        long_lookback_for_prob = min(len(tie_flags), 50) # Look at last 50 rounds
+        short_lookback_for_prob = min(len(tie_flags), 20) # Look at last 20 rounds
 
-        # V7.9.1: More precise probability-based prediction thresholds
-        if actual_tie_count < expected_tie_count * 0.9: # Ties are significantly "due"
-            # Confidence calculation: Base 65, boost if very due. Max 90.
-            tie_confidence = min(90, 65 + int((expected_tie_count * 0.9 - actual_tie_count) / expected_tie_count * 100)) 
-            if tie_confidence >= 60: # Only predict if confidence meets minimum display threshold
-                return "T", tie_confidence
-            else:
-                return None, None
-        # V7.9.1: If ties have been slightly more frequent than expected, stop predicting.
-        elif actual_tie_count > expected_tie_count * 1.0: 
-            return None, None 
+        actual_tie_count_long = tie_flags[-long_lookback_for_prob:].count(True)
+        actual_tie_count_short = tie_flags[-short_lookback_for_prob:].count(True)
 
-        # Pattern-based rules (these will now be filtered by the probability check above and confidence threshold)
-        # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
-        if len(main_history_pb) >= 12 and not any(tie_flags[-12:]):
-            return "T", 70 # High confidence if due after a long non-tie streak
-        
-        # Rule 2: If tie occurred recently and then a few non-ties, it might repeat (T _ _ _ T)
-        if len(tie_flags) >= 5 and tie_flags[-5] and not any(tie_flags[-4:]):
-            return "T", 65
-            
-        # Rule 3: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
+        expected_tie_count_long = long_lookback_for_prob * self.THEORETICAL_PROB
+        expected_tie_count_short = short_lookback_for_prob * self.THEORETICAL_PROB
+
+        # Rule 1: Ties are "due" based on long-term underperformance
+        if actual_tie_count_long < expected_tie_count_long * 0.9: # Ties significantly underperformed long-term
+            # Boost confidence based on how "due" they are
+            due_factor = (expected_tie_count_long * 0.9 - actual_tie_count_long) / expected_tie_count_long
+            tie_confidence = min(90, 60 + int(due_factor * 100 * 0.7)) # Base 60, significant boost
+            if tie_confidence >= 55: return "T", tie_confidence
+
+        # Rule 2: Ties are "due" based on short-term underperformance, even if long-term is okay
+        if actual_tie_count_short < expected_tie_count_short * 0.8: # Ties significantly underperformed short-term
+            due_factor_short = (expected_tie_count_short * 0.8 - actual_tie_count_short) / expected_tie_count_short
+            tie_confidence = min(85, 55 + int(due_factor_short * 100 * 0.6)) # Base 55, moderate boost
+            if tie_confidence >= 55: return "T", tie_confidence
+
+        # Rule 3: Tie Clustering - if a tie occurred recently
+        if len(tie_flags) >= 2 and tie_flags[-1] == True: # Last round was a Tie
+            return "T", 70 # High confidence for immediate repeat
+        if len(tie_flags) >= 3 and tie_flags[-2] == True and not tie_flags[-1]: # Tie 2 rounds ago, then no tie
+            return "T", 60 # Moderate confidence for a tie after one non-tie
+        if len(tie_flags) >= 4 and tie_flags[-3] == True and not tie_flags[-1] and not tie_flags[-2]: # Tie 3 rounds ago, then two non-ties
+            return "T", 55 # Lower confidence, but still a pattern
+
+        # Rule 4: Tie after a long streak of P/B (e.g., 10+ non-tie outcomes)
+        if len(main_history_pb) >= 10 and not any(tie_flags[-10:]):
+            return "T", 75 # High confidence if due after a long non-tie streak
+
+        # Rule 5: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
         if len(main_history_pb) >= 6:
             recent_main = "".join(main_history_pb[-6:])
             if recent_main in ["PBPBPB", "BPBPBP"]: 
-                return "T", 75
-        
-        # V7.9.1: Adjusted threshold for frequent ties to be more conservative
-        # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20) - this might be caught by prob check
-        if tie_flags[-20:].count(True) >= 6 and actual_tie_count < expected_tie_count * 0.95: 
-            return "T", 60
-            
-        # Rule 5: Tie after a specific main outcome sequence (e.g., P B B P, then T)
-        if len(main_history_pb) >= 5:
-            recent_main_5 = "".join(main_history_pb[-5:])
-            if recent_main_5 == "PBBPB" or recent_main_5 == "BPPBP": 
-                return "T", 60
-
-        # Rule 6: Tie after a long streak of one side winning (e.g., 7+ P's or 7+ B's)
-        if len(main_history_pb) >= 7:
-            if main_history_pb[-7:].count("P") == 7 or main_history_pb[-7:].count("B") == 7:
                 return "T", 70
         
-        # Rule 7: Tie after a specific "chop" pattern (e.g., P B P B, then P P -> T)
+        # Rule 6: Tie after a long streak of one side winning (e.g., 6+ P's or 6+ B's)
         if len(main_history_pb) >= 6:
-            recent_main_6 = "".join(main_history_pb[-6:])
-            if recent_main_6 == "PBPBPP" or recent_main_6 == "BPBPBB":
+            if main_history_pb[-6:].count("P") == 6 or main_history_pb[-6:].count("B") == 6:
                 return "T", 65
-        
-        # Rule 8: Tie after a very short streak (e.g., PP or BB) followed by a chop
-        if len(main_history_pb) >= 3:
-            if main_history_pb[-3:] == ["P", "P", "B"] or main_history_pb[-3:] == ["B", "B", "P"]:
-                if not any(tie_flags[-5:]): 
-                    return "T", 60
+
+        # Rule 7: If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
+        if actual_tie_count_long > expected_tie_count_long * 1.1: 
+            return None, None 
 
         return None, None # No confident prediction
-
-# Removed PockPredictor class entirely
 
 class AdaptiveScorer:
     """
     Calculates the final prediction and its confidence based on module predictions
     and their historical accuracy, with adaptive weighting.
     This scorer is primarily for main P/B outcomes.
-    V6.1: Adjusted blending ratio for more responsiveness to recent accuracy.
-    V6.3: Give ChopDetector a slightly higher base weight.
+    V8.0.0: Enhanced dynamic blending ratio for more accurate weighting.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -341,16 +300,30 @@ class AdaptiveScorer:
             all_time_acc_val = module_accuracies_all_time.get(name, 0.0)
             recent_acc_val = module_accuracies_recent.get(name, 0.0)
 
-            # Use 50% (0.5 weight) if accuracy is 0.0 or module hasn't made enough predictions yet
-            all_time_weight = (all_time_acc_val if all_time_acc_val > 0.0 else 50.0) / 100.0
-            recent_weight = (recent_acc_val if recent_acc_val > 0.0 else 50.0) / 100.0
+            # V8.0.0: More sophisticated dynamic blend ratio
+            # The blend ratio for recent accuracy will depend on how much recent performance deviates from all-time.
+            # If recent is much better, lean heavily on recent. If much worse, lean more on all-time.
+            # If similar, use a balanced blend.
             
-            # V6.1: Adjusted blend ratio - more emphasis on recent performance (80% recent, 20% all-time)
-            weight = (recent_weight * 0.8) + (all_time_weight * 0.2)
+            # Normalize accuracies to a 0-1 scale for ratio calculation
+            all_time_norm = all_time_acc_val / 100.0 if all_time_acc_val > 0 else 0.5
+            recent_norm = recent_acc_val / 100.0 if recent_acc_val > 0 else 0.5
+
+            # Calculate a dynamic blend_recent_ratio (e.g., from 0.5 to 0.9)
+            # A higher difference (recent_norm - all_time_norm) means recent is performing better
+            # Map difference from -0.5 to 0.5 (approx) to blend_recent_ratio from 0.5 to 0.9
+            # Clamp difference to avoid extreme values
+            diff = max(-0.2, min(0.2, recent_norm - all_time_norm)) # Clamp diff to -0.2 to 0.2
             
-            # V6.3: Give ChopDetector a slightly higher base weight if it makes a prediction
+            # Linear mapping: if diff is -0.2, ratio is 0.5. If diff is 0.2, ratio is 0.9.
+            blend_recent_ratio = 0.7 + (diff * 1.0) # Base 0.7, adjusted by diff (range 0.5 to 0.9)
+            blend_recent_ratio = max(0.5, min(0.9, blend_recent_ratio)) # Ensure bounds
+
+            weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
+            
+            # Give ChopDetector a slightly higher base weight if it makes a prediction
             if name == "ChopDetector" and predictions.get(name) is not None:
-                weight += 0.1 # Add a small bonus weight (can be tuned)
+                weight += 0.1 
             
             total_score[pred] += weight
 
@@ -396,7 +369,6 @@ class AdaptiveScorer:
         }
 
         if len(filtered_history) >= 5:
-            # V7.9.3: Fixed NameError: 'filtered_filtered' -> 'filtered_history'
             if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
                 return "มังกรตัด" 
 
@@ -416,11 +388,13 @@ class OracleBrain:
         self.last_prediction: Optional[MainOutcome] = None 
         self.last_module: Optional[str] = None 
 
+        # V8.0.2: These logs are now *only* for the current shoe.
+        # Accuracy calculations will be based on these, but they are reset per shoe.
+        # The underlying "knowledge" of module performance is implicit in how AdaptiveScorer uses the accuracies.
         self.individual_module_prediction_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
         }
         self.tie_module_prediction_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
-        # Removed self.pock_module_prediction_log
 
 
         # Initialize all prediction modules (P/B)
@@ -434,7 +408,6 @@ class OracleBrain:
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
-        # Removed self.pock_predictor = PockPredictor()
 
         self.scorer = AdaptiveScorer() 
         self.show_initial_wait_message = True 
@@ -447,13 +420,12 @@ class OracleBrain:
         new_round_result = RoundResult(main_outcome, is_any_natural)
         
         # --- Record individual main P/B module predictions *before* adding the new outcome ---
-        # V6.6: Calculate choppiness rate for the current history (before adding new result)
         choppiness_rate_for_trend = self._calculate_choppiness_rate(self.history, 20)
 
         current_predictions_from_modules_main = {
             "Rule": self.rule_engine.predict(self.history),
             "Pattern": self.pattern_analyzer.predict(self.history),
-            "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), # Pass choppiness rate
+            "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
             "Fallback": self.fallback_module.predict(self.history),
@@ -461,25 +433,22 @@ class OracleBrain:
         }
         
         for module_name, pred in current_predictions_from_modules_main.items():
-            # V7.9.5: Only log if a prediction was actually made by the module
             if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
                 self.individual_module_prediction_log[module_name].append((pred, main_outcome))
 
         # --- Record individual side bet module predictions *before* adding the new outcome ---
-        # Note: We only log the prediction itself, not the confidence, for accuracy tracking
         tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
-        # Removed pock_pred_for_log, _ = self.pock_predictor.predict(self.history) 
 
-        # V7.9.5: Only log Tie prediction if it was actually made
         if tie_pred_for_log is not None:
             self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
-        # Removed self.pock_module_prediction_log.append((pock_pred_for_log, is_any_natural)) 
 
         # Now, add the actual outcome to main history and logs
         self.history.append(new_round_result) 
         self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
         
+        # V8.0.2: Trim logs to MAX_LENGTH (which is 100) to keep history relevant to the shoe.
+        # This is important for preventing old shoe data from influencing current shoe analysis.
         self._trim_logs() 
 
     def remove_last(self):
@@ -487,40 +456,65 @@ class OracleBrain:
         if self.result_log: self.result_log.pop()
         if self.prediction_log: self.prediction_log.pop()
         
+        # V8.0.2: When removing, also remove from module logs
         for module_name in self.individual_module_prediction_log:
             if self.individual_module_prediction_log[module_name]:
                 self.individual_module_prediction_log[module_name].pop()
         
-        # V7.9.5: Ensure pop only if list is not empty
         if self.tie_module_prediction_log:
             self.tie_module_prediction_log.pop()
-        # Removed self.pock_module_prediction_log.pop() if self.pock_module_prediction_log else None 
 
 
-    def reset(self):
+    def reset_all_data(self):
+        """
+        V8.0.2: This method now explicitly resets ALL data, including module accuracy logs.
+        Use with caution, typically for a full system restart or debugging.
+        """
         self.history.clear()
         self.prediction_log.clear()
         self.result_log.clear()
+        
+        # Clear all module prediction logs as well
         for module_name in self.individual_module_prediction_log:
             self.individual_module_prediction_log[module_name].clear()
-        
         self.tie_module_prediction_log.clear()
-        # Removed self.pock_module_prediction_log.clear() 
 
         self.last_prediction = None
         self.last_module = None
         self.show_initial_wait_message = True
 
+    def start_new_shoe(self):
+        """
+        V8.0.2: This method resets the current shoe's history and prediction logs,
+        but retains the historical accuracy data of the modules.
+        """
+        self.history.clear()
+        self.prediction_log.clear()
+        self.result_log.clear()
+        
+        # Clear only the *current* shoe's prediction logs for modules
+        # This allows accuracy calculation to restart for the new shoe
+        for module_name in self.individual_module_prediction_log:
+            self.individual_module_prediction_log[module_name].clear()
+        self.tie_module_prediction_log.clear()
+
+        self.last_prediction = None
+        self.last_module = None
+        self.show_initial_wait_message = True
+
+
     def _trim_logs(self, max_length=100):
+        # V8.0.2: This trimming is now primarily to keep the history within a reasonable shoe length
+        # and prevent excessive memory usage. The shoe reset handles clearing for new shoes.
         self.history = self.history[-max_length:]
         self.result_log = self.result_log[-max_length:]
         self.prediction_log = self.prediction_log[-max_length:]
         
+        # Individual module logs are also trimmed to ensure they don't grow indefinitely
         for module_name in self.individual_module_prediction_log:
             self.individual_module_prediction_log[module_name] = self.individual_module_prediction_log[module_name][-max_length:]
         
         self.tie_module_prediction_log = self.tie_module_prediction_log[-max_length:]
-        # Removed self.pock_module_prediction_log = self.pock_module_prediction_log[-max_length:] 
 
 
     def calculate_miss_streak(self) -> int:
@@ -546,7 +540,6 @@ class OracleBrain:
         total_predictions = 0
         
         for predicted_val, actual_val in relevant_preds:
-            # V7.9.5: Ensure predicted_val is not None before counting
             if predicted_val is not None and predicted_val in ("P", "B") and actual_val in ("P", "B"):
                 total_predictions += 1
                 if predicted_val == actual_val:
@@ -563,39 +556,41 @@ class OracleBrain:
         total_predictions = 0
         
         for predicted_val, actual_flag in relevant_log:
-            if predicted_val is not None: # Only count if a prediction was made
+            if predicted_val is not None: 
                 total_predictions += 1
-                if predicted_val == "T" and actual_flag: # Predicted Tie, and actual was Tie
+                if predicted_val == "T" and actual_flag: 
                     wins += 1
         
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
 
     def get_module_accuracy_all_time(self) -> Dict[str, float]:
+        # V8.0.2: All-time accuracy is now calculated from the full individual_module_prediction_log
+        # which is only trimmed, not reset by start_new_shoe. This ensures accumulated knowledge.
         accuracy_results = {}
         main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback=None)
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback=None)
-        # Removed accuracy_results["Pock"] = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, lookback=None) 
 
         return accuracy_results
 
     def get_module_accuracy_recent(self, lookback: int) -> Dict[str, float]:
+        # V8.0.2: Recent accuracy is calculated from the individual_module_prediction_log,
+        # which is cleared at the start of a new shoe. This means recent accuracy reflects the current shoe.
         accuracy_results = {}
         main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback)
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback)
-        # Removed accuracy_results["Pock"] = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, lookback) 
 
         return accuracy_results
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "Tie"] # Removed "Pock"
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "Tie"] 
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -611,7 +606,7 @@ class OracleBrain:
             
         normalized_acc = {}
         for k, v in acc.items():
-            if k in ["Fallback", "Tie"]: # Removed "Pock"
+            if k in ["Fallback", "Tie"]: 
                 normalized_acc[k] = (v / 100.0) if v > 0 else 0.5 
             else: 
                 normalized_acc[k] = (v / max_val) if max_val > 0 else 0.5 
@@ -640,9 +635,7 @@ class OracleBrain:
             for j in range(start_index, len(self.history)):
                 current_sub_history = self.history[:j] 
                 
-                # V6.6: Special handling for TrendScanner when calculating its historical performance
                 if name == "Trend":
-                    # Calculate choppiness for the sub-history
                     choppiness_for_sub_history = self._calculate_choppiness_rate(current_sub_history, 20) 
                     module_pred = module.predict(current_sub_history, choppiness_for_sub_history)
                 else:
@@ -650,7 +643,6 @@ class OracleBrain:
 
                 actual_outcome_for_this_round = self.history[j].main_outcome 
                 
-                # V7.9.5: Ensure module_pred is not None before counting
                 if module_pred is not None and module_pred in ("P", "B") and actual_outcome_for_this_round in ("P", "B"): 
                     total_preds += 1
                     if module_pred == actual_outcome_for_this_round:
@@ -689,9 +681,9 @@ class OracleBrain:
 
 
     def predict_next(self) -> Tuple[
-        Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, # Main prediction
-        Optional[Literal["T"]], Optional[int], # Tie prediction and its confidence
-        bool # is_tie_sniper_opportunity (Removed is_pock_sniper_opportunity)
+        Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, 
+        Optional[Literal["T"]], Optional[int], 
+        bool 
     ]:
         """
         Generates the next predictions for main outcome and side bets,
@@ -705,11 +697,10 @@ class OracleBrain:
 
         MIN_HISTORY_FOR_PREDICTION = 20 
         
-        # V7.9.6: Relaxed Sniper conditions for easier use
-        MIN_HISTORY_FOR_SNIPER = 25 # Reduced from 30
-        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 # Reduced from 30
-        MIN_DISPLAY_CONFIDENCE = 50 # Reduced from 55
-        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 # Reduced from 60
+        MIN_HISTORY_FOR_SNIPER = 25 
+        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 
+        MIN_DISPLAY_CONFIDENCE = 50 
+        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 
 
         final_prediction_main = None
         source_module_name_main = None
@@ -725,10 +716,8 @@ class OracleBrain:
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
             self.last_module = None
-            # Adjusted return tuple
             return None, None, None, None, current_miss_streak, False, None, None, False 
 
-        # V6.6: Calculate choppiness rate once for TrendScanner
         choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
 
         predictions_from_modules = {
@@ -743,53 +732,45 @@ class OracleBrain:
         
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
-        module_accuracies_recent_20 = self.get_module_accuracy_recent(20) # V7.9.8: Get 20-round accuracy
+        module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
 
-        # V6.2: Apply minimum display confidence for main prediction
         if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
             final_prediction_main = None
             source_module_name_main = None
             confidence_main = None
             pattern_code_main = None
 
-        # V7.9.6: Relaxed miss streak for recovery
-        if current_miss_streak in [3, 4, 5]: # Added miss streak 5 for recovery
+        if current_miss_streak in [3, 4, 5]: 
             best_module_for_recovery = self.get_best_recent_module()
             if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
-                # V7.9.2: Fixed NameError: 'predictions' was undefined. Changed to 'predictions_from_modules'.
                 final_prediction_main = predictions_from_modules[best_module_for_recovery] 
                 source_module_name_main = f"{best_module_for_recovery}-Recovery"
                 confidence_main = 70 
 
 
-        # --- Main Outcome Sniper Opportunity Logic (V7.9.8: Relaxed and uses recent accuracies) ---
+        # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            # V7.9.8: Confidence for sniper main >= 50%
             if confidence_main >= 50 and current_miss_streak <= 3 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 
-                # Filter out Fallback and any "NoPrediction" entries as they don't represent strong module contributions
                 relevant_contributing_modules = [m for m in contributing_modules if m not in ["Fallback", "NoPrediction"]]
 
                 high_accuracy_contributing_count = 0
                 
-                # V7.9.8: Threshold for contributing modules' recent accuracy
-                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 # User requested "not lower than 50%", but for supporting modules, 60% is a reasonable start.
+                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 50 
 
                 for module_name in relevant_contributing_modules:
                     acc_10 = module_accuracies_recent_10.get(module_name, 0.0)
                     acc_20 = module_accuracies_recent_20.get(module_name, 0.0)
                     
-                    # V7.9.8: Use the higher of the two recent accuracies to evaluate support
                     effective_recent_acc = max(acc_10, acc_20)
 
                     if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD:
                         high_accuracy_contributing_count += 1
                 
-                # V7.9.8: Check if at least 3 relevant contributing modules have high recent accuracy
                 if high_accuracy_contributing_count >= 3:
                     is_sniper_opportunity_main = True
         # --- END Main Outcome Sniper Logic ---
@@ -800,48 +781,34 @@ class OracleBrain:
         # --- Side Bet Predictions with Confidence ---
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
 
-        # V7.9: Implement cool-down for Tie prediction if the last one was incorrect.
-        # Check the very last entry in tie_module_prediction_log (if it exists)
-        # This log entry is added *before* the current round's prediction is made, but *before* predict_next is called for the *next* round.
-        # So, to check the *previous* round's tie prediction accuracy, we look at the last entry.
-        # IMPORTANT: The tie_module_prediction_log stores (predicted_value, actual_is_tie_flag)
+        # V8.0.0: Refined cooldown logic for Tie prediction.
+        # Instead of full suppression, reduce confidence for a few rounds after a miss.
         if self.tie_module_prediction_log:
-            # Get the last recorded prediction and actual result for Tie
             last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log[-1]
-            
-            # If the system *predicted* Tie in the last round (last_logged_tie_pred == "T")
-            # AND the *actual* result of the last round was NOT a Tie (not last_actual_is_tie)
-            # Then, suppress the current Tie prediction for this round
             if last_logged_tie_pred == "T" and not last_actual_is_tie:
-                tie_prediction = None
-                tie_confidence = None
-            else:
-                # If the last Tie prediction was correct, or there was no Tie prediction, or it was not a Tie,
-                # then proceed with the current round's Tie prediction logic.
-                if tie_pred_raw is not None and tie_conf_raw is not None and tie_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
-                    tie_prediction = tie_pred_raw
-                    tie_confidence = tie_conf_raw
-        else: # No history yet for tie predictions, so just apply the normal threshold
-            if tie_pred_raw is not None and tie_conf_raw is not None and tie_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
-                tie_prediction = tie_pred_raw
-                tie_confidence = tie_conf_raw
+                # If last tie prediction was wrong, reduce current tie confidence
+                if tie_conf_raw is not None:
+                    tie_conf_raw = max(0, tie_conf_raw - 20) 
+        
+        if tie_pred_raw is not None and tie_conf_raw is not None and tie_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
+            tie_prediction = tie_pred_raw
+            tie_confidence = tie_conf_raw
+        else:
+            tie_prediction = None
+            tie_confidence = None
 
-        # --- Side Bet Sniper Opportunity Logic (V7.9.8: Relaxed and uses recent accuracies) ---
-        # V7.9.8: Relaxed thresholds for side bet sniper
-        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 60 # Reduced from 70
+        # --- Side Bet Sniper Opportunity Logic ---
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 60 
         SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
 
         # Tie Sniper
         if tie_prediction == "T" and tie_confidence is not None:
-            # V7.9.8: Relaxed confidence for tie sniper (from 75 to 60)
-            if tie_confidence >= 60 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
-                # V7.9.8: Use recent accuracy for Tie sniper check
+            if tie_confidence >= 50 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
                 if len(self.tie_module_prediction_log) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
                     tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
                 else:
-                    tie_recent_acc = 0 # Not enough recent data for sniper
+                    tie_recent_acc = 0 
                 
-                # V7.9.8: Change condition for Tie Sniper to use recent accuracy threshold
                 if tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
                     is_tie_sniper_opportunity = True
 
