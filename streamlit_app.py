@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.0.7 - Clean Start Reconfirm)
+# streamlit_app.py (Oracle V8.0.9 - Advanced Chop)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -205,6 +205,87 @@ class ChopDetector:
 
         return None
 
+class DragonTailDetector:
+    """
+    Detects a 'Dragon Tail' pattern (e.g., PPPPBP -> P or BBBBPB -> B)
+    where a long streak is broken by one opposite, then resumes.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 6: # Need at least 5 for streak + 1 opposite
+            return None
+
+        # Check for PPPPBP (4 P's, then B, then P)
+        if filtered_history[-6:] == ["P", "P", "P", "P", "B", "P"]:
+            return "P"
+        # Check for BBBBPB (4 B's, then P, then B)
+        if filtered_history[-6:] == ["B", "B", "B", "B", "P", "B"]:
+            return "B"
+        
+        # Consider shorter versions too, like PPPBP or BBBPB
+        if len(filtered_history) >= 5:
+            # Check for PPPBP (3 P's, then B, then P)
+            if filtered_history[-5:] == ["P", "P", "P", "B", "P"]:
+                return "P"
+            # Check for BBBPB (3 B's, then P, then B)
+            if filtered_history[-5:] == ["B", "B", "B", "P", "B"]:
+                return "B"
+
+        return None
+
+class AdvancedChopPredictor:
+    """
+    Predicts a 'chop' (break) after established long streaks (Dragon) or alternating patterns (Ping-Pong).
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        
+        # --- Dragon Chop Detection ---
+        # Look for a streak of at least 4, followed by an opposite, and predict that opposite
+        # Example: PPPPP B -> Predict B
+        for streak_len in range(6, 3, -1): # Check for streaks of 6 down to 4
+            if len(filtered_history) >= streak_len + 1:
+                recent_segment = filtered_history[-(streak_len + 1):]
+                
+                # Check if the first 'streak_len' elements are the same
+                if all(x == recent_segment[0] for x in recent_segment[:streak_len]):
+                    # Check if the last element is different from the streak
+                    if recent_segment[-1] != recent_segment[0]:
+                        # This means a streak was broken by the last outcome.
+                        # We predict that the *next* outcome will be the same as the one that broke the streak.
+                        # Example: P P P P P B. The streak was P, broken by B. We predict B for the next one.
+                        return recent_segment[-1] 
+
+        # --- Ping-Pong Chop Detection ---
+        # Look for a ping-pong pattern of at least 5, followed by a repeat, and predict the repeat
+        # Example: P B P B P P -> Predict P
+        # Example: B P B P B B -> Predict B
+        if len(filtered_history) >= 6: # Need at least 6 for PBPBP P or BPBPB B
+            last_6 = filtered_history[-6:]
+            # Check for PBPBP P
+            if last_6 == ["P", "B", "P", "B", "P", "P"]:
+                return "P"
+            # Check for BPBPB B
+            if last_6 == ["B", "P", "B", "P", "B", "B"]:
+                return "B"
+        
+        if len(filtered_history) >= 5: # Check for shorter ping-pong chop
+            last_5 = filtered_history[-5:]
+            # Check for PBP P (Ping-pong of 4, then a repeat)
+            if last_5 == ["P", "B", "P", "B", "P"]: # This is a ping-pong, not a chop
+                pass # Do nothing, let other modules handle
+            elif last_5 == ["B", "P", "B", "P", "B"]: # This is a ping-pong, not a chop
+                pass # Do nothing, let other modules handle
+            elif len(filtered_history) >= 4: # Check for PBP P or BPB B
+                last_4 = filtered_history[-4:]
+                if last_4 == ["P", "B", "P", "P"]: # PBPP -> Predict P (Chop from ping-pong)
+                    return "P"
+                if last_4 == ["B", "P", "B", "B"]: # BPBB -> Predict B (Chop from ping-pong)
+                    return "B"
+
+
+        return None
+
 
 # --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3, V8.0.4, V8.0.5) ---
 
@@ -330,8 +411,8 @@ class AdaptiveScorer:
 
             weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
             
-            # Give ChopDetector a slightly higher base weight if it makes a prediction
-            if name == "ChopDetector" and predictions.get(name) is not None:
+            # Give ChopDetector and AdvancedChopPredictor a slightly higher base weight if it makes a prediction
+            if name in ["ChopDetector", "AdvancedChopPredictor"] and predictions.get(name) is not None:
                 weight += 0.1 
             
             total_score[pred] += weight
@@ -380,12 +461,26 @@ class AdaptiveScorer:
         if len(filtered_history) >= 5:
             if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
                 return "มังกรตัด" 
+        
+        # Check for AdvancedChopPredictor patterns
+        if "AdvancedChopPredictor" in predictions and predictions["AdvancedChopPredictor"] is not None:
+            # If AdvancedChopPredictor made a prediction, it's likely a chop pattern
+            # We can try to infer the pattern type from the recent history
+            if len(filtered_history) >= 5:
+                # Check for Dragon Chop pattern: XXXXXY
+                if all(x == filtered_history[-6] for x in filtered_history[-6:-1]) and filtered_history[-1] != filtered_history[-6]:
+                    return "มังกรตัด"
+            if len(filtered_history) >= 4:
+                # Check for Ping-Pong Chop pattern: XYX X
+                if filtered_history[-4] != filtered_history[-3] and filtered_history[-3] == filtered_history[-2] and filtered_history[-2] == filtered_history[-1]:
+                    return "ปิงปองตัด"
+
 
         for length in range(6, 2, -1): 
             if len(joined_filtered) >= length:
-                current_pattern = joined_filtered[-length:]
-                if current_pattern in common_patterns:
-                    return common_patterns[current_pattern]
+                current_pattern_str = joined_filtered[-length:]
+                if current_pattern_str in common_patterns:
+                    return common_patterns[current_pattern_str]
         return None
 
 
@@ -399,13 +494,13 @@ class OracleBrain:
 
         # V8.0.5: Global logs for all-time accuracy (persistent across shoes)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] # Added AdvancedChop
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # V8.0.5: Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [] 
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] # Added AdvancedChop
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
@@ -418,6 +513,8 @@ class OracleBrain:
         self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
         self.chop_detector = ChopDetector() 
+        self.dragon_tail_detector = DragonTailDetector() 
+        self.advanced_chop_predictor = AdvancedChopPredictor() # Initialize AdvancedChopPredictor
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
@@ -442,7 +539,9 @@ class OracleBrain:
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
             "Fallback": self.fallback_module.predict(self.history),
-            "ChopDetector": self.chop_detector.predict(self.history) 
+            "ChopDetector": self.chop_detector.predict(self.history),
+            "DragonTail": self.dragon_tail_detector.predict(self.history),
+            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) # Added AdvancedChop
         }
         
         for module_name, pred in current_predictions_from_modules_main.items():
@@ -577,7 +676,7 @@ class OracleBrain:
         V8.0.5: Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] # Added AdvancedChop
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
         
@@ -590,7 +689,7 @@ class OracleBrain:
         V8.0.5: Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] # Added AdvancedChop
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
         
@@ -601,12 +700,12 @@ class OracleBrain:
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         # V8.0.5: This should use all-time accuracy for normalization
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "Tie"] 
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "Tie"] # Added AdvancedChop
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector"] and v > 0} 
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop"] and v > 0} # Added AdvancedChop
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -632,7 +731,9 @@ class OracleBrain:
             "Trend": self.trend_scanner, 
             "2-2 Pattern": self.two_two_pattern,
             "Sniper": self.sniper_pattern,
-            "ChopDetector": self.chop_detector 
+            "ChopDetector": self.chop_detector,
+            "DragonTail": self.dragon_tail_detector, # Added DragonTail
+            "AdvancedChop": self.advanced_chop_predictor # Added AdvancedChop
         }
         
         module_scores: Dict[str, float] = {}
@@ -696,17 +797,7 @@ class OracleBrain:
         Calculates the current consecutive miss streak for main P/B predictions.
         """
         streak = 0
-        # Iterate backwards through the prediction and result logs
-        # Use individual_module_prediction_log_current_shoe for miss streak as it reflects current shoe
-        # We need to reconstruct the overall prediction_log from individual module logs
         
-        # For simplicity and to fix the immediate error, we'll use the result_log and prediction_log
-        # which are maintained for the current shoe.
-        
-        # Ensure prediction_log and result_log are synchronized and contain P/B outcomes
-        # The prediction_log stores the *final* prediction made by the OracleBrain for that round.
-        # The result_log stores the *actual* outcome for that round.
-
         for pred, actual in zip(reversed(self.prediction_log), reversed(self.result_log)):
             if pred is None or actual not in ("P", "B") or pred not in ("P", "B"):
                 # Skip if no prediction was made, or if it was a Tie (not relevant for P/B miss streak)
@@ -768,7 +859,9 @@ class OracleBrain:
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
             "Fallback": self.fallback_module.predict(self.history),
-            "ChopDetector": self.chop_detector.predict(self.history) 
+            "ChopDetector": self.chop_detector.predict(self.history),
+            "DragonTail": self.dragon_tail_detector.predict(self.history),
+            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) # Added AdvancedChop
         }
         
         # V8.0.5: Use global accuracy for all-time, current shoe for recent
@@ -869,7 +962,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.0.7", layout="centered") # Updated version to V8.0.7
+st.set_page_config(page_title="🔮 Oracle V8.0.9", layout="centered") # Updated version to V8.0.9
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1183,7 +1276,8 @@ def handle_click(main_outcome_str: MainOutcome):
         "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
         "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "มังกรตัด": "มังกรตัด" 
+        "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
+        "ปิงปองตัด": "ปิงปองตัด" # New pattern for chop after ping-pong
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -1228,7 +1322,8 @@ def handle_remove():
         "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
         "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "มังกรตัด": "มังกรตัด" 
+        "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
+        "ปิงปองตัด": "ปิงปองตัด" # New pattern for chop after ping-pong
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -1260,7 +1355,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.0.7</div>', unsafe_allow_html=True) 
+st.markdown('<div class="big-title">🔮 Oracle V8.0.9</div>', unsafe_allow_html=True) # Updated version to V8.0.9
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
