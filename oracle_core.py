@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.9.6 - Relax Sniper Conditions)
+# oracle_core.py (Oracle V7.9.8 - Relaxed Sniper Conditions)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -228,7 +228,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4, V7.9.5, V7.9.6) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4, V7.9.5, V7.9.6, V7.9.7, V7.9.8) ---
 
 class TiePredictor:
     """
@@ -743,6 +743,7 @@ class OracleBrain:
         
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
+        module_accuracies_recent_20 = self.get_module_accuracy_recent(20) # V7.9.8: Get 20-round accuracy
 
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
@@ -764,37 +765,32 @@ class OracleBrain:
                 confidence_main = 70 
 
 
-        # --- Main Outcome Sniper Opportunity Logic ---
+        # --- Main Outcome Sniper Opportunity Logic (V7.9.8: Relaxed and uses recent accuracies) ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            # V7.9.6: Relaxed confidence for sniper main (from 95 to 90) and miss streak (from <=2 to <=3)
-            if confidence_main >= 90 and current_miss_streak <= 3 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
+            # V7.9.8: Confidence for sniper main >= 50%
+            if confidence_main >= 50 and current_miss_streak <= 3 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
-                all_contributing_modules_high_all_time_accuracy = True
                 
-                # V7.9.6: Relaxed threshold for module accuracy (from 80 to 75)
-                SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD = 75 
+                # Filter out Fallback and any "NoPrediction" entries as they don't represent strong module contributions
+                relevant_contributing_modules = [m for m in contributing_modules if m not in ["Fallback", "NoPrediction"]]
 
-                if not contributing_modules or "NoPrediction" in contributing_modules or "Fallback" in contributing_modules:
-                    all_contributing_modules_high_all_time_accuracy = False
-                else:
-                    for module_name in contributing_modules:
-                        mod_acc = self._calculate_main_module_accuracy(module_name, lookback=None) 
-                        if mod_acc < SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD:
-                            all_contributing_modules_high_all_time_accuracy = False
-                            break
+                high_accuracy_contributing_count = 0
                 
-                sniper_module_recent_accuracy_ok = True
-                if "Sniper" in contributing_modules:
-                    SNIPER_RECENT_PREDICTION_COUNT = 5 
-                    # V7.9.6: Relaxed threshold for module recent accuracy (from 80 to 75)
-                    SNIPER_RECENT_ACCURACY_THRESHOLD = 75 
+                # V7.9.8: Threshold for contributing modules' recent accuracy
+                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 # User requested "not lower than 50%", but for supporting modules, 60% is a reasonable start.
 
-                    sniper_recent_acc = self._calculate_main_module_accuracy("Sniper", SNIPER_RECENT_PREDICTION_COUNT) 
+                for module_name in relevant_contributing_modules:
+                    acc_10 = module_accuracies_recent_10.get(module_name, 0.0)
+                    acc_20 = module_accuracies_recent_20.get(module_name, 0.0)
                     
-                    if sniper_recent_acc < SNIPER_RECENT_ACCURACY_THRESHOLD:
-                        sniper_module_recent_accuracy_ok = False
+                    # V7.9.8: Use the higher of the two recent accuracies to evaluate support
+                    effective_recent_acc = max(acc_10, acc_20)
+
+                    if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD:
+                        high_accuracy_contributing_count += 1
                 
-                if all_contributing_modules_high_all_time_accuracy and sniper_module_recent_accuracy_ok:
+                # V7.9.8: Check if at least 3 relevant contributing modules have high recent accuracy
+                if high_accuracy_contributing_count >= 3:
                     is_sniper_opportunity_main = True
         # --- END Main Outcome Sniper Logic ---
 
@@ -830,24 +826,23 @@ class OracleBrain:
                 tie_prediction = tie_pred_raw
                 tie_confidence = tie_conf_raw
 
-        # --- Side Bet Sniper Opportunity Logic ---
-        # V7.9.6: Relaxed thresholds for side bet sniper
-        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 75 # Reduced from 80
-        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 75 # Reduced from 80
+        # --- Side Bet Sniper Opportunity Logic (V7.9.8: Relaxed and uses recent accuracies) ---
+        # V7.9.8: Relaxed thresholds for side bet sniper
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 60 # Reduced from 70
         SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
 
         # Tie Sniper
         if tie_prediction == "T" and tie_confidence is not None:
-            # V7.9.6: Relaxed confidence for tie sniper (from 85 to 80)
-            if tie_confidence >= 80 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
-                tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
-                # V7.9.1: Ensure tie_module_prediction_log is long enough for recent accuracy calculation
+            # V7.9.8: Relaxed confidence for tie sniper (from 75 to 60)
+            if tie_confidence >= 60 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
+                # V7.9.8: Use recent accuracy for Tie sniper check
                 if len(self.tie_module_prediction_log) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
                     tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
                 else:
                     tie_recent_acc = 0 # Not enough recent data for sniper
                 
-                if tie_all_time_acc >= SIDE_BET_SNIPER_ACCURACY_THRESHOLD and tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
+                # V7.9.8: Change condition for Tie Sniper to use recent accuracy threshold
+                if tie_recent_acc >= SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD:
                     is_tie_sniper_opportunity = True
 
         return (
