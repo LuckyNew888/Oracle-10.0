@@ -4,7 +4,7 @@ import time
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.0.3", layout="centered") # Updated version to V8.0.3
+st.set_page_config(page_title="🔮 Oracle V8.0.5", layout="centered") # Updated version to V8.0.5
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -395,7 +395,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V8.0.3</div>', unsafe_allow_html=True) 
+st.markdown('<div class="big-title">🔮 ORACLE V8.0.5</div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
