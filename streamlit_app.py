@@ -1,9 +1,10 @@
-# streamlit_app.py (Oracle V8.0.9 - Advanced Chop)
+# streamlit_app.py (Oracle V8.1.1 - Faster Analysis)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
+import json # For handling JSON string for Firebase config (though not used for persistence in this version)
 
 # --- Define main outcomes ---
 MainOutcome = Literal["P", "B", "T"]
@@ -372,6 +373,7 @@ class AdaptiveScorer:
     and their historical accuracy, with adaptive weighting.
     This scorer is primarily for main P/B outcomes.
     V8.0.0: Enhanced dynamic blending ratio for more accurate weighting.
+    V8.1.1: More aggressive blending towards recent performance for faster adaptation.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -390,29 +392,24 @@ class AdaptiveScorer:
             all_time_acc_val = module_accuracies_all_time.get(name, 0.0)
             recent_acc_val = module_accuracies_recent.get(name, 0.0)
 
-            # V8.0.0: More sophisticated dynamic blend ratio
-            # The blend ratio for recent accuracy will depend on how much recent performance deviates from all-time.
-            # If recent is much better, lean heavily on recent. If much worse, lean more on all-time.
-            # If similar, use a balanced blend.
-            
+            # V8.1.1: More aggressive dynamic blend ratio for faster adaptation
             # Normalize accuracies to a 0-1 scale for ratio calculation
             all_time_norm = all_time_acc_val / 100.0 if all_time_acc_val > 0 else 0.5
             recent_norm = recent_acc_val / 100.0 if recent_acc_val > 0 else 0.5
 
-            # Calculate a dynamic blend_recent_ratio (e.g., from 0.5 to 0.9)
+            # Calculate a dynamic blend_recent_ratio (e.g., from 0.4 to 0.95)
             # A higher difference (recent_norm - all_time_norm) means recent is performing better
-            # Map difference from -0.5 to 0.5 (approx) to blend_recent_ratio from 0.5 to 0.9
-            # Clamp difference to avoid extreme values
+            # Map difference from -0.2 to 0.2 (approx) to blend_recent_ratio from 0.4 to 0.95
             diff = max(-0.2, min(0.2, recent_norm - all_time_norm)) # Clamp diff to -0.2 to 0.2
             
-            # Linear mapping: if diff is -0.2, ratio is 0.5. If diff is 0.2, ratio is 0.9.
-            blend_recent_ratio = 0.7 + (diff * 1.0) # Base 0.7, adjusted by diff (range 0.5 to 0.9)
-            blend_recent_ratio = max(0.5, min(0.9, blend_recent_ratio)) # Ensure bounds
+            # Linear mapping: if diff is -0.2, ratio is 0.4. If diff is 0.2, ratio is 0.95.
+            blend_recent_ratio = 0.675 + (diff * 1.375) # Base 0.675, adjusted by diff (range 0.4 to 0.95)
+            blend_recent_ratio = max(0.4, min(0.95, blend_recent_ratio)) # Ensure bounds
 
             weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
             
             # Give ChopDetector and AdvancedChopPredictor a slightly higher base weight if it makes a prediction
-            if name in ["ChopDetector", "AdvancedChopPredictor"] and predictions.get(name) is not None:
+            if name in ["ChopDetector", "AdvancedChop"] and predictions.get(name) is not None:
                 weight += 0.1 
             
             total_score[pred] += weight
@@ -463,7 +460,7 @@ class AdaptiveScorer:
                 return "มังกรตัด" 
         
         # Check for AdvancedChopPredictor patterns
-        if "AdvancedChopPredictor" in predictions and predictions["AdvancedChopPredictor"] is not None:
+        if "AdvancedChop" in predictions and predictions["AdvancedChop"] is not None:
             # If AdvancedChopPredictor made a prediction, it's likely a chop pattern
             # We can try to infer the pattern type from the recent history
             if len(filtered_history) >= 5:
@@ -492,18 +489,18 @@ class OracleBrain:
         self.last_prediction: Optional[MainOutcome] = None 
         self.last_module: Optional[str] = None 
 
-        # V8.0.5: Global logs for all-time accuracy (persistent across shoes)
+        # Global logs for all-time accuracy (NOT persistent in this version)
+        # These will reset on every app redeploy/restart.
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] # Added AdvancedChop
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] 
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
-        # V8.0.5: Per-shoe logs for recent accuracy and current shoe display
+        # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] # Added AdvancedChop
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] 
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
-
 
         # Initialize all prediction modules (P/B)
         self.rule_engine = RuleEngine()
@@ -514,13 +511,15 @@ class OracleBrain:
         self.fallback_module = FallbackModule() 
         self.chop_detector = ChopDetector() 
         self.dragon_tail_detector = DragonTailDetector() 
-        self.advanced_chop_predictor = AdvancedChopPredictor() # Initialize AdvancedChopPredictor
+        self.advanced_chop_predictor = AdvancedChopPredictor() 
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
 
         self.scorer = AdaptiveScorer() 
-        self.show_initial_wait_message = True 
+        self.show_initial_wait_message = True
+        
+        # No Firestore loading/saving in this version. Data is volatile.
 
     def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False):
         """
@@ -541,12 +540,11 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history),
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
-            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) # Added AdvancedChop
+            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) 
         }
         
         for module_name, pred in current_predictions_from_modules_main.items():
             if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
-                # V8.0.5: Log to both global and current shoe logs
                 self.module_accuracy_global_log[module_name].append((pred, main_outcome))
                 self.individual_module_prediction_log_current_shoe[module_name].append((pred, main_outcome))
 
@@ -554,7 +552,6 @@ class OracleBrain:
         tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
 
         if tie_pred_for_log is not None:
-            # V8.0.5: Log to both global and current shoe logs
             self.tie_module_accuracy_global_log.append((tie_pred_for_log, main_outcome == "T"))
             self.tie_module_prediction_log_current_shoe.append((tie_pred_for_log, main_outcome == "T"))
 
@@ -563,16 +560,14 @@ class OracleBrain:
         self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
         
-        # V8.0.5: Trim only global logs to prevent indefinite growth
         self._trim_global_logs() 
-        # Current shoe logs are implicitly trimmed by `start_new_shoe` and `remove_last`
+        # No Firestore saving in this version.
 
     def remove_last(self):
         if self.history: self.history.pop()
         if self.result_log: self.result_log.pop()
         if self.prediction_log: self.prediction_log.pop()
         
-        # V8.0.5: When removing, also remove from both global and current shoe logs
         for module_name in self.module_accuracy_global_log:
             if self.module_accuracy_global_log[module_name]:
                 self.module_accuracy_global_log[module_name].pop()
@@ -584,18 +579,19 @@ class OracleBrain:
             self.tie_module_accuracy_global_log.pop()
         if self.tie_module_prediction_log_current_shoe:
             self.tie_module_prediction_log_current_shoe.pop()
+        
+        # No Firestore saving in this version.
 
 
     def reset_all_data(self):
         """
-        V8.0.5: This method now explicitly resets ALL data, including global and current shoe accuracy logs.
+        This method now explicitly resets ALL data, including global and current shoe accuracy logs.
         Use with caution, typically for a full system restart or debugging.
         """
         self.history.clear()
         self.prediction_log.clear()
         self.result_log.clear()
         
-        # Clear all module prediction logs (global and current shoe)
         for module_name in self.module_accuracy_global_log:
             self.module_accuracy_global_log[module_name].clear()
         self.tie_module_accuracy_global_log.clear()
@@ -607,17 +603,18 @@ class OracleBrain:
         self.last_prediction = None
         self.last_module = None
         self.show_initial_wait_message = True
+        
+        # No Firestore saving in this version.
 
     def start_new_shoe(self):
         """
-        V8.0.5: This method resets the current shoe's history and prediction logs,
+        This method resets the current shoe's history and prediction logs,
         but retains the global historical accuracy data of the modules.
         """
         self.history.clear()
         self.prediction_log.clear()
         self.result_log.clear()
         
-        # Clear only the *current* shoe's prediction logs for modules
         for module_name in self.individual_module_prediction_log_current_shoe:
             self.individual_module_prediction_log_current_shoe[module_name].clear()
         self.tie_module_prediction_log_current_shoe.clear()
@@ -625,18 +622,18 @@ class OracleBrain:
         self.last_prediction = None
         self.last_module = None
         self.show_initial_wait_message = True
+        # No Firestore saving in this version.
 
 
-    def _trim_global_logs(self, max_length=1000): # V8.0.5: Increased max_length for global logs
+    def _trim_global_logs(self, max_length=1000): 
         """
-        V8.0.5: Trims global accuracy logs to prevent indefinite growth.
+        Trims global accuracy logs to prevent indefinite growth.
         """
         for module_name in self.module_accuracy_global_log:
             self.module_accuracy_global_log[module_name] = self.module_accuracy_global_log[module_name][-max_length:]
         
         self.tie_module_accuracy_global_log = self.tie_module_accuracy_global_log[-max_length:]
 
-    # V8.0.5: Renamed to specify which log is being calculated from
     def _calculate_main_module_accuracy_from_log(self, log_data: List[Tuple[MainOutcome, MainOutcome]], lookback: Optional[int] = None) -> float:
         relevant_preds = log_data
         if lookback is not None:
@@ -653,7 +650,6 @@ class OracleBrain:
         
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
-    # V8.0.5: Renamed to specify which log is being calculated from
     def _calculate_side_bet_module_accuracy_from_log(self, log_data: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
         relevant_log = log_data
         if lookback is not None:
@@ -673,10 +669,10 @@ class OracleBrain:
 
     def get_module_accuracy_all_time(self) -> Dict[str, float]:
         """
-        V8.0.5: Calculates all-time accuracy from global logs.
+        Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] # Added AdvancedChop
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] 
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
         
@@ -686,10 +682,10 @@ class OracleBrain:
 
     def get_module_accuracy_recent(self, lookback: int) -> Dict[str, float]:
         """
-        V8.0.5: Calculates recent accuracy from current shoe logs.
+        Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] # Added AdvancedChop
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] 
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
         
@@ -698,14 +694,13 @@ class OracleBrain:
         return accuracy_results
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
-        # V8.0.5: This should use all-time accuracy for normalization
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "Tie"] # Added AdvancedChop
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "Tie"] 
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop"] and v > 0} # Added AdvancedChop
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop"] and v > 0} 
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -724,7 +719,6 @@ class OracleBrain:
 
 
     def get_best_recent_module(self, lookback: int = 10) -> Optional[str]:
-        # V8.0.5: This should use current shoe logs for recent performance
         modules_to_check = {
             "Rule": self.rule_engine,
             "Pattern": self.pattern_analyzer,
@@ -732,17 +726,16 @@ class OracleBrain:
             "2-2 Pattern": self.two_two_pattern,
             "Sniper": self.sniper_pattern,
             "ChopDetector": self.chop_detector,
-            "DragonTail": self.dragon_tail_detector, # Added DragonTail
-            "AdvancedChop": self.advanced_chop_predictor # Added AdvancedChop
+            "DragonTail": self.dragon_tail_detector, 
+            "AdvancedChop": self.advanced_chop_predictor 
         }
         
         module_scores: Dict[str, float] = {}
 
         min_history_for_module = 4 
         
-        # Calculate recent accuracy for each module from current shoe logs
         for name in modules_to_check.keys():
-            if name == "Fallback": continue # Fallback is not a "best" module for recovery
+            if name == "Fallback": continue 
             
             log_for_module = self.individual_module_prediction_log_current_shoe.get(name, [])
             
@@ -767,7 +760,6 @@ class OracleBrain:
         if not module_scores:
             return None
         
-        # Filter out Fallback and find the best performing module
         filtered_module_scores = {k: v for k, v in module_scores.items() if k != "Fallback"}
         
         if not filtered_module_scores:
@@ -800,13 +792,11 @@ class OracleBrain:
         
         for pred, actual in zip(reversed(self.prediction_log), reversed(self.result_log)):
             if pred is None or actual not in ("P", "B") or pred not in ("P", "B"):
-                # Skip if no prediction was made, or if it was a Tie (not relevant for P/B miss streak)
                 continue 
             
             if pred != actual:
                 streak += 1
             else:
-                # Streak broken
                 break 
         return streak
 
@@ -826,7 +816,8 @@ class OracleBrain:
         
         current_miss_streak = self.calculate_miss_streak()
 
-        MIN_HISTORY_FOR_PREDICTION = 20 
+        # V8.1.1: Lowered MIN_HISTORY_FOR_PREDICTION for earlier predictions
+        MIN_HISTORY_FOR_PREDICTION = 15 
         
         MIN_HISTORY_FOR_SNIPER = 25 
         MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 
@@ -847,7 +838,6 @@ class OracleBrain:
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
             self.last_module = None
-            # Return current_miss_streak even if no prediction is made
             return None, None, None, None, current_miss_streak, False, None, None, False 
 
         choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
@@ -861,10 +851,9 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history),
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
-            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) # Added AdvancedChop
+            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) 
         }
         
-        # V8.0.5: Use global accuracy for all-time, current shoe for recent
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
@@ -916,16 +905,12 @@ class OracleBrain:
         # --- Side Bet Predictions with Confidence ---
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
 
-        # V8.0.4: Enhanced cooldown logic for Tie prediction.
-        # If last tie prediction was wrong, reduce current tie confidence more aggressively.
-        # Also, check for consecutive misses.
-        if self.tie_module_prediction_log_current_shoe: # V8.0.5: Use current shoe log for cooldown
+        if self.tie_module_prediction_log_current_shoe: 
             last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log_current_shoe[-1]
             if last_logged_tie_pred == "T" and not last_actual_is_tie:
                 if tie_conf_raw is not None:
                     tie_conf_raw = max(0, tie_conf_raw - 30) 
                 
-                # Check if the tie predictor missed the last 2 consecutive predictions
                 if len(self.tie_module_prediction_log_current_shoe) >= 2:
                     prev_logged_tie_pred, prev_actual_is_tie = self.tie_module_prediction_log_current_shoe[-2]
                     if prev_logged_tie_pred == "T" and not prev_actual_is_tie:
@@ -962,7 +947,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.0.9", layout="centered") # Updated version to V8.0.9
+st.set_page_config(page_title="🔮 Oracle V8.1.1", layout="centered") # Updated version to V8.1.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1283,7 +1268,7 @@ def handle_click(main_outcome_str: MainOutcome):
     
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) >= 20: 
+    if (p_count + b_count) >= 15: # V8.1.1: Lowered for earlier predictions
         st.session_state.initial_shown = True 
 
     st.query_params["_t"] = f"{time.time()}"
@@ -1329,7 +1314,7 @@ def handle_remove():
     
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) < 20: 
+    if (p_count + b_count) < 15: # V8.1.1: Lowered for earlier predictions
         st.session_state.initial_shown = False
     
     st.query_params["_t"] = f"{time.time()}"
@@ -1355,7 +1340,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.0.9</div>', unsafe_allow_html=True) # Updated version to V8.0.9
+st.markdown('<div class="big-title">🔮 Oracle V8.1.1</div>', unsafe_allow_html=True) # Updated version to V8.1.1
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1376,12 +1361,12 @@ else:
     main_history_len = p_count + b_count
     miss = st.session_state.oracle.calculate_miss_streak()
 
-    if main_history_len < 20 and not st.session_state.initial_shown: 
-        st.warning(f"⚠️ รอข้อมูลครบ 20 ตา (P/B) ก่อนเริ่มทำนาย (ปัจจุบัน {main_history_len} ตา)") 
+    if main_history_len < 15 and not st.session_state.initial_shown: # V8.1.1: Lowered for earlier predictions
+        st.warning(f"⚠️ กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย (ปัจจุบัน {main_history_len} ตา)") # V8.1.1: Updated message
     elif miss >= 6:
-        st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
+        st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด) - โปรดป้อนข้อมูลต่อเพื่อให้ระบบเรียนรู้และฟื้นตัว") # V8.1.1: Updated message
     else:
-        st.info("⏳ กำลังวิเคราะห์ข้อมูล... ความมั่นใจยังไม่สูงพอที่จะทำนาย")
+        st.info("⏳ กำลังวิเคราะห์ข้อมูล... ความมั่นใจยังไม่สูงพอที่จะทำนาย - โปรดป้อนข้อมูลต่อ") # V8.1.1: Updated message
 
 st.markdown("</div>", unsafe_allow_html=True)
 
