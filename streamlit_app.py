@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.2.3 - Fix TypeError)
+# streamlit_app.py (Oracle V8.2.5 - Enhanced Tie Prediction)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -319,6 +319,8 @@ class TiePredictor:
     V8.0.3: Further adjusted long_lookback_for_prob to 50 for faster responsiveness within a shoe.
     V8.0.4: Added min_tie_occurrences and enhanced cooldown logic for more reliable predictions.
     V8.2.1: Refined Tie Clustering rule to prevent immediate re-prediction after a Tie result.
+    V8.2.4: Enhanced with positional and pattern-based tie prediction rules.
+    V8.2.5: Further refinement of tie prediction rules based on user feedback (Trigger Point, Bayesian).
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -382,7 +384,51 @@ class TiePredictor:
             if main_history_pb[-6:].count("P") == 6 or main_history_pb[-6:].count("B") == 6:
                 return "T", 65
 
-        # Rule 7: If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
+        # V8.2.4: New Rule 7: Positional/Interval-based Tie prediction
+        # Check if current round number is a multiple of a typical tie interval (e.g., 8, 9, 10 rounds)
+        # combined with ties being underrepresented.
+        current_round_count = len(history) # Total rounds played
+        if current_round_count >= 20: # Only apply if enough history
+            # Check for "every 8-10 rounds" pattern
+            if (current_round_count % 8 == 0 or current_round_count % 9 == 0 or current_round_count % 10 == 0):
+                # And if ties are still due overall
+                if actual_tie_count_long < expected_tie_count_long * 0.9:
+                    return "T", 68 # Moderate confidence
+
+        # V8.2.4: New Rule 8: Tie after a short streak of Banker/Player
+        if len(main_history_pb) >= 2:
+            last_two_pb = "".join(main_history_pb[-2:])
+            if last_two_pb == "BB" and not tie_flags[-1]: # After 2 Bankers, if last was not a Tie
+                return "T", 62
+            if last_two_pb == "PP" and not tie_flags[-1]: # After 2 Players, if last was not a Tie
+                return "T", 62
+        
+        # V8.2.4: New Rule 9: Tie after a specific alternating pattern (e.g., PBP, BPB)
+        if len(main_history_pb) >= 3:
+            last_three_pb = "".join(main_history_pb[-3:])
+            if last_three_pb == "PBP" and not tie_flags[-1]: # PBP, then potentially T
+                return "T", 58
+            if last_three_pb == "BPB" and not tie_flags[-1]: # BPB, then potentially T
+                return "T", 58
+
+        # V8.2.5: New Rule 10: Trigger Point - Tie return after 4 rounds
+        # "หลังเสมอ 1 ครั้ง T มักจะกลับมาในอีก 4 ตา"
+        if True in tie_flags: # Check if there has been any tie in history
+            last_tie_index = len(tie_flags) - 1 - tie_flags[::-1].index(True)
+            rounds_since_last_tie = len(tie_flags) - 1 - last_tie_index
+            
+            if rounds_since_last_tie == 4: # If it's exactly 4 rounds since the last tie
+                # Add a condition for general tie "due-ness" to avoid over-prediction
+                if actual_tie_count_long < expected_tie_count_long * 1.0: # Ties are not over-represented
+                    return "T", 70 # Higher confidence for this specific trigger
+
+        # V8.2.5: New Rule 11: Trigger Point - Tie after B-B-P pattern
+        # "หลังจากไม้ B-B-P มี T ตามมาบ่อย"
+        if len(main_history_pb) >= 3:
+            if "".join(main_history_pb[-3:]) == "BBP" and not tie_flags[-1]: # BBP pattern, and last was not a Tie
+                return "T", 65 # Moderate confidence
+
+        # Rule 12 (formerly Rule 7/10): If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
         if actual_tie_count_long > expected_tie_count_long * 1.1: 
             return None, None 
 
@@ -1041,7 +1087,8 @@ class OracleBrain:
 
         # Tie Sniper
         if tie_prediction == "T" and tie_confidence is not None:
-            if tie_confidence >= 50 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
+            # V8.2.5: Changed condition to be tie_confidence >= 60 as per user request for Sniper Shot
+            if tie_confidence >= 60 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
                 if len(self.tie_module_prediction_log_current_shoe) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
                     tie_recent_acc = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_prediction_log_current_shoe, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
                 else:
@@ -1059,7 +1106,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.2.3", layout="centered") # Updated version to V8.2.3
+st.set_page_config(page_title="🔮 Oracle V8.2.5", layout="centered") # Updated version to V8.2.5
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1452,7 +1499,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.2.3</div>', unsafe_allow_html=True) # Updated version to V8.2.3
+st.markdown('<div class="big-title">🔮 Oracle V8.2.5</div>', unsafe_allow_html=True) # Updated version to V8.2.5
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1603,7 +1650,7 @@ col4, col5 = st.columns(2)
 with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
 with col5:
-    st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe) # Changed on_on_click to on_click
+    st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe)
 
 # --- Data Management (New for V8.2.2) ---
 st.markdown("<hr>", unsafe_allow_html=True)
