@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.2.1 - Improve Tie Prediction)
+# streamlit_app.py (Oracle V8.2.2 - Data Persistence)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -537,8 +537,7 @@ class OracleBrain:
         self.last_prediction: Optional[MainOutcome] = None 
         self.last_module: Optional[str] = None 
 
-        # Global logs for all-time accuracy (NOT persistent in this version)
-        # These will reset on every app redeploy/restart.
+        # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] 
         }
@@ -1020,7 +1019,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.2.1", layout="centered") # Updated version to V8.2.1
+st.set_page_config(page_title="🔮 Oracle V8.2.2", layout="centered") # Updated version to V8.2.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1413,7 +1412,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.2.1</div>', unsafe_allow_html=True) # Updated version to V8.2.1
+st.markdown('<div class="big-title">🔮 Oracle V8.2.2</div>', unsafe_allow_html=True) # Updated version to V8.2.2
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1564,7 +1563,75 @@ col4, col5 = st.columns(2)
 with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
 with col5:
-    st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe) # Changed button label and function call
+    st.button("▶️ เริ่มขอนใหม่", on_on_click=handle_start_new_shoe) # Changed button label and function call
+
+# --- Data Management (New for V8.2.2) ---
+st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<b>💾 จัดการข้อมูล All-Time:</b>", unsafe_allow_html=True)
+
+col_dl, col_ul = st.columns(2)
+
+with col_dl:
+    # Prepare data for download
+    data_to_export = st.session_state.oracle.export_all_time_data()
+    json_data = json.dumps(data_to_export, indent=4)
+    
+    st.download_button(
+        label="⬇️ ดาวน์โหลดข้อมูล All-Time",
+        data=json_data,
+        file_name="oracle_all_time_data.json",
+        mime="application/json",
+        key="download_all_time_data_btn",
+        help="ดาวน์โหลดข้อมูลความแม่นยำ All-Time เพื่อสำรองไว้"
+    )
+
+with col_ul:
+    uploaded_file = st.file_uploader("⬆️ อัปโหลดข้อมูล All-Time", type="json", key="upload_all_time_data_uploader", help="อัปโหลดไฟล์ JSON ที่มีข้อมูลความแม่นยำ All-Time")
+    if uploaded_file is not None:
+        try:
+            bytes_data = uploaded_file.getvalue()
+            decoded_data = bytes_data.decode("utf-8")
+            loaded_data = json.loads(decoded_data)
+            st.session_state.oracle.import_all_time_data(loaded_data)
+            # Re-run prediction to update UI with new data
+            # This is important because accuracy stats affect predictions
+            (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+             tie_pred, tie_conf,
+             is_tie_sniper_opportunity) = st.session_state.oracle.predict_next()
+
+            st.session_state.prediction = prediction
+            st.session_state.source = source
+            st.session_state.confidence = confidence
+            st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main
+            st.session_state.tie_prediction = tie_pred
+            st.session_state.tie_confidence = tie_conf
+            st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+            
+            pattern_names = {
+                "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+                "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+                "PPPP": "มังกร", "BBBB": "มังกร", 
+                "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
+                "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+                "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+                "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+                "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+                "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+                "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
+                "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
+                "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
+                "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+                "มังกรตัด": "มังกรตัด",
+                "ปิงปองตัด": "ปิงปองตัด"
+            }
+            st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
+
+            st.query_params["_t"] = f"{time.time()}" # Force UI refresh
+            
+        except json.JSONDecodeError:
+            st.error("ไฟล์ที่อัปโหลดไม่ใช่ไฟล์ JSON ที่ถูกต้อง")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการประมวลผลไฟล์: {e}")
 
 # --- Debugging Toggle ---
 st.markdown("<hr>", unsafe_allow_html=True)
