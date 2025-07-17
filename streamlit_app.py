@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.2.0 - Dynamic Pattern Window)
+# streamlit_app.py (Oracle V8.2.1 - Improve Tie Prediction)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -318,6 +318,7 @@ class TiePredictor:
     V8.0.1: Adjusted long_lookback_for_prob to be more realistic for a Baccarat shoe.
     V8.0.3: Further adjusted long_lookback_for_prob to 50 for faster responsiveness within a shoe.
     V8.0.4: Added min_tie_occurrences and enhanced cooldown logic for more reliable predictions.
+    V8.2.1: Refined Tie Clustering rule to prevent immediate re-prediction after a Tie result.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -344,7 +345,6 @@ class TiePredictor:
         MIN_TIE_OCCURRENCES_FOR_DUE = 1 
         if actual_tie_count_long < MIN_TIE_OCCURRENCES_FOR_DUE and len(tie_flags) >= long_lookback_for_prob:
             # If no ties have occurred in the long lookback, and we have enough history, don't predict "due"
-            # This prevents predicting "due" too early in a shoe where ties are simply not appearing yet.
             pass # Skip due rules, proceed to pattern rules
         else:
             # Rule 1: Ties are "due" based on long-term underperformance
@@ -359,13 +359,12 @@ class TiePredictor:
                 tie_confidence = min(85, 55 + int(due_factor_short * 100 * 0.6)) 
                 if tie_confidence >= 55: return "T", tie_confidence
 
-        # Rule 3: Tie Clustering - if a tie occurred recently
-        if len(tie_flags) >= 2 and tie_flags[-1] == True: 
-            return "T", 70 
-        if len(tie_flags) >= 3 and tie_flags[-2] == True and not tie_flags[-1]: 
-            return "T", 60 
-        if len(tie_flags) >= 4 and tie_flags[-3] == True and not tie_flags[-1] and not tie_flags[-2]: 
-            return "T", 55 
+        # V8.2.1: Refined Rule 3: Tie Clustering - predict if a tie was *recently* seen, but not the immediate last round.
+        # This prevents immediate re-prediction of Tie right after a Tie result is entered.
+        if len(tie_flags) >= 2 and tie_flags[-2] == True and not tie_flags[-1]: # Tie two rounds ago, and last round was not a tie
+            return "T", 60 # Moderate confidence for a potential cluster after a non-tie
+        if len(tie_flags) >= 3 and tie_flags[-3] == True and not tie_flags[-2] and not tie_flags[-1]: # Tie three rounds ago, and last two rounds were non-ties
+            return "T", 55 # Lower confidence, but still a potential cluster
 
         # Rule 4: Tie after a long streak of P/B (e.g., 10+ non-tie outcomes)
         if len(main_history_pb) >= 10 and not any(tie_flags[-10:]):
@@ -582,7 +581,7 @@ class OracleBrain:
 
         current_predictions_from_modules_main = {
             "Rule": self.rule_engine.predict(self.history),
-            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate_for_trend), # V8.2.0: Pass choppiness_rate
+            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate_for_trend), 
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
@@ -598,6 +597,10 @@ class OracleBrain:
                 self.individual_module_prediction_log_current_shoe[module_name].append((pred, main_outcome))
 
         # --- Record individual side bet module predictions *before* adding the new outcome ---
+        # The Tie predictor should predict based on history *before* the current round's result
+        # However, due to the current UI flow, add_result happens first.
+        # So, we need to make sure the TiePredictor's logic doesn't react to the *just added* result.
+        # This is handled by refining Rule 3 in TiePredictor.predict()
         tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
 
         if tie_pred_for_log is not None:
@@ -893,7 +896,7 @@ class OracleBrain:
 
         predictions_from_modules = {
             "Rule": self.rule_engine.predict(self.history),
-            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), # V8.2.0: Pass choppiness_rate
+            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), 
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
@@ -975,6 +978,7 @@ class OracleBrain:
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
 
         if self.tie_module_prediction_log_current_shoe: 
+            # V8.2.1: This logic is now primarily for adjusting confidence *down* if previous Tie prediction was wrong
             last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log_current_shoe[-1]
             if last_logged_tie_pred == "T" and not last_actual_is_tie:
                 if tie_conf_raw is not None:
@@ -1016,7 +1020,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.2.0", layout="centered") # Updated version to V8.2.0
+st.set_page_config(page_title="🔮 Oracle V8.2.1", layout="centered") # Updated version to V8.2.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1409,7 +1413,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.2.0</div>', unsafe_allow_html=True) # Updated version to V8.2.0
+st.markdown('<div class="big-title">🔮 Oracle V8.2.1</div>', unsafe_allow_html=True) # Updated version to V8.2.1
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
