@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.9.3 - Fix NameError)
+# oracle_core.py (Oracle V7.9.4 - Fix Module Accuracy)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -228,7 +228,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4) ---
 
 class TiePredictor:
     """
@@ -583,7 +583,7 @@ class OracleBrain:
             accuracy_results[module_name] = self._calculate_main_module_accuracy(module_name, lookback)
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, lookback)
-        # Removed accuracy_results["Pock"] = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, lookback=None) 
+        # Removed accuracy_results["Pock"] = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, lookback) 
 
         return accuracy_results
 
