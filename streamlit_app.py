@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.2.2 - Data Persistence)
+# streamlit_app.py (Oracle V8.2.3 - Fix TypeError)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -345,6 +345,7 @@ class TiePredictor:
         MIN_TIE_OCCURRENCES_FOR_DUE = 1 
         if actual_tie_count_long < MIN_TIE_OCCURRENCES_FOR_DUE and len(tie_flags) >= long_lookback_for_prob:
             # If no ties have occurred in the long lookback, and we have enough history, don't predict "due"
+            # This prevents predicting "due" too early in a shoe where ties are simply not appearing yet.
             pass # Skip due rules, proceed to pattern rules
         else:
             # Rule 1: Ties are "due" based on long-term underperformance
@@ -674,6 +675,45 @@ class OracleBrain:
         self.last_module = None
         self.show_initial_wait_message = True
         # No Firestore saving in this version.
+
+    def export_all_time_data(self) -> Dict[str, Any]:
+        """
+        Exports the global accuracy logs for persistence.
+        """
+        export_data = {
+            "module_accuracy_global_log": {},
+            "tie_module_accuracy_global_log": []
+        }
+        
+        # Convert tuples to lists for JSON serialization
+        for module_name, log_list in self.module_accuracy_global_log.items():
+            export_data["module_accuracy_global_log"][module_name] = [list(item) for item in log_list]
+        
+        export_data["tie_module_accuracy_global_log"] = [list(item) for item in self.tie_module_accuracy_global_log]
+        
+        return export_data
+
+    def import_all_time_data(self, imported_data: Dict[str, Any]):
+        """
+        Imports global accuracy logs from a dictionary.
+        """
+        if not isinstance(imported_data, dict):
+            raise ValueError("Imported data must be a dictionary.")
+        
+        if "module_accuracy_global_log" in imported_data and isinstance(imported_data["module_accuracy_global_log"], dict):
+            for module_name, log_list in imported_data["module_accuracy_global_log"].items():
+                if module_name in self.module_accuracy_global_log and isinstance(log_list, list):
+                    # Convert lists back to tuples
+                    self.module_accuracy_global_log[module_name] = [tuple(item) for item in log_list if isinstance(item, list) and len(item) == 2]
+                else:
+                    st.warning(f"Skipping import for unknown or invalid module: {module_name}")
+        
+        if "tie_module_accuracy_global_log" in imported_data and isinstance(imported_data["tie_module_accuracy_global_log"], list):
+            self.tie_module_accuracy_global_log = [tuple(item) for item in imported_data["tie_module_accuracy_global_log"] if isinstance(item, list) and len(item) == 2]
+        else:
+            st.warning("Skipping import for invalid tie module accuracy log.")
+
+        st.success("ข้อมูล All-Time ถูกอัปโหลดเรียบร้อยแล้ว!")
 
 
     def _trim_global_logs(self, max_length=1000): 
@@ -1019,7 +1059,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.2.2", layout="centered") # Updated version to V8.2.2
+st.set_page_config(page_title="🔮 Oracle V8.2.3", layout="centered") # Updated version to V8.2.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1412,7 +1452,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.2.2</div>', unsafe_allow_html=True) # Updated version to V8.2.2
+st.markdown('<div class="big-title">🔮 Oracle V8.2.3</div>', unsafe_allow_html=True) # Updated version to V8.2.3
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1563,7 +1603,7 @@ col4, col5 = st.columns(2)
 with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
 with col5:
-    st.button("▶️ เริ่มขอนใหม่", on_on_click=handle_start_new_shoe) # Changed button label and function call
+    st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe) # Changed on_on_click to on_click
 
 # --- Data Management (New for V8.2.2) ---
 st.markdown("<hr>", unsafe_allow_html=True)
