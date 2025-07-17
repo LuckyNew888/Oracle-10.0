@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.1.6 - Fix NameError)
+# streamlit_app.py (Oracle V8.2.0 - Dynamic Pattern Window)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -57,15 +57,10 @@ class RuleEngine:
 class PatternAnalyzer:
     """
     Predicts based on specific predefined patterns in the recent history.
+    V8.2.0: Dynamically adjusts pattern checking priority based on choppiness.
     """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 4:
-            return None
-
-        joined_filtered = "".join(filtered_history)
-        
-        patterns_and_predictions = {
+    def __init__(self):
+        self.patterns_and_predictions = { # Moved to init for clarity
             "PBPB": "P", "BPBP": "B",       
             "PPBB": "P", "BBPP": "B",       
             "PPPP": "P", "BBBB": "B",       
@@ -81,26 +76,43 @@ class PatternAnalyzer:
             "PBBP": "B", "BPPB": "P" 
         }
 
-        for length in range(6, 2, -1): 
+    def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]: # Added choppiness_rate
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 4:
+            return None
+
+        joined_filtered = "".join(filtered_history)
+        
+        # V8.2.0: Dynamic pattern window - adjust iteration based on choppiness
+        # If very choppy, prioritize shorter patterns (e.g., 3-length patterns first)
+        if choppiness_rate > 0.7: 
+            lengths_to_check = range(3, 7) # Check 3-length first, then 4, 5, 6
+        # If very streaky, prioritize longer patterns (e.g., 6-length patterns first)
+        elif choppiness_rate < 0.3: 
+            lengths_to_check = range(6, 2, -1) # Check 6-length first, then 5, 4, 3
+        # Moderate choppiness, default to checking longer patterns first
+        else: 
+            lengths_to_check = range(6, 2, -1) # Default behavior (6 down to 3)
+
+        for length in lengths_to_check: 
             if len(joined_filtered) >= length:
                 current_pattern = joined_filtered[-length:]
-                if current_pattern in patterns_and_predictions:
-                    return patterns_and_predictions[current_pattern]
+                if current_pattern in self.patterns_and_predictions:
+                    return self.patterns_and_predictions[current_pattern]
         return None
 
 class TrendScanner:
     """
     Predicts based on the dominant outcome in the recent history.
     V8.0.0: Refined dynamic lookback for smoother scaling and improved trend detection.
+    V8.2.0: Explicitly noted as part of Dynamic Pattern Window concept.
     """
     def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
         
-        # V8.0.0: More precise dynamic lookback based on choppiness
-        # Scale lookback_len from 5 (very choppy) to 20 (very streaky)
-        # choppiness_rate ranges from 0.0 (streaky) to 1.0 (choppy)
-        # (1 - choppiness_rate) will range from 1.0 (streaky) to 0.0 (choppy)
-        # lookback_len will range from 20 (streaky) down to 5 (choppy)
+        # V8.2.0: Dynamic lookback - adjusts based on choppiness.
+        # If choppy, lookback is shorter (focus on recent volatility).
+        # If streaky, lookback is longer (focus on sustained trend).
         lookback_len = int(5 + (1 - choppiness_rate) * 15) # Min 5, Max 20
         lookback_len = max(5, min(20, lookback_len)) # Ensure bounds
 
@@ -386,6 +398,7 @@ class AdaptiveScorer:
     V8.1.2: Improved miss streak penalty logic.
     V8.1.3: Even more aggressive blending for real-time adaptation and confidence adjustment based on volatility.
     V8.1.5: Further refined weighting for AdvancedChopPredictor on specific patterns.
+    V8.2.0: Ensures choppiness_rate is used for confidence adjustment.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -569,7 +582,7 @@ class OracleBrain:
 
         current_predictions_from_modules_main = {
             "Rule": self.rule_engine.predict(self.history),
-            "Pattern": self.pattern_analyzer.predict(self.history),
+            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate_for_trend), # V8.2.0: Pass choppiness_rate
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
@@ -880,7 +893,7 @@ class OracleBrain:
 
         predictions_from_modules = {
             "Rule": self.rule_engine.predict(self.history),
-            "Pattern": self.pattern_analyzer.predict(self.history),
+            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), # V8.2.0: Pass choppiness_rate
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
@@ -948,7 +961,7 @@ class OracleBrain:
                     
                     effective_recent_acc = max(acc_10, acc_20)
 
-                    if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD: # CORRECTED LINE
+                    if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD: 
                         high_accuracy_contributing_count += 1
                 
                 if high_accuracy_contributing_count >= 3:
@@ -1003,7 +1016,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.1.6", layout="centered") # Updated version to V8.1.6
+st.set_page_config(page_title="🔮 Oracle V8.2.0", layout="centered") # Updated version to V8.2.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1396,7 +1409,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.1.6</div>', unsafe_allow_html=True) # Updated version to V8.1.6
+st.markdown('<div class="big-title">🔮 Oracle V8.2.0</div>', unsafe_allow_html=True) # Updated version to V8.2.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
