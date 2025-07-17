@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V6.6", layout="centered") # Updated version to V6.6
+st.set_page_config(page_title="🔮 Oracle V6.7", layout="centered") # Updated version to V6.7
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -430,7 +430,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V6.6</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V6.7</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -624,7 +624,7 @@ if st.session_state.show_debug_info:
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
     st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
     st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
-    st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") # V6.6: Display choppiness rate
+    st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
     st.write(f"ทำนายไพ่ป็อก: {st.session_state.pock_prediction}, Sniper ไพ่ป็อก: {st.session_state.is_pock_sniper_opportunity}") 
