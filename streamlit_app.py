@@ -5,7 +5,7 @@ import time # Import time for unique timestamp
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V7.2", layout="centered") # Updated version to V7.2
+st.set_page_config(page_title="🔮 Oracle V7.4", layout="centered") # Updated version to V7.4
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -276,8 +276,12 @@ if 'show_debug_info' not in st.session_state: # New session state for debug togg
 # Session state for side bet predictions
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
+if 'tie_confidence' not in st.session_state: # New for V7.3
+    st.session_state.tie_confidence = None
 if 'pock_prediction' not in st.session_state: 
     st.session_state.pock_prediction = None
+if 'pock_confidence' not in st.session_state: # New for V7.3
+    st.session_state.pock_confidence = None
 
 # NEW: Session state for side bet sniper opportunities
 if 'is_tie_sniper_opportunity' not in st.session_state:
@@ -306,9 +310,9 @@ def handle_click(main_outcome_str: MainOutcome):
     # Reset checkboxes after adding result
     st.session_state.is_any_natural_checked = False
 
-    # Unpack all return values from predict_next
+    # Unpack all return values from predict_next (now includes side bet confidences)
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, pock_pred, 
+     tie_pred, tie_conf, pock_pred, pock_conf, 
      is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
@@ -316,9 +320,11 @@ def handle_click(main_outcome_str: MainOutcome):
     st.session_state.confidence = confidence
     st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
     
-    # Update side bet predictions
+    # Update side bet predictions and their confidences
     st.session_state.tie_prediction = tie_pred
+    st.session_state.tie_confidence = tie_conf
     st.session_state.pock_prediction = pock_pred
+    st.session_state.pock_confidence = pock_conf
 
     # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
@@ -356,9 +362,9 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # Unpack all return values from predict_next
+    # Unpack all return values from predict_next (now includes side bet confidences)
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, pock_pred, 
+     tie_pred, tie_conf, pock_pred, pock_conf, 
      is_tie_sniper_opportunity, is_pock_sniper_opportunity) = st.session_state.oracle.predict_next()
     
     st.session_state.prediction = prediction
@@ -366,10 +372,12 @@ def handle_remove():
     st.session_state.confidence = confidence
     st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
 
-    # Update side bet predictions
+    # Update side bet predictions and their confidences
     st.session_state.tie_prediction = tie_pred
+    st.session_state.tie_confidence = tie_conf
     st.session_state.pock_prediction = pock_pred
-
+    st.session_state.pock_confidence = pock_conf
+    
     # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
     st.session_state.is_pock_sniper_opportunity = is_pock_sniper_opportunity
@@ -416,9 +424,11 @@ def handle_reset():
     st.session_state.initial_shown = False 
     st.session_state.is_sniper_opportunity_main = False 
     
-    # Reset side bet predictions
+    # Reset side bet predictions and confidences
     st.session_state.tie_prediction = None
+    st.session_state.tie_confidence = None
     st.session_state.pock_prediction = None
+    st.session_state.pock_confidence = None
 
     # Reset side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = False
@@ -430,7 +440,7 @@ def handle_reset():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V7.2</div>', unsafe_allow_html=True) # Updated version in title
+st.markdown('<div class="big-title">🔮 ORACLE V7.4</div>', unsafe_allow_html=True) # Updated version in title
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -474,10 +484,11 @@ if st.session_state.is_sniper_opportunity_main:
 st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True)
 col_side1, col_side2 = st.columns(2) 
 
-# Display Tie prediction only if it exists
+# Display Tie prediction only if it exists and confidence is met
 with col_side1:
-    if st.session_state.tie_prediction:
+    if st.session_state.tie_prediction and st.session_state.tie_confidence is not None:
         st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
+        st.caption(f"🔎 ความมั่นใจ: {st.session_state.tie_confidence:.1f}%")
         if st.session_state.is_tie_sniper_opportunity:
             st.markdown("""
                 <div class="side-bet-sniper-message">
@@ -488,10 +499,11 @@ with col_side1:
         st.markdown("<p style='text-align:center; color:#495057;'>⚪ เสมอ (ไม่มีทำนาย)</p>", unsafe_allow_html=True)
 
 
-# Display Pock prediction only if it exists
+# Display Pock prediction only if it exists and confidence is met
 with col_side2:
-    if st.session_state.pock_prediction:
+    if st.session_state.pock_prediction and st.session_state.pock_confidence is not None:
         st.markdown(f"<p style='text-align:center; color:#4CAF50; font-weight:bold;'>🟢 ไพ่ป็อก</p>", unsafe_allow_html=True)
+        st.caption(f"🔎 ความมั่นใจ: {st.session_state.pock_confidence:.1f}%")
         if st.session_state.is_pock_sniper_opportunity:
             st.markdown("""
                 <div class="side-bet-sniper-message">
@@ -626,8 +638,8 @@ if st.session_state.show_debug_info:
     st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
     st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
-    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}")
-    st.write(f"ทำนายไพ่ป็อก: {st.session_state.pock_prediction}, Sniper ไพ่ป็อก: {st.session_state.is_pock_sniper_opportunity}") 
+    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") # Updated debug info
+    st.write(f"ทำนายไพ่ป็อก: {st.session_state.pock_prediction}, ความมั่นใจไพ่ป็อก: {st.session_state.pock_confidence}, Sniper ไพ่ป็อก: {st.session_state.is_pock_sniper_opportunity}") # Updated debug info
     st.write("---") 
 
 
