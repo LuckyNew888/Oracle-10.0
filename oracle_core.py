@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.2 - Refined Side Bet Balance)
+# oracle_core.py (Oracle V7.4 - NameError Fix & Side Bet Confidence)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -229,151 +229,141 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V6.1, V6.5, V6.6, V6.8, V7.0, V7.1, V7.2) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.4) ---
 
 class TiePredictor:
     """
-    Predicts Tie outcomes with further enhanced logic for V6.1.
-    V6.6: Incorporates theoretical probability.
-    V6.7: Adjusts probability-based logic to prevent constant Tie prediction.
-    V6.8: Further refined probability-based logic for more balanced prediction.
-    V7.0: Adjusted probability threshold to be more aggressive in predicting when due, and less aggressive in stopping.
-    V7.1: Further refined probability thresholds for better balance.
-    V7.2: Adjusted history requirement and probability thresholds for better balance.
+    Predicts Tie outcomes with confidence.
+    V7.3: Returns confidence score. Logic adjusted for balance.
+    V7.4: Fixed NameError.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
-    def predict(self, history: List[RoundResult]) -> Optional[Literal["T"]]:
+    def predict(self, history: List[RoundResult]) -> Tuple[Optional[Literal["T"]], Optional[int]]:
         tie_flags = _get_side_bet_history_flags(history, "T")
         main_history_pb = _get_main_outcome_history(history) 
-
-        # V7.2: Reduced history requirement for Tie prediction to start earlier
-        if len(tie_flags) < 15: # Changed from 20 to 15
-            return None
         
-        # V7.2: Probability-based adjustment - more aggressive when due, slightly less aggressive in stopping
+        tie_confidence = 0
+
+        # V7.3: History requirement for Tie prediction
+        if len(tie_flags) < 20: # Increased slightly for more reliable probability calculation
+            return None, None
+        
         lookback_for_prob = min(len(tie_flags), 50) 
-        if lookback_for_prob > 0:
-            recent_tie_flags = tie_flags[-lookback_for_prob:]
-            actual_tie_count = recent_tie_flags.count(True)
-            expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
+        actual_tie_count = recent_tie_flags.count(True) if (recent_tie_flags := tie_flags[-lookback_for_prob:]) else 0
+        expected_tie_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            # If ties are significantly "due" (e.g., less than 85% of expected)
-            if actual_tie_count < expected_tie_count * 0.85: # V7.2: Adjusted from 0.9 to 0.85 (more aggressive when due)
-                return "T"
-            # If ties have been slightly more frequent than expected, stop predicting
-            elif actual_tie_count > expected_tie_count * 1.2: # V7.2: Adjusted from 1.25 to 1.2 (slightly less aggressive stop)
-                return None 
+        # Probability-based confidence and prediction
+        if actual_tie_count < expected_tie_count * 0.8: # Ties are significantly "due"
+            tie_confidence = min(90, 60 + int((expected_tie_count * 0.8 - actual_tie_count) / expected_tie_count * 100)) # Base 60, boost if very due
+            return "T", tie_confidence
+        elif actual_tie_count > expected_tie_count * 1.1: # Ties have been more frequent than expected, stop predicting
+            return None, None 
 
-        # Existing rules from V6.1 (these will now be filtered by the probability check above)
+        # Pattern-based rules (if not filtered by probability above)
         # Rule 1: Tie after a long streak of P/B (e.g., 12+ non-tie outcomes)
         if len(main_history_pb) >= 12 and not any(tie_flags[-12:]):
-            return "T"
+            return "T", 70 # High confidence if due after a long non-tie streak
         
         # Rule 2: If tie occurred recently and then a few non-ties, it might repeat (T _ _ _ T)
         if len(tie_flags) >= 5 and tie_flags[-5] and not any(tie_flags[-4:]):
-            return "T" 
+            return "T", 65
             
         # Rule 3: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
         if len(main_history_pb) >= 6:
             recent_main = "".join(main_history_pb[-6:])
             if recent_main in ["PBPBPB", "BPBPBP"]: 
-                return "T"
+                return "T", 75
         
-        # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20)
-        if tie_flags[-20:].count(True) >= 6:
-            return "T"
+        # Rule 4: If ties are very frequent in recent history (e.g., 6+ in last 20) - this might be caught by prob check
+        if tie_flags[-20:].count(True) >= 6 and actual_tie_count < expected_tie_count * 1.05: # Only if not *too* over-represented
+            return "T", 60
             
         # Rule 5: Tie after a specific main outcome sequence (e.g., P B B P, then T)
         if len(main_history_pb) >= 5:
             recent_main_5 = "".join(main_history_pb[-5:])
             if recent_main_5 == "PBBPB" or recent_main_5 == "BPPBP": 
-                return "T"
+                return "T", 60
 
         # Rule 6: Tie after a long streak of one side winning (e.g., 7+ P's or 7+ B's)
         if len(main_history_pb) >= 7:
             if main_history_pb[-7:].count("P") == 7 or main_history_pb[-7:].count("B") == 7:
-                return "T"
+                return "T", 70
         
         # Rule 7: Tie after a specific "chop" pattern (e.g., P B P B, then P P -> T)
         if len(main_history_pb) >= 6:
             recent_main_6 = "".join(main_history_pb[-6:])
             if recent_main_6 == "PBPBPP" or recent_main_6 == "BPBPBB":
-                return "T"
+                return "T", 65
         
-        # V6.1 New Rule: Tie after a very short streak (e.g., PP or BB) followed by a chop
+        # V7.4 FIX: Changed `filtered_history` to `main_history_pb`
+        # Rule 8: Tie after a very short streak (e.g., PP or BB) followed by a chop
         if len(main_history_pb) >= 3:
-            if filtered_history[-3:] == ["P", "P", "B"] or filtered_history[-3:] == ["B", "B", "P"]:
+            if main_history_pb[-3:] == ["P", "P", "B"] or main_history_pb[-3:] == ["B", "B", "P"]:
                 if not any(tie_flags[-5:]): 
-                    return "T"
+                    return "T", 60
 
-        return None
+        return None, None # No confident prediction
 
 class PockPredictor:
     """
-    V6.5: Predicts the occurrence of any Natural (Pock 8 or 9) in the next round.
-    V6.6: Incorporates theoretical probability.
-    V6.7: Adjusts history requirement and probability-based logic to allow more predictions.
-    V6.8: Further refined history requirement and probability-based logic for more frequent predictions.
-    V7.0: Adjusted history requirement and probability-based logic for more balanced predictions.
-    V7.1: Further refined probability thresholds and rules for better balance.
-    V7.2: Adjusted history requirement and probability thresholds for better balance.
+    Predicts the occurrence of any Natural (Pock 8 or 9) with confidence.
+    V7.3: Returns confidence score. Logic adjusted for balance.
+    V7.4: Fixed NameError.
     """
     THEORETICAL_PROB = 0.17 # Approx. 17% for any natural (P or B) in 8 decks
 
-    def predict(self, history: List[RoundResult]) -> Optional[Literal["NATURAL"]]:
+    def predict(self, history: List[RoundResult]) -> Tuple[Optional[Literal["NATURAL"]], Optional[int]]:
         natural_flags = _get_side_bet_history_flags(history, "NATURAL")
         main_history_pb = _get_main_outcome_history(history)
-
-        # V7.2: Adjusted history requirement for Pock prediction for better balance
-        if len(natural_flags) < 8: # Changed from 10 to 8
-            return None
         
-        # V7.2: Probability-based adjustment - less eager to predict when slightly due, slightly more aggressive in stopping
+        pock_confidence = 0
+
+        # V7.3: History requirement for Pock prediction
+        if len(natural_flags) < 10: # Increased slightly for more reliable probability calculation
+            return None, None
+        
         lookback_for_prob = min(len(natural_flags), 50) 
-        if lookback_for_prob > 0:
-            recent_natural_flags = natural_flags[-lookback_for_prob:]
-            actual_natural_count = recent_natural_flags.count(True)
-            expected_natural_count = lookback_for_prob * self.THEORETICAL_PROB
+        actual_natural_count = recent_natural_flags.count(True) if (recent_natural_flags := natural_flags[-lookback_for_prob:]) else 0
+        expected_natural_count = lookback_for_prob * self.THEORETICAL_PROB
 
-            # If naturals are significantly "due" (e.g., less than 90% of expected)
-            if actual_natural_count < expected_natural_count * 0.9: # V7.2: Adjusted from 0.95 to 0.9 (less aggressive when due)
-                return "NATURAL"
-            # If naturals have been slightly more frequent than expected, stop predicting
-            elif actual_natural_count > expected_natural_count * 1.1: # V7.2: Adjusted from 1.05 to 1.1 (slightly more aggressive stop)
-                return None
+        # Probability-based confidence and prediction
+        if actual_natural_count < expected_natural_count * 0.85: # Naturals are significantly "due"
+            pock_confidence = min(90, 60 + int((expected_natural_count * 0.85 - actual_natural_count) / expected_natural_count * 100)) # Base 60, boost if very due
+            return "NATURAL", pock_confidence
+        elif actual_natural_count > expected_natural_count * 1.1: # Naturals have been more frequent than expected, stop predicting
+            return None, None
 
-        # Existing rules from V6.5/V6.7/V6.8/V7.0/V7.1
-        # V7.1: Adjusted Rule 1 to be less aggressive if naturals are already high
-        if natural_flags[-1] and actual_natural_count < expected_natural_count * 1.1: # Only predict if natural just occurred AND not too over-represented
-            return "NATURAL"
+        # Pattern-based rules (if not filtered by probability above)
+        # Rule 1: Natural just occurred, strong chance of another Natural soon (momentum) - V7.1 adjustment
+        if natural_flags[-1] and actual_natural_count < expected_natural_count * 1.05: # Only predict if natural just occurred AND not too over-represented
+            return "NATURAL", 65
         
-        # V6.9: New Rule: If no Naturals for a specific number of *main outcomes* (P/B) in a row, predict it's due
-        # This rule uses main_history_pb length, which grows faster than natural_flags length
+        # Rule 2: If no Naturals for a specific number of *main outcomes* (P/B) in a row, predict it's due
         if len(main_history_pb) >= 15 and not any(r.is_any_natural for r in history[-15:]): 
-            return "NATURAL"
+            return "NATURAL", 70
 
-        # Rule 2: If no Naturals for a long time (e.g., 15+ rounds of natural_flags), predict a Natural might be due
+        # Rule 3: If no Naturals for a long time (e.g., 15+ rounds of natural_flags), predict a Natural might be due
         if not any(natural_flags[-15:]):
-            return "NATURAL"
+            return "NATURAL", 70
             
-        # Rule 3: If Naturals are frequent in recent history (e.g., 4+ in last 10)
-        if natural_flags[-10:].count(True) >= 4:
-            return "NATURAL"
+        # Rule 4: If Naturals are frequent in recent history (e.g., 4+ in last 10)
+        if natural_flags[-10:].count(True) >= 4 and actual_natural_count < expected_natural_count * 1.05: # Only if not *too* over-represented
+            return "NATURAL", 60
         
-        # Rule 4: Natural after a specific main outcome pattern (e.g., long alternating or short streak)
+        # Rule 5: Natural after a specific main outcome pattern (e.g., long alternating or short streak)
         if len(main_history_pb) >= 5:
             recent_main = "".join(main_history_pb[-5:])
             if recent_main == "PBPBP" or recent_main == "BPBPB": 
-                return "NATURAL"
+                return "NATURAL", 65
             if recent_main == "PPPPP" or recent_main == "BBBBB": 
-                return "NATURAL"
+                return "NATURAL", 65
         
-        # Rule 5: Natural after a tie (sometimes a natural follows a tie)
+        # Rule 6: Natural after a tie (sometimes a natural follows a tie)
         if len(history) >= 2 and history[-1].main_outcome == "T" and not natural_flags[-1]:
-            return "NATURAL"
+            return "NATURAL", 60
 
-        return None
+        return None, None # No confident prediction
 
 
 class AdaptiveScorer:
@@ -524,8 +514,9 @@ class OracleBrain:
                 self.individual_module_prediction_log[module_name].append((pred, main_outcome))
 
         # --- Record individual side bet module predictions *before* adding the new outcome ---
-        tie_pred_for_log = self.tie_predictor.predict(self.history)
-        pock_pred_for_log = self.pock_predictor.predict(self.history) 
+        # Note: We only log the prediction itself, not the confidence, for accuracy tracking
+        tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
+        pock_pred_for_log, _ = self.pock_predictor.predict(self.history) 
 
         self.tie_module_prediction_log.append((tie_pred_for_log, main_outcome == "T"))
         self.pock_module_prediction_log.append((pock_pred_for_log, is_any_natural)) 
@@ -741,8 +732,8 @@ class OracleBrain:
 
     def predict_next(self) -> Tuple[
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, # Main prediction
-        Optional[Literal["T"]], # Tie prediction
-        Optional[Literal["NATURAL"]], # Pock prediction
+        Optional[Literal["T"]], Optional[int], # Tie prediction and its confidence
+        Optional[Literal["NATURAL"]], Optional[int], # Pock prediction and its confidence
         bool, bool # is_tie_sniper_opportunity, is_pock_sniper_opportunity 
     ]:
         """
@@ -759,19 +750,26 @@ class OracleBrain:
         MIN_HISTORY_FOR_SNIPER = 30 
         MIN_HISTORY_FOR_SIDE_BET_SNIPER = 40 
         MIN_DISPLAY_CONFIDENCE = 55 
+        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 60 # V7.3: New minimum confidence for side bets
 
         final_prediction_main = None
         source_module_name_main = None
         confidence_main = None
         pattern_code_main = None
         is_sniper_opportunity_main = False 
+        
+        tie_prediction = None
+        tie_confidence = None
+        pock_prediction = None
+        pock_confidence = None
+
         is_tie_sniper_opportunity = False
         is_pock_sniper_opportunity = False 
 
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION or current_miss_streak >= 6:
             self.last_prediction = None
             self.last_module = None
-            return None, None, None, None, current_miss_streak, False, None, None, False, False 
+            return None, None, None, None, current_miss_streak, False, None, None, None, None, False, False 
 
         # V6.6: Calculate choppiness rate once for TrendScanner
         choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
@@ -792,7 +790,7 @@ class OracleBrain:
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history) 
 
-        # V6.2: Apply minimum display confidence
+        # V6.2: Apply minimum display confidence for main prediction
         if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
             final_prediction_main = None
             source_module_name_main = None
@@ -841,9 +839,18 @@ class OracleBrain:
         self.last_prediction = final_prediction_main
         self.last_module = source_module_name_main 
 
-        # --- Side Bet Predictions ---
-        tie_prediction = self.tie_predictor.predict(self.history)
-        pock_prediction = self.pock_predictor.predict(self.history) 
+        # --- Side Bet Predictions with Confidence ---
+        tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
+        pock_pred_raw, pock_conf_raw = self.pock_predictor.predict(self.history) 
+
+        # V7.3: Apply minimum display confidence for side bets
+        if tie_pred_raw is not None and tie_conf_raw is not None and tie_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
+            tie_prediction = tie_pred_raw
+            tie_confidence = tie_conf_raw
+        
+        if pock_pred_raw is not None and pock_conf_raw is not None and pock_conf_raw >= MIN_DISPLAY_CONFIDENCE_SIDE_BET:
+            pock_prediction = pock_pred_raw
+            pock_confidence = pock_conf_raw
 
         # --- Side Bet Sniper Opportunity Logic ---
         SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 
@@ -851,7 +858,7 @@ class OracleBrain:
         SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
 
         # Tie Sniper
-        if tie_prediction == "T" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
+        if tie_prediction == "T" and tie_confidence is not None and tie_confidence >= 90 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: # V7.3: Added confidence check
             tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
             tie_recent_acc = self._calculate_side_bet_module_accuracy(self.tie_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
             
@@ -859,7 +866,7 @@ class OracleBrain:
                 is_tie_sniper_opportunity = True
 
         # Pock Sniper
-        if pock_prediction == "NATURAL" and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER:
+        if pock_prediction == "NATURAL" and pock_confidence is not None and pock_confidence >= 90 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: # V7.3: Added confidence check
             pock_all_time_acc = module_accuracies_all_time.get("Pock", 0)
             pock_recent_acc = self._calculate_side_bet_module_accuracy(self.pock_module_prediction_log, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
             
@@ -868,7 +875,8 @@ class OracleBrain:
 
         return (
             final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
-            tie_prediction, pock_prediction, 
+            tie_prediction, tie_confidence, 
+            pock_prediction, pock_confidence, 
             is_tie_sniper_opportunity, is_pock_sniper_opportunity 
         )
 
