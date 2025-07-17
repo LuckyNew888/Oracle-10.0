@@ -1,11 +1,10 @@
 # streamlit_app.py
 import streamlit as st
-import time # Import time for unique timestamp
-# Import RoundResult, MainOutcome, and the helper function _get_main_outcome_history
+import time 
 from oracle_core import OracleBrain, RoundResult, MainOutcome, _get_main_outcome_history 
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V7.9.8", layout="centered") # Updated version to V7.9.8
+st.set_page_config(page_title="🔮 Oracle V8.0.3", layout="centered") # Updated version to V8.0.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -255,10 +254,9 @@ hr {
 """, unsafe_allow_html=True)
 
 # --- Session State Initialization ---
-# Initialize session state variables if they don't exist
 if 'oracle' not in st.session_state:
     st.session_state.oracle = OracleBrain()
-if 'prediction' not in st.session_state: # Main P/B prediction
+if 'prediction' not in st.session_state: 
     st.session_state.prediction = None
 if 'source' not in st.session_state:
     st.session_state.source = None
@@ -268,63 +266,44 @@ if 'pattern_name' not in st.session_state:
     st.session_state.pattern_name = None
 if 'initial_shown' not in st.session_state:
     st.session_state.initial_shown = False
-if 'is_sniper_opportunity_main' not in st.session_state: # Renamed
+if 'is_sniper_opportunity_main' not in st.session_state: 
     st.session_state.is_sniper_opportunity_main = False
-if 'show_debug_info' not in st.session_state: # New session state for debug toggle
+if 'show_debug_info' not in st.session_state: 
     st.session_state.show_debug_info = False
 
-# Session state for side bet predictions
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
-if 'tie_confidence' not in st.session_state: # New for V7.3
+if 'tie_confidence' not in st.session_state: 
     st.session_state.tie_confidence = None
-# Removed pock_prediction and pock_confidence
 
-# NEW: Session state for side bet sniper opportunities
 if 'is_tie_sniper_opportunity' not in st.session_state:
     st.session_state.is_tie_sniper_opportunity = False
-# Removed is_pock_sniper_opportunity
-
-# Session state for checkboxes (to control their state)
-# Removed is_any_natural_checked as it's only for Pock
 
 
 # --- UI Callback Functions ---
 def handle_click(main_outcome_str: MainOutcome): 
     """
     Handles button clicks for P, B, T outcomes.
-    Reads checkbox states for side bets.
     Adds the result to OracleBrain and updates all predictions.
     """
-    # is_any_natural is no longer needed for Pock, but RoundResult still expects it.
-    # We can pass False as a default since Pock is removed.
     is_any_natural = False 
 
-    # Call add_result with all information
     st.session_state.oracle.add_result(main_outcome_str, is_any_natural)
     
-    # Reset checkboxes after adding result (no checkboxes now, but keep for consistency if needed later)
-    # st.session_state.is_any_natural_checked = False # This line is removed as the checkbox is removed
-
-    # Unpack all return values from predict_next (now includes side bet confidences)
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() # Adjusted unpacking
+     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
     
-    # Update side bet predictions and their confidences
     st.session_state.tie_prediction = tie_pred
     st.session_state.tie_confidence = tie_conf
-    # Removed pock_prediction and pock_confidence
 
-    # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    # Removed is_pock_sniper_opportunity
-
+    
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
@@ -343,7 +322,6 @@ def handle_click(main_outcome_str: MainOutcome):
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
-    # Check if enough P/B history for initial message
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
     if (p_count + b_count) >= 20: 
@@ -357,24 +335,19 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # Unpack all return values from predict_next (now includes side bet confidences)
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() # Adjusted unpacking
+     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
     st.session_state.confidence = confidence
     st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
 
-    # Update side bet predictions and their confidences
     st.session_state.tie_prediction = tie_pred
     st.session_state.tie_confidence = tie_conf
-    # Removed pock_prediction and pock_confidence
     
-    # Update side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    # Removed is_pock_sniper_opportunity
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -394,23 +367,19 @@ def handle_remove():
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
-    # Re-check if initial message should be shown after removing
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
     if (p_count + b_count) < 20: 
         st.session_state.initial_shown = False
     
-    # Reset checkboxes on remove, as the last round's state is gone
-    # st.session_state.is_any_natural_checked = False # This line is removed as the checkbox is removed
-
     st.query_params["_t"] = f"{time.time()}"
 
 
-def handle_reset():
+def handle_start_new_shoe():
     """
-    Handles resetting the entire system.
+    Handles starting a new shoe, resetting only the current shoe's history.
     """
-    st.session_state.oracle.reset()
+    st.session_state.oracle.start_new_shoe()
     st.session_state.prediction = None
     st.session_state.source = None
     st.session_state.confidence = None
@@ -418,22 +387,15 @@ def handle_reset():
     st.session_state.initial_shown = False 
     st.session_state.is_sniper_opportunity_main = False 
     
-    # Reset side bet predictions and confidences
     st.session_state.tie_prediction = None
     st.session_state.tie_confidence = None
-    # Removed pock_prediction and pock_confidence
 
-    # Reset side bet sniper opportunities
     st.session_state.is_tie_sniper_opportunity = False
-    # Removed is_pock_sniper_opportunity
-
-    # Reset checkboxes on full reset
-    # st.session_state.is_any_natural_checked = False # This line is removed as the checkbox is removed
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE V7.9.8</div>', unsafe_allow_html=True) # Updated version to V7.9.8
+st.markdown('<div class="big-title">🔮 ORACLE V8.0.3</div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -449,7 +411,6 @@ if st.session_state.prediction:
     if st.session_state.confidence is not None:
         st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") 
 else:
-    # Get P/B count from the new history structure
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
     main_history_len = p_count + b_count
@@ -460,7 +421,6 @@ else:
     elif miss >= 6:
         st.error("🚫 หยุดระบบชั่วคราว (แพ้ 6 ไม้ติด)")
     else:
-        # This message now appears if history is sufficient and not on miss streak, but confidence is too low
         st.info("⏳ กำลังวิเคราะห์ข้อมูล... ความมั่นใจยังไม่สูงพอที่จะทำนาย")
 
 st.markdown("</div>", unsafe_allow_html=True)
@@ -474,10 +434,8 @@ if st.session_state.is_sniper_opportunity_main:
     """, unsafe_allow_html=True)
 
 # --- Side Bet Prediction Display ---
-# Removed the "คำทำนายเสริม:" header and conditional display for "เสมอ (ไม่มีทำนาย)"
-# Now, it only renders if there's an actual prediction for Tie.
 if st.session_state.tie_prediction and st.session_state.tie_confidence is not None:
-    st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True) # Only show header if there's a prediction
+    st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True) 
     col_side1, col_side_empty = st.columns(2) 
     with col_side1:
         st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
@@ -489,7 +447,7 @@ if st.session_state.tie_prediction and st.session_state.tie_confidence is not No
                 </div>
             """, unsafe_allow_html=True)
     with col_side_empty:
-        pass # This column is intentionally empty to maintain layout if needed, but no content
+        pass 
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -507,7 +465,6 @@ st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
 history_results = st.session_state.oracle.history 
 
-# Build the entire HTML string for Big Road in one go
 if history_results:
     max_row = 6
     columns = []
@@ -549,12 +506,10 @@ if history_results:
     if current_col:
         columns.append(current_col)
 
-    # Limit columns to display only the most recent 14 columns
     MAX_DISPLAY_COLUMNS = 14 
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:] 
 
-    # Generate the full HTML string for Big Road
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
     for col in columns:
         big_road_html += "<div class='big-road-column'>"
@@ -562,9 +517,6 @@ if history_results:
             emoji = "🔵" if cell_result == "P" else "🔴"
             tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
             
-            # Natural indicator is still passed in RoundResult, but Pock is removed.
-            # So, natural_flag will always be False unless the user manually sets it in the future.
-            # For now, it will not display as Pock is removed.
             natural_indicator = f"<span class='natural-indicator'>N</span>" if natural_flag else ""
 
             big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{natural_indicator}</div>" 
@@ -588,20 +540,13 @@ with col2:
 with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
-# Removed checkboxes for side outcomes
-# st.markdown("<b>ผลเสริม (เลือกก่อนกดปุ่มผลหลัก):</b>", unsafe_allow_html=True)
-# col_checkbox1, col_checkbox2, col_checkbox3 = st.columns(3) 
-# with col_checkbox1:
-#     st.checkbox("🟢 ไพ่ป็อก", key="is_any_natural_checked") 
-
-
 # --- Control Buttons ---
 st.markdown("<hr>", unsafe_allow_html=True)
 col4, col5 = st.columns(2)
 with col4:
     st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
 with col5:
-    st.button("🔄 เริ่มใหม่ทั้งหมด", on_click=handle_reset)
+    st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe) # Changed button label and function call
 
 # --- Debugging Toggle ---
 st.markdown("<hr>", unsafe_allow_html=True)
@@ -617,8 +562,7 @@ if st.session_state.show_debug_info:
     st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
     st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
-    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") # Updated debug info
-    # Removed Pock debug info
+    st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
     st.write("---") 
 
 
@@ -631,7 +575,7 @@ recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) # Adjusted sort key
+    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) 
     for name in sorted_module_names:
         acc = all_time_accuracies[name]
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
@@ -642,14 +586,14 @@ if all_time_accuracies:
 
     if main_history_len >= 10: 
         st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) # Adjusted sort key
+        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) 
         for name in sorted_module_names_recent_10:
             acc = recent_10_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 
     if main_history_len >= 20: 
         st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) # Adjusted sort key
+        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) 
         for name in sorted_module_names_recent_20:
             acc = recent_20_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
