@@ -1,4 +1,4 @@
-# oracle_core.py (Oracle V7.9.5 - Further Fix Module Accuracy)
+# oracle_core.py (Oracle V7.9.6 - Relax Sniper Conditions)
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
@@ -228,7 +228,7 @@ class ChopDetector:
         return None
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4, V7.9.5) ---
+# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V7.5, V7.6, V7.8, V7.9, V7.9.1, V7.9.2, V7.9.3, V7.9.4, V7.9.5, V7.9.6) ---
 
 class TiePredictor:
     """
@@ -704,10 +704,12 @@ class OracleBrain:
         current_miss_streak = self.calculate_miss_streak()
 
         MIN_HISTORY_FOR_PREDICTION = 20 
-        MIN_HISTORY_FOR_SNIPER = 30 
-        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 30 
-        MIN_DISPLAY_CONFIDENCE = 55 
-        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 60 
+        
+        # V7.9.6: Relaxed Sniper conditions for easier use
+        MIN_HISTORY_FOR_SNIPER = 25 # Reduced from 30
+        MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 # Reduced from 30
+        MIN_DISPLAY_CONFIDENCE = 50 # Reduced from 55
+        MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 # Reduced from 60
 
         final_prediction_main = None
         source_module_name_main = None
@@ -752,7 +754,8 @@ class OracleBrain:
             confidence_main = None
             pattern_code_main = None
 
-        if current_miss_streak in [3, 4]:
+        # V7.9.6: Relaxed miss streak for recovery
+        if current_miss_streak in [3, 4, 5]: # Added miss streak 5 for recovery
             best_module_for_recovery = self.get_best_recent_module()
             if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
                 # V7.9.2: Fixed NameError: 'predictions' was undefined. Changed to 'predictions_from_modules'.
@@ -763,13 +766,13 @@ class OracleBrain:
 
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            # V7.8: Changed miss streak condition from == 0 to <= 2
-            if confidence_main == 95 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
+            # V7.9.6: Relaxed confidence for sniper main (from 95 to 90) and miss streak (from <=2 to <=3)
+            if confidence_main >= 90 and current_miss_streak <= 3 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 all_contributing_modules_high_all_time_accuracy = True
                 
-                # V7.8: Changed threshold from 90 to 80
-                SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD = 80 
+                # V7.9.6: Relaxed threshold for module accuracy (from 80 to 75)
+                SNIPER_MODULE_ALL_TIME_ACCURACY_THRESHOLD = 75 
 
                 if not contributing_modules or "NoPrediction" in contributing_modules or "Fallback" in contributing_modules:
                     all_contributing_modules_high_all_time_accuracy = False
@@ -783,8 +786,8 @@ class OracleBrain:
                 sniper_module_recent_accuracy_ok = True
                 if "Sniper" in contributing_modules:
                     SNIPER_RECENT_PREDICTION_COUNT = 5 
-                    # V7.8: Changed threshold from 90 to 80
-                    SNIPER_RECENT_ACCURACY_THRESHOLD = 80 
+                    # V7.9.6: Relaxed threshold for module recent accuracy (from 80 to 75)
+                    SNIPER_RECENT_ACCURACY_THRESHOLD = 75 
 
                     sniper_recent_acc = self._calculate_main_module_accuracy("Sniper", SNIPER_RECENT_PREDICTION_COUNT) 
                     
@@ -828,13 +831,15 @@ class OracleBrain:
                 tie_confidence = tie_conf_raw
 
         # --- Side Bet Sniper Opportunity Logic ---
-        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 80 
-        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 80 
+        # V7.9.6: Relaxed thresholds for side bet sniper
+        SIDE_BET_SNIPER_ACCURACY_THRESHOLD = 75 # Reduced from 80
+        SIDE_BET_SNIPER_RECENT_ACCURACY_THRESHOLD = 75 # Reduced from 80
         SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT = 3 
 
         # Tie Sniper
         if tie_prediction == "T" and tie_confidence is not None:
-            if tie_confidence >= 85 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
+            # V7.9.6: Relaxed confidence for tie sniper (from 85 to 80)
+            if tie_confidence >= 80 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
                 tie_all_time_acc = module_accuracies_all_time.get("Tie", 0)
                 # V7.9.1: Ensure tie_module_prediction_log is long enough for recent accuracy calculation
                 if len(self.tie_module_prediction_log) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
