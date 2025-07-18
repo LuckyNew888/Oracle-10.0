@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.0.0 - Smart Recommendation Engine with Advanced Statistical & Professional Road Analysis)
+# streamlit_app.py (Oracle V10.1.0 - Smart Recommendation Engine with Advanced Statistical & Professional Road Analysis - UI Refinement)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -889,15 +889,15 @@ class AdaptiveScorer:
             if choppiness_rate > 0.7: 
                 if name in ["ChopDetector", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"]: 
                     weight *= 1.3 
-                elif name in ["Trend", "Rule", "Pattern", "Sniper", "Statistical"]: # V10.0.0: Added Statistical
+                elif name in ["Trend", "Rule", "Pattern", "Sniper", "Statistical"]: 
                     weight *= 0.6 
             elif choppiness_rate < 0.3: 
-                if name in ["Trend", "Rule", "Pattern", "Sniper", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"]: # V10.0.0: Added Statistical
+                if name in ["Trend", "Rule", "Pattern", "Sniper", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"]: 
                     weight *= 1.3 
                 elif name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: 
                     weight *= 0.6 
             elif choppiness_rate >= 0.3 and choppiness_rate <= 0.7: 
-                if name in ["BigEyeBoy", "SmallRoad", "CockroachPig", "ChopDetector", "AdvancedChop", "ThreeChop", "Statistical"]: # V10.0.0: Added Statistical
+                if name in ["BigEyeBoy", "SmallRoad", "CockroachPig", "ChopDetector", "AdvancedChop", "ThreeChop", "Statistical"]: 
                     weight *= 1.1 
                 elif name == "Fallback":
                     weight *= 1.05 
@@ -1052,14 +1052,14 @@ class OracleBrain:
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
-            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] # V10.0.0: Added Statistical
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] 
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
-            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] # V10.0.0: Added Statistical
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] 
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
@@ -1075,7 +1075,7 @@ class OracleBrain:
         self.advanced_chop_predictor = AdvancedChopPredictor() 
         self.three_chop_predictor = ThreeChopPredictor() 
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
-        self.statistical_analyzer = StatisticalAnalyzer() # V10.0.0: Initialize StatisticalAnalyzer
+        self.statistical_analyzer = StatisticalAnalyzer() 
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
@@ -1107,7 +1107,7 @@ class OracleBrain:
             "DragonTail": self.dragon_tail_detector.predict(self.history),
             "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
             "ThreeChop": self.three_chop_predictor.predict(self.history),
-            "Statistical": self.statistical_analyzer.predict(self.history) # V10.0.0: Add Statistical prediction
+            "Statistical": self.statistical_analyzer.predict(self.history) 
         }
         
         derived_road_preds = self.derived_road_analyzer.predict(self.history)
@@ -1213,7 +1213,7 @@ class OracleBrain:
         export_data = {
             "module_accuracy_global_log": {},
             "tie_module_accuracy_global_log": [],
-            "statistical_analyzer_sequence_outcomes": self.statistical_analyzer.sequence_outcomes # V10.0.0: Export statistical data
+            "statistical_analyzer_sequence_outcomes": self.statistical_analyzer.sequence_outcomes 
         }
         
         # Convert tuples to lists for JSON serialization
@@ -1301,7 +1301,7 @@ class OracleBrain:
         Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] # V10.0.0: Added Statistical
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] 
         for module_name in main_modules:
             if module_name in self.module_accuracy_global_log:
                 accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
@@ -1317,7 +1317,7 @@ class OracleBrain:
         Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] # V10.0.0: Added Statistical
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] 
         for module_name in main_modules:
             if module_name in self.individual_module_prediction_log_current_shoe:
                 accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
@@ -1330,12 +1330,12 @@ class OracleBrain:
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical", "Tie"] # V10.0.0: Added Statistical
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical", "Tie"] 
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] and v > 0} # V10.0.0: Added Statistical
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] and v > 0} 
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -1367,7 +1367,7 @@ class OracleBrain:
             "BigEyeBoy": self.derived_road_analyzer, 
             "SmallRoad": self.derived_road_analyzer,
             "CockroachPig": self.derived_road_analyzer,
-            "Statistical": self.statistical_analyzer # V10.0.0: Added Statistical
+            "Statistical": self.statistical_analyzer 
         }
         
         module_scores: Dict[str, float] = {}
@@ -1495,7 +1495,7 @@ class OracleBrain:
             "DragonTail": self.dragon_tail_detector.predict(self.history),
             "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
             "ThreeChop": self.three_chop_predictor.predict(self.history),
-            "Statistical": self.statistical_analyzer.predict(self.history) # V10.0.0: Add Statistical prediction
+            "Statistical": self.statistical_analyzer.predict(self.history) 
         }
         
         derived_road_preds = self.derived_road_analyzer.predict(self.history)
@@ -1604,7 +1604,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.0.0", layout="centered") # Updated version to V10.0.0
+st.set_page_config(page_title="🔮 Oracle V10.1.0", layout="centered") # Updated version to V10.1.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1616,67 +1616,67 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     font-family: 'Sarabun', sans-serif !important;
 }
 .big-title {
-    font-size: 28px;
+    font-size: 24px; /* Reduced from 28px */
     text-align: center;
     font-weight: bold;
     color: #FF4B4B; /* Streamlit's default primary color */
-    margin-bottom: 20px;
+    margin-bottom: 15px; /* Reduced margin */
 }
 .predict-box {
-    padding: 15px;
+    padding: 12px; /* Reduced from 15px */
     background-color: #262730; /* Darker background for the box */
-    border-radius: 12px;
+    border-radius: 10px; /* Slightly smaller border-radius */
     color: white;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    margin-bottom: 15px; /* Reduced margin */
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
     text-align: center; /* Center content inside prediction box */
 }
 .predict-box h2 {
-    margin: 10px 0;
-    font-size: 40px;
+    margin: 8px 0; /* Reduced margin */
+    font-size: 32px; /* Reduced from 40px */
     font-weight: bold;
 }
 .predict-box b {
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 14px; /* This is the target size for module/pattern/confidence */
+    font-size: 12px; /* Reduced from 14px */
     color: #BBBBBB;
 }
 
 /* Miss Streak warning text */
 .st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
-    font-size: 14px; /* Reduced font size for miss streak text */
+    font-size: 12px; /* Reduced from 14px */
 }
 
 
 .big-road-container {
     width: 100%;
     overflow-x: auto; /* Allows horizontal scrolling if many columns */
-    padding: 8px 0;
+    padding: 6px 0; /* Reduced padding */
     background: #1A1A1A; /* Slightly darker background for the road */
-    border-radius: 8px;
+    border-radius: 6px; /* Slightly smaller border-radius */
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 140px; /* Adjusted minimum height for the road */
-    box-shadow: inset 0 2px 5px rgba(0,0,0,0.3);
+    min-height: 120px; /* Adjusted minimum height for the road */
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); /* Slightly smaller shadow */
 }
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 2px; 
-    border-right: 1px solid rgba(255,255,255,0.1); 
-    padding-right: 2px; 
+    margin-right: 1px; /* Reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.08); /* Slightly lighter border */
+    padding-right: 1px; /* Reduced padding */
 }
 .big-road-cell {
-    width: 20px; /* Further reduced size for smaller emoji */
-    height: 20px; /* Further reduced size for smaller emoji */
+    width: 18px; /* Reduced from 20px */
+    height: 18px; /* Reduced from 20px */
     text-align: center;
-    line-height: 20px; /* Adjusted line-height for new size */
-    font-size: 14px; /* Smaller font for emojis */
-    margin-bottom: 1px; /* Reduced margin between cells */
+    line-height: 18px; /* Adjusted line-height for new size */
+    font-size: 12px; /* Reduced from 14px */
+    margin-bottom: 0.5px; /* Reduced margin */
     border-radius: 50%; /* Make cells round */
     display: flex;
     justify-content: center;
@@ -1690,23 +1690,23 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 9px; /* Slightly smaller font for tie count */
+    font-size: 8px; /* Reduced from 9px */
     position: absolute;
     bottom: -1px; /* Adjusted position */
     right: -1px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 1px 3px; /* Reduced padding */
+    padding: 0px 2px; /* Reduced padding */
     line-height: 1;
-    min-width: 14px; /* Ensure minimum width for single digit */
+    min-width: 12px; /* Ensure minimum width for single digit */
     text-align: center;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
+    box-shadow: 0 1px 1px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 8px; /* Smaller font for indicators */
+    font-size: 7px; /* Reduced from 8px */
     font-weight: bold;
     color: white;
     line-height: 1;
@@ -1722,31 +1722,31 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .derived-road-container {
     width: 100%;
     overflow-x: auto;
-    padding: 5px 0;
+    padding: 4px 0; /* Reduced padding */
     background: #1A1A1A;
-    border-radius: 8px;
+    border-radius: 6px; /* Slightly smaller border-radius */
     white-space: nowrap;
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 70px; /* Smaller height for derived roads */
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
-    margin-top: 10px;
+    min-height: 60px; /* Reduced height for derived roads */
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
+    margin-top: 8px; /* Reduced margin */
 }
 .derived-road-column {
     display: inline-flex;
     flex-direction: column;
-    margin-right: 1px;
-    border-right: 1px solid rgba(255,255,255,0.05);
-    padding-right: 1px;
+    margin-right: 0.5px; /* Reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.03); /* Lighter border */
+    padding-right: 0.5px; /* Reduced padding */
 }
 .derived-road-cell {
-    width: 12px; /* Even smaller cells for derived roads */
-    height: 12px;
+    width: 10px; /* Reduced from 12px */
+    height: 10px; /* Reduced from 12px */
     text-align: center;
-    line-height: 12px;
-    font-size: 8px; /* Very small font for derived road emojis */
-    margin-bottom: 0.5px;
+    line-height: 10px; /* Adjusted line-height */
+    font-size: 7px; /* Reduced from 8px */
+    margin-bottom: 0.25px; /* Reduced margin */
     border-radius: 50%;
     display: flex;
     justify-content: center;
@@ -1761,17 +1761,17 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Button styling */
 .stButton>button {
     width: 100%;
-    border-radius: 8px;
-    font-size: 18px;
+    border-radius: 7px; /* Slightly smaller border-radius */
+    font-size: 16px; /* Reduced from 18px */
     font-weight: bold;
-    padding: 10px 0;
-    margin-bottom: 10px;
+    padding: 8px 0; /* Reduced padding */
+    margin-bottom: 8px; /* Reduced margin */
     transition: all 0.2s ease-in-out;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
 }
 .stButton>button:hover {
-    transform: translateY(-2px);
-    box_shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px); /* Reduced transform */
+    box-shadow: 0 4px 7px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
 }
 /* Specific button colors */
 #btn_P button { background-color: #007BFF; color: white; border: none; }
@@ -1779,36 +1779,36 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_T button { background-color: #6C757D; color: white; border: none; }
 /* Checkbox styling adjustments */
 .stCheckbox > label {
-    padding: 8px 10px; /* Adjust padding for better click area */
+    padding: 6px 8px; /* Reduced padding */
     border: 1px solid #495057;
-    border-radius: 8px;
+    border-radius: 7px; /* Slightly smaller border-radius */
     background-color: #343A40;
     color: white;
-    font-size: 14px;
+    font-size: 13px; /* Reduced from 14px */
     font-weight: bold;
-    margin-bottom: 10px;
-    display: flex; /* Use flex to align checkbox and text */
+    margin-bottom: 8px; /* Reduced margin */
+    display: flex; 
     align-items: center;
-    justify-content: center; /* Center content horizontally */
+    justify-content: center; 
     transition: all 0.2s ease-in-out;
     cursor: pointer;
 }
 .stCheckbox > label:hover {
     background-color: #495057;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 7px rgba(0, 0, 0, 0.2);
 }
-.stCheckbox > label > div:first-child { /* The actual checkbox input */
-    margin-right: 8px; /* Space between checkbox and text */
+.stCheckbox > label > div:first-child { 
+    margin-right: 6px; /* Reduced margin */
 }
 /* Style for checked checkboxes */
 .stCheckbox > label[data-checked="true"] {
-    background-color: #007BFF; /* Example color for checked */
+    background-color: #007BFF; 
     border-color: #007BFF;
 }
 
 
-.stButton button[kind="secondary"] { /* For control buttons */
+.stButton button[kind="secondary"] { 
     background-color: #343A40;
     color: white;
     border: 1px solid #495057;
@@ -1818,76 +1818,83 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 
 /* Warning/Error messages */
-.st-emotion-cache-1f1d6zpt { /* Target Streamlit warning box */
-    background-color: #FFC10720; /* Light yellow with transparency */
+.st-emotion-cache-1f1d6zpt { 
+    background-color: #FFC10720; 
     border-left: 5px solid #FFC107;
     color: #FFC107;
+    padding: 8px; /* Reduced padding */
+    margin-bottom: 10px; /* Reduced margin */
 }
 
-.st-emotion-cache-1s04v0m { /* Target Streamlit error box */
-    background-color: #DC354520; /* Light red with transparency */
+.st-emotion-cache-1s04v0m { 
+    background-color: #DC354520; 
     border-left: 5px solid #DC3545;
     color: #DC3545;
+    padding: 8px; /* Reduced padding */
+    margin-bottom: 10px; /* Reduced margin */
 }
 
-.st-emotion-cache-13ln4z2 { /* Target Streamlit info box */
-    background-color: #17A2B820; /* Light blue with transparency */
+.st-emotion-cache-13ln4z2 { 
+    background-color: #17A2B820; 
     border-left: 5px solid #17A2B8;
     color: #17A2B8;
+    padding: 8px; /* Reduced padding */
+    margin-bottom: 10px; /* Reduced margin */
 }
 
 /* Accuracy by Module section */
-h3 { /* Target h3 for "ความแม่นยำรายโมดูล" */
-    font-size: 12px !important; /* Force this size */
-    margin-top: 10px !important; 
-    margin-bottom: 3px !important; 
+h3 { 
+    font-size: 11px !important; /* Reduced from 12px */
+    margin-top: 8px !important; /* Reduced margin */
+    margin-bottom: 2px !important; /* Reduced margin */
 }
 /* Target for the custom class used for accuracy items */
 .accuracy-item { 
-    font-size: 10px !important; /* Force this size */
-    margin-bottom: 1px !important; 
+    font-size: 9px !important; /* Reduced from 10px */
+    margin-bottom: 0.5px !important; /* Reduced margin */
 }
 
 /* Sniper message styling */
 .sniper-message {
-    background-color: #4CAF50; /* Green background */
+    background-color: #4CAF50; 
     color: white;
-    padding: 10px;
-    border-radius: 8px;
+    padding: 8px; /* Reduced padding */
+    border-radius: 7px; /* Slightly smaller border-radius */
     font-weight: bold;
     text-align: center;
-    margin-top: 15px;
-    margin-bottom: 15px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-    animation: pulse 1.5s infinite; /* Add a subtle pulse animation */
+    margin-top: 12px; /* Reduced margin */
+    margin-bottom: 12px; /* Reduced margin */
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    animation: pulse 1.5s infinite; 
+    font-size: 15px; /* Reduced from 16px */
 }
 
 /* NEW: Side Bet Sniper message styling */
 .side-bet-sniper-message {
-    background-color: #007bff; /* Blue background for side bet sniper */
+    background-color: #007bff; 
     color: white;
-    padding: 8px;
-    border-radius: 6px;
+    padding: 6px; /* Reduced padding */
+    border-radius: 5px; /* Slightly smaller border-radius */
     font-weight: bold;
     text-align: center;
-    margin-top: 10px;
-    margin-bottom: 10px;
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
-    animation: pulse 1.5s infinite; /* Keep pulse animation */
-    font-size: 14px; /* Smaller font than main sniper */
+    margin-top: 8px; /* Reduced margin */
+    margin-bottom: 8px; /* Reduced margin */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    animation: pulse 1.5s infinite; 
+    font-size: 12px; /* Reduced from 14px */
 }
 
 
 @keyframes pulse {
     0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.02); opacity: 0.9; }
+    50% { transform: scale(1.01); opacity: 0.95; } /* Slightly less aggressive pulse */
     100% { transform: scale(1); opacity: 1; }
 }
 
 
 hr {
-    border-top: 1px solid rgba(255,255,255,0.1);
-    margin: 25px 0;
+    border-top: 1px solid rgba(255,255,255,0.08); /* Lighter border */
+    margin: 20px 0; /* Reduced margin */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -2041,7 +2048,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V10.0.0</div>', unsafe_allow_html=True) # Updated version to V10.0.0
+st.markdown('<div class="big-title">🔮 Oracle V10.1.0</div>', unsafe_allow_html=True) # Updated version to V10.1.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
