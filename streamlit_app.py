@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.3.2 - Stricter Main Sniper & Three-Chop Pattern)
+# streamlit_app.py (Oracle V8.3.3 - Dedicated Three-Chop Predictor)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -66,7 +66,6 @@ class PatternAnalyzer:
     """
     Predicts based on specific predefined patterns in the recent history.
     V8.2.0: Dynamically adjusts pattern checking priority based on choppiness.
-    V8.3.2: Added specific "Three-Chop" pattern.
     """
     def __init__(self):
         self.patterns_and_predictions = { # Moved to init for clarity
@@ -82,27 +81,16 @@ class PatternAnalyzer:
             "PBPBPB": "P", "BPBPBP": "B", 
             "PPPBBB": "B", "BBBPBB": "P", 
             "PPBPP": "P", "BBPBB": "B", 
-            "PBBP": "B", "BPPB": "P",
-            # V8.3.2: Three-Chop patterns
-            "PPP": "B", # If P P P, predict B to chop
-            "BBB": "P"  # If B B B, predict P to chop
+            "PBBP": "B", "BPPB": "P" 
         }
 
     def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]: # Added choppiness_rate
         filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 3: # Need at least 3 for Three-Chop
+        if len(filtered_history) < 4:
             return None
 
         joined_filtered = "".join(filtered_history)
         
-        # V8.3.2: Prioritize Three-Chop pattern if detected
-        if len(joined_filtered) >= 3:
-            last_three = joined_filtered[-3:]
-            if last_three == "PPP":
-                return "B"
-            if last_three == "BBB":
-                return "P"
-
         # V8.2.0: Dynamic pattern window - adjust iteration based on choppiness
         # If very choppy, prioritize shorter patterns (e.g., 3-length patterns first)
         if choppiness_rate > 0.7: 
@@ -117,8 +105,7 @@ class PatternAnalyzer:
         for length in lengths_to_check: 
             if len(joined_filtered) >= length:
                 current_pattern = joined_filtered[-length:]
-                # Exclude "PPP" and "BBB" as they are handled above specifically for Three-Chop
-                if current_pattern in self.patterns_and_predictions and current_pattern not in ["PPP", "BBB"]:
+                if current_pattern in self.patterns_and_predictions:
                     return self.patterns_and_predictions[current_pattern]
         return None
 
@@ -341,6 +328,20 @@ class AdvancedChopPredictor:
 
         return None
 
+class ThreeChopPredictor:
+    """
+    V8.3.3: Dedicated module for "Three-Chop" pattern (XXX YYY).
+    Predicts the opposite outcome after 3 consecutive identical outcomes.
+    """
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 3:
+            return None
+        
+        last_three = filtered_history[-3:]
+        if last_three[0] == last_three[1] == last_three[2]:
+            return _opposite_outcome(last_three[0]) # Predict the chop
+        return None
 
 # --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3, V8.0.4, V8.0.5) ---
 
@@ -506,6 +507,7 @@ class AdaptiveScorer:
     V8.3.0: Even more aggressive miss streak penalty.
     V8.3.1: Even more aggressive miss streak penalty.
     V8.3.2: Even more aggressive miss streak penalty.
+    V8.3.3: Even more aggressive miss streak penalty and special weighting for ThreeChopPredictor.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -553,16 +555,25 @@ class AdaptiveScorer:
             elif name == "ChopDetector" and predictions.get(name) is not None:
                 weight += 0.1 # Standard extra weight for ChopDetector
             
+            # V8.3.3: Special weighting for ThreeChopPredictor
+            if name == "ThreeChop" and predictions.get(name) is not None:
+                # Give a significant boost to ThreeChopPredictor if it makes a prediction
+                # Especially if choppiness is moderate to high, indicating alternating patterns
+                if choppiness_rate > 0.4: # If not very streaky
+                    weight *= 1.5 # Significant boost
+                else:
+                    weight *= 1.2 # Moderate boost even if slightly streaky
+            
             # V8.2.8: Dynamic module weighting based on choppiness
             if choppiness_rate > 0.7: # Very choppy
-                if name in ["ChopDetector", "AdvancedChop"]:
+                if name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: # Include ThreeChop
                     weight *= 1.15 # Boost these modules
                 elif name in ["Trend", "Rule"]:
                     weight *= 0.85 # Slightly reduce others
             elif choppiness_rate < 0.3: # Very streaky
                 if name in ["Trend", "Rule"]:
                     weight *= 1.15 # Boost these modules
-                elif name in ["ChopDetector", "AdvancedChop"]:
+                elif name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: # Include ThreeChop
                     weight *= 0.85 # Slightly reduce others
 
             # V8.3.2: Even more aggressive miss streak penalty (increased from 18% to 20%)
@@ -615,9 +626,7 @@ class AdaptiveScorer:
             "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
             "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
             "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", 
-            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-            "PPP": "ตัดสาม", # V8.3.2: Added Three-Chop pattern name
-            "BBB": "ตัดสาม"  # V8.3.2: Added Three-Chop pattern name
+            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
         }
 
         if len(filtered_history) >= 6: # V8.1.5: Check for "สามตัวตัด" pattern name
@@ -642,11 +651,12 @@ class AdaptiveScorer:
                 if filtered_history[-4] != filtered_history[-3] and filtered_history[-3] == filtered_history[-2] and filtered_history[-2] == filtered_history[-1]:
                     return "ปิงปองตัด"
 
-        # V8.3.2: Check for "Three-Chop" pattern specifically
-        if len(filtered_history) >= 3:
-            last_three = "".join(filtered_history[-3:])
-            if last_three == "PPP" or last_three == "BBB":
-                return "ตัดสาม"
+        # V8.3.3: Check for "Three-Chop" pattern specifically
+        if "ThreeChop" in predictions and predictions["ThreeChop"] is not None:
+            if len(filtered_history) >= 3:
+                last_three = "".join(filtered_history[-3:])
+                if last_three == "PPP" or last_three == "BBB":
+                    return "ตัดสาม"
 
 
         for length in range(6, 2, -1): 
@@ -667,13 +677,13 @@ class OracleBrain:
 
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] 
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [] 
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [] 
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [] 
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
@@ -687,6 +697,7 @@ class OracleBrain:
         self.chop_detector = ChopDetector() 
         self.dragon_tail_detector = DragonTailDetector() 
         self.advanced_chop_predictor = AdvancedChopPredictor() 
+        self.three_chop_predictor = ThreeChopPredictor() # V8.3.3: New dedicated module
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
@@ -715,7 +726,8 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history),
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
-            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) 
+            "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
+            "ThreeChop": self.three_chop_predictor.predict(self.history) # V8.3.3: Include new module
         }
         
         for module_name, pred in current_predictions_from_modules_main.items():
@@ -890,7 +902,7 @@ class OracleBrain:
         Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop"] 
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
         
@@ -903,7 +915,7 @@ class OracleBrain:
         Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop"] 
         for module_name in main_modules:
             accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
         
@@ -913,12 +925,12 @@ class OracleBrain:
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "Tie"] 
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "Tie"] 
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop"] and v > 0} 
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop"] and v > 0} 
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -945,7 +957,8 @@ class OracleBrain:
             "Sniper": self.sniper_pattern,
             "ChopDetector": self.chop_detector,
             "DragonTail": self.dragon_tail_detector, 
-            "AdvancedChop": self.advanced_chop_predictor 
+            "AdvancedChop": self.advanced_chop_predictor,
+            "ThreeChop": self.three_chop_predictor # V8.3.3: Include new module
         }
         
         module_scores: Dict[str, float] = {}
@@ -1078,7 +1091,8 @@ class OracleBrain:
             "Fallback": self.fallback_module.predict(self.history),
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
-            "AdvancedChop": self.advanced_chop_predictor.predict(self.history) 
+            "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
+            "ThreeChop": self.three_chop_predictor.predict(self.history) # V8.3.3: Include new module
         }
         
         module_accuracies_all_time = self.get_module_accuracy_all_time()
@@ -1179,7 +1193,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.3.2", layout="centered") # Updated version to V8.3.2
+st.set_page_config(page_title="🔮 Oracle V8.3.3", layout="centered") # Updated version to V8.3.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1495,7 +1509,7 @@ def handle_click(main_outcome_str: MainOutcome):
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
         "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
         "ปิงปองตัด": "ปิงปองตัด", # New pattern for chop after ping-pong
-        "ตัดสาม": "ตัดสาม" # V8.3.2: Added Three-Chop pattern name
+        "ตัดสาม": "ตัดสาม" # V8.3.3: Added Three-Chop pattern name
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -1542,7 +1556,7 @@ def handle_remove():
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
         "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
         "ปิงปองตัด": "ปิงปองตัด", # New pattern for chop after ping-pong
-        "ตัดสาม": "ตัดสาม" # V8.3.2: Added Three-Chop pattern name
+        "ตัดสาม": "ตัดสาม" # V8.3.3: Added Three-Chop pattern name
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -1574,7 +1588,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.3.2</div>', unsafe_allow_html=True) # Updated version to V8.3.2
+st.markdown('<div class="big-title">🔮 Oracle V8.3.3</div>', unsafe_allow_html=True) # Updated version to V8.3.3
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
