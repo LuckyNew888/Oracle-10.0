@@ -1,10 +1,10 @@
-# streamlit_app.py (Oracle V8.7.1 - "Game Over" Messaging)
+# streamlit_app.py (Oracle V10.0.0 - Smart Recommendation Engine with Advanced Statistical & Professional Road Analysis)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
 from dataclasses import dataclass
-import json # For handling JSON string for Firebase config (though not used for persistence in this version)
+import json 
 
 # --- Define main outcomes ---
 MainOutcome = Literal["P", "B", "T"]
@@ -200,9 +200,9 @@ class FallbackModule:
     """
     Provides a more strategic prediction if no other module can make a prediction,
     especially during a miss streak.
-    V8.2.6: Changed from random to strategic anti-streak/follow-chop.
+    V8.8.0: Enhanced to be more adaptive during high miss streaks.
     """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+    def predict(self, history: List[RoundResult], miss_streak: int) -> Optional[MainOutcome]:
         filtered_history = _get_main_outcome_history(history)
         if len(filtered_history) < 2:
             return random.choice(["P", "B"]) # Fallback to random if not enough history
@@ -210,6 +210,15 @@ class FallbackModule:
         last_outcome = filtered_history[-1]
         second_last_outcome = filtered_history[-2]
 
+        if miss_streak >= 4: # More aggressive fallback when miss streak is high
+            # If it's a streak (e.g., PP or BB), try to chop it more aggressively
+            if last_outcome == second_last_outcome:
+                return _opposite_outcome(last_outcome)
+            # If it's alternating (e.g., PB or BP), try to continue the alternation
+            else:
+                return last_outcome
+        
+        # Default behavior for lower miss streaks
         if last_outcome == second_last_outcome: # It's a streak (e.g., PP or BB)
             return _opposite_outcome(last_outcome) # Predict to chop the streak (e.g., for PP, predict B)
         else: # It's alternating (e.g., PB or BP)
@@ -344,20 +353,20 @@ class ThreeChopPredictor:
             return _opposite_outcome(last_three[0]) # Predict the chop
         return None
 
-# --- NEW: Derived Road Analyzer (V8.4.0, V8.4.1 Fixes, V8.4.3 Early Activation, V8.4.4 Cockroach Pig Logic Fix, V8.7.0 Enhanced Choppy Handling) ---
+# --- Derived Road Analyzer (V8.8.0 Robustness, V8.9.0 Enhanced for Visualization) ---
 class DerivedRoadAnalyzer:
     """
     Analyzes Big Road to derive Big Eye Boy, Small Road, and Cockroach Pig patterns
     and makes predictions based on their trends.
-    V8.4.1: Improved boundary checks.
-    V8.4.3: Removed global history length check to allow earlier activation of BEB/SR.
-    V8.4.4: Corrected Cockroach Pig calculation logic.
-    V8.7.0: Enhanced logic to make predictions more readily available in choppy patterns.
+    V8.8.0: Further robustness improvements for derived road calculation.
+    V8.9.0: Enhanced to provide the full derived road matrix for visualization,
+            and more consistent "simulated" predictions.
     """
     def _build_big_road_matrix(self, history_pb: List[MainOutcome]) -> List[List[Optional[MainOutcome]]]:
         """
         Builds a matrix representation of the Big Road.
         Each column represents a streak.
+        V8.8.0: Ensures matrix is built correctly for all valid histories.
         """
         if not history_pb:
             return []
@@ -389,8 +398,7 @@ class DerivedRoadAnalyzer:
     def _get_big_eye_boy_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
         Calculates Big Eye Boy value for a given cell (col_idx, row_idx) in the Big Road matrix.
-        V8.4.1: Improved boundary checks.
-        V8.7.0: Adjusted logic for more robust prediction in choppy scenarios.
+        V8.8.0: Refined logic for more consistent predictions.
         """
         # Ensure the current cell (col_idx, row_idx) itself is valid and not None
         if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
@@ -401,24 +409,21 @@ class DerivedRoadAnalyzer:
             return None
 
         # Rule 1: Horizontal comparison (two columns back in the same row)
-        # Check if the cell (col_idx-2, row_idx) exists and is not None
-        if (col_idx - 2) >= 0 and (col_idx - 2) < len(matrix) and row_idx < len(matrix[col_idx-2]) and matrix[col_idx-2][row_idx] is not None:
+        if (col_idx - 2) >= 0 and row_idx < len(matrix[col_idx-2]) and matrix[col_idx-2][row_idx] is not None:
             if matrix[col_idx-2][row_idx] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
         # Rule 2: Vertical comparison (one cell up in the same column)
-        # Check if the cell (col_idx, row_idx-1) exists and is not None
         elif row_idx >= 1 and row_idx - 1 < len(matrix[col_idx]) and matrix[col_idx][row_idx-1] is not None:
             if matrix[col_idx][row_idx-1] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
-        # V8.7.0: Additional check for very short columns (e.g., singletons)
-        # If the target cell is the first in a new column and the previous column was also a singleton
-        if row_idx == 0 and col_idx >= 1 and len(matrix[col_idx-1]) == 1:
+        # V8.8.0: Additional check for very short columns (e.g., singletons)
+        if row_idx == 0 and col_idx >= 2 and len(matrix[col_idx-2]) == 1:
             return "P" # Blue (indicates a chop/alternation in the derived road)
         
         return None
@@ -426,8 +431,7 @@ class DerivedRoadAnalyzer:
     def _get_small_road_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
         Calculates Small Road value for a given cell (col_idx, row_idx) in the Big Road matrix.
-        V8.4.1: Improved boundary checks.
-        V8.7.0: Adjusted logic for more robust prediction in choppy scenarios.
+        V8.8.0: Refined logic for more consistent predictions.
         """
         # Ensure the current cell (col_idx, row_idx) itself is valid and not None
         if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
@@ -438,24 +442,21 @@ class DerivedRoadAnalyzer:
             return None
         
         # Rule 1: Horizontal comparison (one column back in the same row)
-        # Check if the cell (col_idx-1, row_idx) exists and is not None
-        if (col_idx - 1) >= 0 and (col_idx - 1) < len(matrix) and row_idx < len(matrix[col_idx-1]) and matrix[col_idx-1][row_idx] is not None:
+        if (col_idx - 1) >= 0 and row_idx < len(matrix[col_idx-1]) and matrix[col_idx-1][row_idx] is not None:
             if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
         # Rule 2: Vertical comparison (one cell up in the column two back)
-        # Check if the cell (col_idx-2, row_idx-1) exists and is not None
-        elif row_idx >= 1 and (col_idx - 2) >= 0 and (col_idx - 2) < len(matrix) and row_idx - 1 < len(matrix[col_idx-2]) and matrix[col_idx-2][row_idx-1] is not None:
+        elif row_idx >= 1 and (col_idx - 2) >= 0 and row_idx - 1 < len(matrix[col_idx-2]) and matrix[col_idx-2][row_idx-1] is not None:
             if matrix[col_idx-2][row_idx-1] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
 
-        # V8.7.0: Additional check for very short columns (e.g., singletons)
-        # If the target cell is the first in a new column and the previous column was also a singleton
-        if row_idx == 0 and col_idx >= 2 and len(matrix[col_idx-1]) == 1:
+        # V8.8.0: Additional check for very short columns (e.g., singletons)
+        if row_idx == 0 and col_idx >= 1 and len(matrix[col_idx-1]) == 1:
             return "P" # Blue (indicates a chop/alternation in the derived road)
 
         return None
@@ -463,9 +464,7 @@ class DerivedRoadAnalyzer:
     def _get_cockroach_pig_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
         Calculates Cockroach Pig value for a given cell (col_idx, row_idx) in the Big Road matrix.
-        V8.4.1: Improved boundary checks.
-        V8.4.4: Corrected logic for Cockroach Pig.
-        V8.7.0: Adjusted logic for more robust prediction in choppy scenarios.
+        V8.8.0: Refined logic for more consistent predictions.
         """
         # Ensure the current cell (col_idx, row_idx) itself is valid and not None
         if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
@@ -476,48 +475,44 @@ class DerivedRoadAnalyzer:
             return None
         
         # Rule 1: Horizontal comparison (three columns back in the same row)
-        # Check if the cell (col_idx-3, row_idx) exists and is not None
-        if (col_idx - 3) >= 0 and (col_idx - 3) < len(matrix) and row_idx < len(matrix[col_idx-3]) and matrix[col_idx-3][row_idx] is not None:
+        if (col_idx - 3) >= 0 and row_idx < len(matrix[col_idx-3]) and matrix[col_idx-3][row_idx] is not None:
             if matrix[col_idx-3][row_idx] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
         # Rule 2: Vertical comparison (one cell up in the column one back)
-        # Check if the cell (col_idx-1, row_idx-1) exists and is not None
-        elif row_idx >= 1 and (col_idx - 1) >= 0 and (col_idx - 1) < len(matrix) and row_idx - 1 < len(matrix[col_idx-1]) and matrix[col_idx-1][row_idx-1] is not None:
+        elif row_idx >= 1 and (col_idx - 1) >= 0 and row_idx - 1 < len(matrix[col_idx-1]) and matrix[col_idx-1][row_idx-1] is not None:
             if matrix[col_idx-1][row_idx-1] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
 
-        # V8.7.0: Additional check for very short columns (e.g., singletons)
-        # If the target cell is the first in a new column and the previous column was also a singleton
-        if row_idx == 0 and col_idx >= 3 and len(matrix[col_idx-1]) == 1:
+        # V8.8.0: Additional check for very short columns (e.g., singletons)
+        if row_idx == 0 and col_idx >= 1 and len(matrix[col_idx-1]) == 1: 
             return "P" # Blue (indicates a chop/alternation in the derived road)
         
         return None
 
     def predict(self, history: List[RoundResult]) -> Dict[str, Optional[MainOutcome]]:
+        """
+        Simulates predictions for the next P or B to determine derived road values.
+        """
         predictions: Dict[str, Optional[MainOutcome]] = {}
         
         history_pb = _get_main_outcome_history(history)
         
-        # V8.4.3: Removed the blanket history length check here.
-        # Individual _get_..._value functions will handle their own minimum history requirements.
-        if not history_pb: # If no P/B history at all, return None for all.
+        if not history_pb: 
             return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None}
 
         matrix = self._build_big_road_matrix(history_pb)
         
         # Simulate the next outcome (P or B) to see what the derived roads would predict.
-        # We need to find the coordinates of the *next* cell if P or B were added.
         
         # Scenario 1: Next is Player (P)
         simulated_history_p = history_pb + ["P"]
         simulated_matrix_p = self._build_big_road_matrix(simulated_history_p)
         
-        # The new cell is always the last cell in the last column of the simulated matrix
         sim_last_col_idx_p = len(simulated_matrix_p) - 1
         sim_last_row_idx_p = len(simulated_matrix_p[sim_last_col_idx_p]) - 1
         
@@ -535,10 +530,6 @@ class DerivedRoadAnalyzer:
         big_eye_b = self._get_big_eye_boy_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
         small_road_b = self._get_small_road_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
         cockroach_b = self._get_cockroach_pig_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
-
-        # Now, make predictions for each derived road based on what they would show
-        # If Big Eye Boy would be Red (B) for P, and Blue (P) for B, then it predicts P.
-        # If Big Eye Boy would be Blue (P) for P, and Red (B) for B, then it predicts B.
 
         if big_eye_p == "B" and big_eye_b == "P": 
             predictions["BigEyeBoy"] = "P"
@@ -562,15 +553,134 @@ class DerivedRoadAnalyzer:
             predictions["CockroachPig"] = None
 
         return predictions
+    
+    def get_full_derived_road_matrices(self, history: List[RoundResult]) -> Dict[str, List[List[Optional[MainOutcome]]]]:
+        """
+        Generates the full derived road matrices for visualization.
+        V8.9.0: New method to get the actual derived road values, not just predictions.
+        """
+        history_pb = _get_main_outcome_history(history)
+        if len(history_pb) < 4: # Need enough history to start drawing derived roads
+            return {"BigEyeBoyMatrix": [], "SmallRoadMatrix": [], "CockroachPigMatrix": []}
+
+        big_road_matrix = self._build_big_road_matrix(history_pb)
+        
+        big_eye_boy_matrix: List[List[Optional[MainOutcome]]] = []
+        small_road_matrix: List[List[Optional[MainOutcome]]] = []
+        cockroach_pig_matrix: List[List[Optional[MainOutcome]]] = []
+
+        # Iterate through the big_road_matrix to build derived road matrices
+        # Note: Derived roads are offset from Big Road.
+        # Big Eye Boy starts from (1,0) of Big Road.
+        # Small Road starts from (2,0) of Big Road.
+        # Cockroach Pig starts from (3,0) of Big Road.
+
+        max_rows = 6 # Standard height for derived road display
+
+        for col_idx in range(len(big_road_matrix)):
+            beb_col: List[Optional[MainOutcome]] = []
+            sr_col: List[Optional[MainOutcome]] = []
+            cp_col: List[Optional[MainOutcome]] = []
+            
+            for row_idx in range(max_rows): # Iterate through rows
+                beb_val = self._get_big_eye_boy_value(big_road_matrix, col_idx, row_idx)
+                sr_val = self._get_small_road_value(big_road_matrix, col_idx, row_idx)
+                cp_val = self._get_cockroach_pig_value(big_road_matrix, col_idx, row_idx)
+                
+                beb_col.append(beb_val)
+                sr_col.append(sr_val)
+                cp_col.append(cp_val)
+            
+            big_eye_boy_matrix.append(beb_col)
+            small_road_matrix.append(sr_col)
+            cockroach_pig_matrix.append(cp_col)
+
+        return {
+            "BigEyeBoyMatrix": big_eye_boy_matrix,
+            "SmallRoadMatrix": small_road_matrix,
+            "CockroachPigMatrix": cockroach_pig_matrix
+        }
+
+# --- NEW: Statistical Analyzer (V10.0.0) ---
+class StatisticalAnalyzer:
+    """
+    Analyzes sequences of past outcomes to predict the next outcome based on conditional probabilities.
+    Learns from the global history log.
+    """
+    def __init__(self):
+        # Stores counts of sequences and their follow-up outcomes
+        # Format: { "PBP": {"P": 5, "B": 2}, ... } meaning "PBP" was followed by P 5 times, B 2 times
+        self.sequence_outcomes: Dict[str, Dict[MainOutcome, int]] = {}
+
+    def update_sequence_history(self, history_pb: List[MainOutcome]):
+        """
+        Updates the internal sequence history based on the latest outcome.
+        Considers sequences of length 2 to 5.
+        """
+        if len(history_pb) < 2: # Need at least 2 outcomes to form a 1-length sequence + 1 follow-up
+            return
+
+        for length in range(2, min(len(history_pb), 6)): # Sequences from length 2 up to 5
+            if len(history_pb) >= length + 1:
+                sequence = "".join(history_pb[-(length + 1):-1]) # e.g., for length 2, PBP -> PB
+                follow_up_outcome = history_pb[-1] # PBP -> P
+
+                if sequence not in self.sequence_outcomes:
+                    self.sequence_outcomes[sequence] = {"P": 0, "B": 0}
+                
+                if follow_up_outcome in self.sequence_outcomes[sequence]:
+                    self.sequence_outcomes[sequence][follow_up_outcome] += 1
+                
+                # Trim sequence_outcomes to prevent infinite growth (e.g., max 5000 unique sequences)
+                if len(self.sequence_outcomes) > 5000:
+                    # Simple trimming: remove oldest/least frequent (can be improved)
+                    keys_to_remove = list(self.sequence_outcomes.keys())[:100] # Remove 100 oldest
+                    for key in keys_to_remove:
+                        del self.sequence_outcomes[key]
 
 
-# --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3, V8.0.4, V8.0.5, V8.2.1, V8.2.4, V8.2.5, V8.2.7, V8.3.0, V8.3.1, V8.6.0) ---
+    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
+        """
+        Predicts based on the most recent sequence's conditional probability.
+        Returns the outcome with the highest probability if it meets a minimum threshold.
+        """
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 2: # Need at least 2 outcomes to form a 1-length sequence for prediction
+            return None
+
+        best_pred = None
+        highest_prob = 0.0
+
+        # Check from longest relevant sequence to shortest
+        for length in range(5, 1, -1): # Sequence lengths from 5 down to 2
+            if len(filtered_history) >= length:
+                current_sequence = "".join(filtered_history[-length:])
+                
+                if current_sequence in self.sequence_outcomes:
+                    outcomes_counts = self.sequence_outcomes[current_sequence]
+                    total_follows = outcomes_counts["P"] + outcomes_counts["B"]
+                    
+                    if total_follows > 5: # Only consider if sequence has occurred enough times
+                        prob_p = outcomes_counts["P"] / total_follows
+                        prob_b = outcomes_counts["B"] / total_follows
+
+                        if prob_p > prob_b and prob_p > highest_prob:
+                            best_pred = "P"
+                            highest_prob = prob_p
+                        elif prob_b > prob_p and prob_b > highest_prob:
+                            best_pred = "B"
+                            highest_prob = prob_b
+        
+        # Minimum probability threshold for statistical prediction
+        if highest_prob > 0.60: # If the best probability is > 60%
+            return best_pred
+        
+        return None
+
 
 class TiePredictor:
     """
     Predicts Tie outcomes with confidence.
-    V8.6.0: Significantly enhanced Tie prediction logic with more aggressive 'due' logic,
-            new pattern triggers, refined clustering, and stronger drought confidence.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -580,12 +690,11 @@ class TiePredictor:
         
         tie_confidence = 0
 
-        # V8.0.4, V8.6.0: Minimum history for any Tie prediction (reduced to 20 for earlier activation)
         if len(tie_flags) < 20: 
             return None, None
         
-        long_lookback_for_prob = min(len(tie_flags), 60) # V8.6.0: Increased lookback for long-term
-        short_lookback_for_prob = min(len(tie_flags), 25) # V8.6.0: Increased lookback for short-term
+        long_lookback_for_prob = min(len(tie_flags), 60) 
+        short_lookback_for_prob = min(len(tie_flags), 25) 
 
         actual_tie_count_long = tie_flags[-long_lookback_for_prob:].count(True)
         actual_tie_count_short = tie_flags[-short_lookback_for_prob:].count(True)
@@ -593,132 +702,122 @@ class TiePredictor:
         expected_tie_count_long = long_lookback_for_prob * self.THEORETICAL_PROB
         expected_tie_count_short = short_lookback_for_prob * self.THEORETICAL_PROB
 
-        # V8.3.0, V8.6.0: Enhanced Rule 1 & 2: Ties are "due" based on underperformance
         # Rule 1: Ties are "due" based on long-term underperformance
-        if actual_tie_count_long < expected_tie_count_long * 0.85: # V8.6.0: More aggressive threshold
+        if actual_tie_count_long < expected_tie_count_long * 0.85: 
             due_factor = (expected_tie_count_long * 0.85 - actual_tie_count_long) / expected_tie_count_long
-            tie_confidence = min(95, 70 + int(due_factor * 100 * 0.9)) # V8.6.0: Increased base confidence and impact
-            if tie_confidence >= 60: return "T", tie_confidence # V8.6.0: Higher activation threshold
+            tie_confidence = min(95, 70 + int(due_factor * 100 * 0.9)) 
+            if tie_confidence >= 60: return "T", tie_confidence 
 
         # Rule 2: Ties are "due" based on short-term underperformance, even if long-term is okay
-        if actual_tie_count_short < expected_tie_count_short * 0.75: # V8.6.0: More aggressive threshold
+        if actual_tie_count_short < expected_tie_count_short * 0.75: 
             due_factor_short = (expected_tie_count_short * 0.75 - actual_tie_count_short) / expected_tie_count_short
-            tie_confidence = min(90, 65 + int(due_factor_short * 100 * 0.8)) # V8.6.0: Increased base confidence and impact
-            if tie_confidence >= 60: return "T", tie_confidence # V8.6.0: Higher activation threshold
+            tie_confidence = min(90, 65 + int(due_factor_short * 100 * 0.8)) 
+            if tie_confidence >= 60: return "T", tie_confidence 
 
-        # V8.2.1, V8.6.0: Refined Rule 3: Tie Clustering - predict if a tie was *recently* seen, but not the immediate last round.
-        # This prevents immediate re-prediction of Tie right after a Tie result is entered.
-        if len(tie_flags) >= 2 and tie_flags[-2] == True and not tie_flags[-1]: # Tie two rounds ago, and last round was not a tie
-            return "T", 65 # V8.6.0: Increased confidence for a potential cluster after a non-tie
-        if len(tie_flags) >= 3 and tie_flags[-3] == True and not tie_flags[-2] and not tie_flags[-1]: # Tie three rounds ago, and last two rounds were non-ties
-            return "T", 60 # V8.6.0: Increased confidence, but still a potential cluster
-        if len(tie_flags) >= 4 and tie_flags[-4] == True and not any(tie_flags[-3:]): # V8.6.0: New rule for slightly older cluster
+        # Rule 3: Tie Clustering - predict if a tie was *recently* seen, but not the immediate last round.
+        if len(tie_flags) >= 2 and tie_flags[-2] == True and not tie_flags[-1]: 
+            return "T", 65 
+        if len(tie_flags) >= 3 and tie_flags[-3] == True and not tie_flags[-2] and not tie_flags[-1]: 
+            return "T", 60 
+        if len(tie_flags) >= 4 and tie_flags[-4] == True and not any(tie_flags[-3:]): 
             return "T", 58 
 
         # Rule 4: Tie after a long streak of P/B (e.g., 10+ non-tie outcomes)
         if len(main_history_pb) >= 10 and not any(tie_flags[-10:]):
-            return "T", 78 # V8.6.0: Increased confidence
+            return "T", 78 
 
         # Rule 5: Tie after specific alternating patterns in main outcomes (e.g., PBPBPB, then T)
         if len(main_history_pb) >= 6:
             recent_main = "".join(main_history_pb[-6:])
             if recent_main in ["PBPBPB", "BPBPBP"]: 
-                return "T", 75 # V8.6.0: Increased confidence
+                return "T", 75 
         
         # Rule 6: Tie after a long streak of one side winning (e.g., 6+ P's or 6+ B's)
         if len(main_history_pb) >= 6:
             if main_history_pb[-6:].count("P") == 6 or main_history_pb[-6:].count("B") == 6:
-                return "T", 70 # V8.6.0: Increased confidence
+                return "T", 70 
 
-        # V8.2.4: New Rule 7: Positional/Interval-based Tie prediction
-        # Check if current round number is a multiple of a typical tie interval (e.g., 8, 9, 10 rounds)
-        # combined with ties being underrepresented.
-        current_round_count = len(history) # Total rounds played
-        if current_round_count >= 20: # Only apply if enough history
+        # Rule 7: Positional/Interval-based Tie prediction
+        current_round_count = len(history) 
+        if current_round_count >= 20: 
             if (current_round_count % 8 == 0 or current_round_count % 9 == 0 or current_round_count % 10 == 0):
-                if actual_tie_count_long < expected_tie_count_long * 1.0: # Ties are not over-represented
-                    return "T", 70 # V8.6.0: Increased confidence
+                if actual_tie_count_long < expected_tie_count_long * 1.0: 
+                    return "T", 70 
 
-        # V8.6.0: New Rule 8: Tie after a very short streak of Banker/Player (2 consecutive)
+        # Rule 8: Tie after a very short streak of Banker/Player (2 consecutive)
         if len(main_history_pb) >= 2:
             last_two_pb = "".join(main_history_pb[-2:])
-            if last_two_pb == "BB" and not tie_flags[-1]: # After 2 Bankers, if last was not a Tie
-                return "T", 65 # V8.6.0: Increased confidence
-            if last_two_pb == "PP" and not tie_flags[-1]: # After 2 Players, if last was not a Tie
-                return "T", 65 # V8.6.0: Increased confidence
+            if last_two_pb == "BB" and not tie_flags[-1]: 
+                return "T", 65 
+            if last_two_pb == "PP" and not tie_flags[-1]: 
+                return "T", 65 
         
-        # V8.6.0: New Rule 9: Tie after a specific alternating pattern (e.g., PBP, BPB)
+        # Rule 9: Tie after a specific alternating pattern (e.g., PBP, BPB)
         if len(main_history_pb) >= 3:
             last_three_pb = "".join(main_history_pb[-3:])
-            if last_three_pb == "PBP" and not tie_flags[-1]: # PBP, then potentially T
-                return "T", 62 # V8.6.0: Increased confidence
-            if last_three_pb == "BPB" and not tie_flags[-1]: # BPB, then potentially T
-                return "T", 62 # V8.6.0: Increased confidence
+            if last_three_pb == "PBP" and not tie_flags[-1]: 
+                return "T", 62 
+            if last_three_pb == "BPB" and not tie_flags[-1]: 
+                return "T", 62 
 
-        # V8.2.5: New Rule 10: Trigger Point - Tie return after 4 rounds
-        # "หลังเสมอ 1 ครั้ง T มักจะกลับมาในอีก 4 ตา"
-        if True in tie_flags: # Check if there has been any tie in history
+        # Rule 10: Trigger Point - Tie return after 4 rounds
+        if True in tie_flags: 
             last_tie_index = len(tie_flags) - 1 - tie_flags[::-1].index(True)
             rounds_since_last_tie = len(tie_flags) - 1 - last_tie_index
             
-            if rounds_since_last_tie == 4: # If it's exactly 4 rounds since the last tie
-                if actual_tie_count_long < expected_tie_count_long * 1.0: # Ties are not over-represented
-                    return "T", 75 # V8.6.0: Increased confidence for this specific trigger
+            if rounds_since_last_tie == 4: 
+                if actual_tie_count_long < expected_tie_count_long * 1.0: 
+                    return "T", 75 
 
-        # V8.2.5: New Rule 11: Trigger Point - Tie after B-B-P pattern
-        # "หลังจากไม้ B-B-P มี T ตามมาบ่อย"
+        # Rule 11: Trigger Point - Tie after B-B-P pattern
         if len(main_history_pb) >= 3:
-            if "".join(main_history_pb[-3:]) == "BBP" and not tie_flags[-1]: # BBP pattern, and last was not a Tie
-                return "T", 70 # V8.6.0: Increased confidence
+            if "".join(main_history_pb[-3:]) == "BBP" and not tie_flags[-1]: 
+                return "T", 70 
 
-        # V8.2.7: New Rule 12: Tie after a long alternating pattern (e.g., PBPBP or BPBPB)
-        # This rule aims to catch the "T to break ping-pong" scenario
+        # Rule 12: Tie after a long alternating pattern (e.g., PBPBP or BPBPB)
         if len(main_history_pb) >= 5:
             last_five_pb = "".join(main_history_pb[-5:])
             if last_five_pb == "PBPBP" or last_five_pb == "BPBPB":
-                if actual_tie_count_short < expected_tie_count_short * 1.2: # Not too many ties recently
-                    return "T", 78 # V8.6.0: Increased confidence for this specific pattern break
+                if actual_tie_count_short < expected_tie_count_short * 1.2: 
+                    return "T", 78 
 
-        # V8.6.0: New Rule 13: Tie after a 2-2 pattern (PPBB or BBPP)
+        # Rule 13: Tie after a 2-2 pattern (PPBB or BBPP)
         if len(main_history_pb) >= 4:
             last_four_pb = "".join(main_history_pb[-4:])
             if last_four_pb == "PPBB" or last_four_pb == "BBPP":
-                if not tie_flags[-1]: # If last was not a Tie
-                    return "T", 72 # V8.6.0: Moderate confidence
+                if not tie_flags[-1]: 
+                    return "T", 72 
 
-        # V8.6.0: New Rule 14: Tie after a 3-2 pattern (PPPBB or BBBPP)
+        # Rule 14: Tie after a 3-2 pattern (PPPBB or BBBPP)
         if len(main_history_pb) >= 5:
             last_five_pb = "".join(main_history_pb[-5:])
             if last_five_pb == "PPPBB" or last_five_pb == "BBBPP":
-                if not tie_flags[-1]: # If last was not a Tie
-                    return "T", 75 # V8.6.0: Higher confidence
+                if not tie_flags[-1]: 
+                    return "T", 75 
 
-        # V8.6.0: New Rule 15: Tie after a "near balance" in short history
+        # Rule 15: Tie after a "near balance" in short history
         if len(main_history_pb) >= 10:
-            short_balance_history = main_history_pb[-15:] # Look at last 15 outcomes
+            short_balance_history = main_history_pb[-15:] 
             p_count_balance = short_balance_history.count("P")
             b_count_balance = short_balance_history.count("B")
             
-            # If P and B counts are very close (e.g., within 1 or 2)
             if abs(p_count_balance - b_count_balance) <= 2:
-                # And ties are underrepresented in the long term
                 if actual_tie_count_long < expected_tie_count_long * 1.0:
-                    return "T", 68 # V8.6.0: Moderate confidence for a balancing Tie
+                    return "T", 68 
 
-        # V8.3.0, V8.3.1, V8.6.0: Tie Drought - Predict if ties have been absent for a long period
-        if len(tie_flags) >= 25: # V8.6.0: Needs sufficient history to detect a drought (increased from 20)
-            drought_threshold = 20 # V8.6.0: If no ties in the last 20 rounds (increased from 15)
+        # Tie Drought - Predict if ties have been absent for a long period
+        if len(tie_flags) >= 25: 
+            drought_threshold = 20 
             rounds_since_last_tie = -1
-            if True in tie_flags: # Check if there has been any tie in history
+            if True in tie_flags: 
                 last_tie_index = len(tie_flags) - 1 - tie_flags[::-1].index(True)
                 rounds_since_last_tie = len(tie_flags) - 1 - last_tie_index
             
-            if rounds_since_last_tie >= drought_threshold or rounds_since_last_tie == -1: # -1 means no ties ever
-                drought_factor = min(1.0, (max(0, rounds_since_last_tie - drought_threshold + 1)) / 15) # V8.6.0: Increased impact
-                tie_confidence = min(95, 80 + int(drought_factor * 15)) # V8.6.0: Base 80, up to 95 (increased base)
+            if rounds_since_last_tie >= drought_threshold or rounds_since_last_tie == -1: 
+                drought_factor = min(1.0, (max(0, rounds_since_last_tie - drought_threshold + 1)) / 15) 
+                tie_confidence = min(95, 80 + int(drought_factor * 15)) 
                 return "T", tie_confidence
 
-        # Rule 17 (formerly Rule 15): If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
         if actual_tie_count_long > expected_tie_count_long * 1.1: 
             return None, None 
 
@@ -729,28 +828,13 @@ class AdaptiveScorer:
     Calculates the final prediction and its confidence based on module predictions
     and their historical accuracy, with adaptive weighting.
     This scorer is primarily for main P/B outcomes.
-    V8.0.0: Enhanced dynamic blending ratio for more accurate weighting.
-    V8.1.1: More aggressive blending towards recent performance for faster adaptation.
-    V8.1.2: Improved miss streak penalty logic.
-    V8.1.3: Even more aggressive blending for real-time adaptation and confidence adjustment based on volatility.
-    V8.1.5: Further refined weighting for AdvancedChopPredictor on specific patterns.
-    V8.2.0: Ensures choppiness_rate is used for confidence adjustment.
-    V8.2.6: More aggressive miss streak penalty.
-    V8.2.7: Even more aggressive miss streak penalty.
-    V8.2.8: Dynamic module weighting based on choppiness.
-    V8.3.0: Even more aggressive miss streak penalty.
-    V8.3.1: Even more aggressive miss streak penalty.
-    V8.3.2: Even more aggressive miss streak penalty.
-    V8.3.3: Even more aggressive miss streak penalty and special weighting for ThreeChopPredictor.
-    V8.3.4: Further increased miss streak penalty.
-    V8.4.0: Integrated Derived Road predictions with adaptive weighting.
-    V8.5.0: Added Consensus Strength Weighting and refined Choppiness-based Confidence Adjustment.
-    V8.7.0: Enhanced Choppy Handling, Dynamic Confidence Threshold, and Smart Re-engagement.
+    V9.0.0: Re-calibrated for direct "Smart Recommendation" output.
+    V10.0.0: Incorporates StatisticalAnalyzer predictions.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
-              module_accuracies_all_time: Dict[str, float], # All-time accuracy for baseline
-              module_accuracies_recent: Dict[str, float], # Recent accuracy for adaptive weighting (last 10)
+              module_accuracies_all_time: Dict[str, float], 
+              module_accuracies_recent: Dict[str, float], 
               history: List[RoundResult],
               current_miss_streak: int,
               choppiness_rate: float) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]: 
@@ -766,70 +850,74 @@ class AdaptiveScorer:
             all_time_acc_val = module_accuracies_all_time.get(name, 0.0)
             recent_acc_val = module_accuracies_recent.get(name, 0.0)
 
-            # V8.1.3: Even more aggressive dynamic blend ratio for faster adaptation
-            # Normalize accuracies to a 0-1 scale for ratio calculation
             all_time_norm = all_time_acc_val / 100.0 if all_time_acc_val > 0 else 0.5
             recent_norm = recent_acc_val / 100.0 if recent_acc_val > 0 else 0.5
 
-            # Calculate a dynamic blend_recent_ratio (e.g., from 0.5 to 0.98)
-            # Map difference from -0.2 to 0.2 (approx) to blend_recent_ratio from 0.5 to 0.98
-            diff = max(-0.2, min(0.2, recent_norm - all_time_norm)) # Clamp diff to -0.2 to 0.2
-            
-            # Linear mapping: if diff is -0.2, ratio is 0.5. If diff is 0.2, ratio is 0.98.
+            diff = max(-0.2, min(0.2, recent_norm - all_time_norm)) 
             blend_recent_ratio = 0.74 + (diff * 1.2) 
-            blend_recent_ratio = max(0.5, min(0.98, blend_recent_ratio)) # Ensure bounds
+            blend_recent_ratio = max(0.5, min(0.98, blend_recent_ratio)) 
 
             weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
             
-            # V8.1.5: Give AdvancedChopPredictor a higher base weight if it makes a prediction, especially for "สามตัวตัด"
             if name == "AdvancedChop" and predictions.get(name) is not None:
                 filtered_history = _get_main_outcome_history(history)
                 if len(filtered_history) >= 6:
                     last_6 = filtered_history[-6:]
                     if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
-                        weight += 0.2 # Extra weight for "สามตัวตัด" pattern
+                        weight += 0.2 
                     else:
-                        weight += 0.1 # Standard extra weight for other AdvancedChop patterns
+                        weight += 0.1 
             elif name == "ChopDetector" and predictions.get(name) is not None:
-                weight += 0.1 # Standard extra weight for ChopDetector
+                weight += 0.1 
             
-            # V8.3.3: Special weighting for ThreeChopPredictor
             if name == "ThreeChop" and predictions.get(name) is not None:
                 if choppiness_rate > 0.4: 
                     weight *= 1.5 
                 else:
                     weight *= 1.2 
             
-            # V8.7.0: Enhanced Derived Road Weighting based on choppiness
             if name in ["BigEyeBoy", "SmallRoad", "CockroachPig"] and predictions.get(name) is not None:
                 base_derived_weight = 0.8 
-                if choppiness_rate > 0.6: # If very choppy, derived roads are crucial
-                    weight += base_derived_weight * 1.5 # Significant boost
-                elif choppiness_rate < 0.4: # If very streaky, still useful but less critical
+                if choppiness_rate > 0.6: 
+                    weight += base_derived_weight * 1.5 
+                elif choppiness_rate < 0.4: 
                     weight += base_derived_weight * 1.0
-                else: # Moderate choppiness
+                else: 
                     weight += base_derived_weight * 1.2
             
-            # V8.7.0: Dynamic module weighting based on choppiness (more aggressive)
-            if choppiness_rate > 0.75: # Extremely choppy
+            # V8.8.0: Further refined Dynamic module weighting based on choppiness
+            if choppiness_rate > 0.7: 
                 if name in ["ChopDetector", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"]: 
-                    weight *= 1.25 # Boost these modules significantly
-                elif name in ["Trend", "Rule", "Pattern", "Sniper"]:
-                    weight *= 0.7 # Significantly reduce others
-            elif choppiness_rate < 0.25: # Very streaky
-                if name in ["Trend", "Rule", "Pattern", "Sniper", "BigEyeBoy", "SmallRoad", "CockroachPig"]: 
-                    weight *= 1.25 # Boost these modules significantly
+                    weight *= 1.3 
+                elif name in ["Trend", "Rule", "Pattern", "Sniper", "Statistical"]: # V10.0.0: Added Statistical
+                    weight *= 0.6 
+            elif choppiness_rate < 0.3: 
+                if name in ["Trend", "Rule", "Pattern", "Sniper", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"]: # V10.0.0: Added Statistical
+                    weight *= 1.3 
                 elif name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: 
-                    weight *= 0.7 # Significantly reduce others
-            elif choppiness_rate >= 0.4 and choppiness_rate <= 0.6: # Balanced/Moderate
-                # No strong bias, let individual accuracies drive
-                pass
+                    weight *= 0.6 
+            elif choppiness_rate >= 0.3 and choppiness_rate <= 0.7: 
+                if name in ["BigEyeBoy", "SmallRoad", "CockroachPig", "ChopDetector", "AdvancedChop", "ThreeChop", "Statistical"]: # V10.0.0: Added Statistical
+                    weight *= 1.1 
+                elif name == "Fallback":
+                    weight *= 1.05 
+                else:
+                    weight *= 0.95 
             
-            # V8.3.4: Even more aggressive miss streak penalty (increased from 20% to 22%)
+            # V10.0.0: Specific weighting for Statistical module
+            if name == "Statistical" and predictions.get(name) is not None:
+                if choppiness_rate > 0.5: # Give more weight in balanced/choppy scenarios
+                    weight *= 1.2
+                else:
+                    weight *= 1.05 # Slight boost in streaky too
+
             if current_miss_streak > 0:
-                penalty_factor = 1.0 - (current_miss_streak * 0.22) # 22% penalty per miss
-                weight *= max(0.05, penalty_factor) # Don't let weight drop below 5%
+                penalty_factor = 1.0 - (current_miss_streak * 0.22) 
+                weight *= max(0.05, penalty_factor) 
             
+            if name == "Fallback" and current_miss_streak >= 4:
+                weight *= 1.5 
+
             total_score[pred] += weight
 
         if not any(total_score.values()):
@@ -840,36 +928,27 @@ class AdaptiveScorer:
         sum_of_scores = sum(total_score.values())
         raw_confidence = (total_score[best_prediction_outcome] / sum_of_scores) * 100
         
-        # V8.5.0: Consensus Strength Weighting
-        # Count how many non-fallback modules predicted the best_prediction_outcome
         consensus_count = 0
         for name, pred in active_predictions.items():
             if pred == best_prediction_outcome and name != "Fallback":
                 consensus_count += 1
         
-        # Apply a boost based on consensus. More consensus = higher confidence.
-        # Max 12 modules (Rule, Pattern, Trend, 2-2, Sniper, Chop, DragonTail, AdvancedChop, ThreeChop, BEB, SR, CP)
-        # 1-3 modules: minor boost
-        # 4-6 modules: moderate boost
-        # 7+ modules: significant boost
         if consensus_count >= 7:
-            raw_confidence *= 1.15 # 15% boost
+            raw_confidence *= 1.15 
         elif consensus_count >= 4:
-            raw_confidence *= 1.08 # 8% boost
+            raw_confidence *= 1.08 
         elif consensus_count >= 1:
-            raw_confidence *= 1.02 # 2% boost
+            raw_confidence *= 1.02 
 
-        # Confidence capped at 95% to avoid overconfidence
         confidence = min(int(raw_confidence), 95)
 
         # V8.7.0: Dynamic Confidence Threshold based on Choppiness Rate
-        # If very choppy, reduce confidence more. If very streaky, slightly boost.
-        if choppiness_rate > 0.75: # Extremely choppy
-            confidence = max(50, int(confidence * 0.70)) # Reduce by 30%
-        elif choppiness_rate > 0.6: # Moderately choppy
-            confidence = max(50, int(confidence * 0.80)) # Reduce by 20%
-        elif choppiness_rate < 0.25: # Very streaky/predictable
-            confidence = min(95, int(confidence * 1.08)) # Boost by 8%
+        if choppiness_rate > 0.75: 
+            confidence = max(50, int(confidence * 0.70)) 
+        elif choppiness_rate > 0.6: 
+            confidence = max(50, int(confidence * 0.80)) 
+        elif choppiness_rate < 0.25: 
+            confidence = min(95, int(confidence * 1.08)) 
         
         source_modules = [name for name, pred in active_predictions.items() if pred == best_prediction_outcome]
         source_name = ", ".join(source_modules) if source_modules else "Combined"
@@ -885,7 +964,7 @@ class AdaptiveScorer:
         
         joined_filtered = "".join(filtered_history)
 
-        # V8.4.0: Prioritize pattern names based on common understanding and clarity
+        # Prioritize pattern names based on common understanding and clarity
         # Check for long streaks (Dragon) first
         if len(filtered_history) >= 4:
             last_4 = filtered_history[-4:]
@@ -948,10 +1027,10 @@ class AdaptiveScorer:
         common_patterns = {
             "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
             "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", 
-            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด", # BBPA is a typo, should be BBPP or similar
+            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด", 
             "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", # BPBB is two Banker, then one Player, then one Banker
-            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ" # Already covered above with specific chop logic
+            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", 
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ" 
         }
         for length in range(6, 2, -1): 
             if len(joined_filtered) >= length:
@@ -973,14 +1052,14 @@ class OracleBrain:
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
-            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] 
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] # V10.0.0: Added Statistical
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
             "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
-            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] 
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] # V10.0.0: Added Statistical
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
@@ -996,6 +1075,7 @@ class OracleBrain:
         self.advanced_chop_predictor = AdvancedChopPredictor() 
         self.three_chop_predictor = ThreeChopPredictor() 
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
+        self.statistical_analyzer = StatisticalAnalyzer() # V10.0.0: Initialize StatisticalAnalyzer
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
@@ -1014,6 +1094,7 @@ class OracleBrain:
         
         # --- Record individual main P/B module predictions *before* adding the new outcome ---
         choppiness_rate_for_trend = self._calculate_choppiness_rate(self.history, 20)
+        current_miss_streak = self.calculate_miss_streak() # Get current miss streak for fallback
 
         current_predictions_from_modules_main = {
             "Rule": self.rule_engine.predict(self.history),
@@ -1021,20 +1102,19 @@ class OracleBrain:
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
-            "Fallback": self.fallback_module.predict(self.history),
+            "Fallback": self.fallback_module.predict(self.history, current_miss_streak), 
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
             "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
-            "ThreeChop": self.three_chop_predictor.predict(self.history)
+            "ThreeChop": self.three_chop_predictor.predict(self.history),
+            "Statistical": self.statistical_analyzer.predict(self.history) # V10.0.0: Add Statistical prediction
         }
         
-        # V8.4.0: Get predictions from Derived Road Analyzer
         derived_road_preds = self.derived_road_analyzer.predict(self.history)
         current_predictions_from_modules_main.update(derived_road_preds)
 
         for module_name, pred in current_predictions_from_modules_main.items():
             if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
-                # Ensure module_name exists in global log before appending
                 if module_name not in self.module_accuracy_global_log:
                     self.module_accuracy_global_log[module_name] = []
                 if module_name not in self.individual_module_prediction_log_current_shoe:
@@ -1055,8 +1135,10 @@ class OracleBrain:
         self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
         
+        # V10.0.0: Update StatisticalAnalyzer's internal history
+        self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history))
+
         self._trim_global_logs() 
-        # No Firestore saving in this version.
 
     def remove_last(self):
         if self.history: self.history.pop()
@@ -1075,8 +1157,9 @@ class OracleBrain:
         if self.tie_module_prediction_log_current_shoe:
             self.tie_module_prediction_log_current_shoe.pop()
         
-        # No Firestore saving in this version.
-
+        # V10.0.0: Re-initialize StatisticalAnalyzer to clear its history (simpler than reverse-updating)
+        self.statistical_analyzer = StatisticalAnalyzer()
+        self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history)) # Rebuild from current history
 
     def reset_all_data(self):
         """
@@ -1099,7 +1182,8 @@ class OracleBrain:
         self.last_module = None
         self.show_initial_wait_message = True
         
-        # No Firestore saving in this version.
+        # V10.0.0: Reset StatisticalAnalyzer
+        self.statistical_analyzer = StatisticalAnalyzer()
 
     def start_new_shoe(self):
         """
@@ -1117,15 +1201,19 @@ class OracleBrain:
         self.last_prediction = None
         self.last_module = None
         self.show_initial_wait_message = True
-        # No Firestore saving in this version.
+        
+        # V10.0.0: Reset StatisticalAnalyzer for new shoe
+        self.statistical_analyzer = StatisticalAnalyzer()
+
 
     def export_all_time_data(self) -> Dict[str, Any]:
         """
-        Exports the global accuracy logs for persistence.
+        Exports the global accuracy logs and statistical analyzer data for persistence.
         """
         export_data = {
             "module_accuracy_global_log": {},
-            "tie_module_accuracy_global_log": []
+            "tie_module_accuracy_global_log": [],
+            "statistical_analyzer_sequence_outcomes": self.statistical_analyzer.sequence_outcomes # V10.0.0: Export statistical data
         }
         
         # Convert tuples to lists for JSON serialization
@@ -1138,7 +1226,7 @@ class OracleBrain:
 
     def import_all_time_data(self, imported_data: Dict[str, Any]):
         """
-        Imports global accuracy logs from a dictionary.
+        Imports global accuracy logs and statistical analyzer data from a dictionary.
         """
         if not isinstance(imported_data, dict):
             raise ValueError("Imported data must be a dictionary.")
@@ -1155,6 +1243,13 @@ class OracleBrain:
             self.tie_module_accuracy_global_log = [tuple(item) for item in imported_data["tie_module_accuracy_global_log"] if isinstance(item, list) and len(item) == 2]
         else:
             st.warning("Skipping import for invalid tie module accuracy log.")
+
+        # V10.0.0: Import statistical analyzer data
+        if "statistical_analyzer_sequence_outcomes" in imported_data and isinstance(imported_data["statistical_analyzer_sequence_outcomes"], dict):
+            self.statistical_analyzer.sequence_outcomes = imported_data["statistical_analyzer_sequence_outcomes"]
+            st.success("ข้อมูลสถิติ All-Time ถูกอัปโหลดเรียบร้อยแล้ว!")
+        else:
+            st.warning("Skipping import for invalid statistical analyzer data.")
 
         st.success("ข้อมูล All-Time ถูกอัปโหลดเรียบร้อยแล้ว!")
 
@@ -1206,13 +1301,12 @@ class OracleBrain:
         Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] # V10.0.0: Added Statistical
         for module_name in main_modules:
-            # Ensure module_name exists in global log before accessing
             if module_name in self.module_accuracy_global_log:
                 accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
             else:
-                accuracy_results[module_name] = 0.0 # Default to 0 if no data yet
+                accuracy_results[module_name] = 0.0 
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_accuracy_global_log, lookback=None)
 
@@ -1223,13 +1317,12 @@ class OracleBrain:
         Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] # V10.0.0: Added Statistical
         for module_name in main_modules:
-            # Ensure module_name exists in current shoe log before accessing
             if module_name in self.individual_module_prediction_log_current_shoe:
                 accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
             else:
-                accuracy_results[module_name] = 0.0 # Default to 0 if no data yet
+                accuracy_results[module_name] = 0.0 
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_prediction_log_current_shoe, lookback)
 
@@ -1237,12 +1330,12 @@ class OracleBrain:
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Tie"] 
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical", "Tie"] # V10.0.0: Added Statistical
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"] and v > 0} 
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] and v > 0} # V10.0.0: Added Statistical
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -1273,7 +1366,8 @@ class OracleBrain:
             "ThreeChop": self.three_chop_predictor,
             "BigEyeBoy": self.derived_road_analyzer, 
             "SmallRoad": self.derived_road_analyzer,
-            "CockroachPig": self.derived_road_analyzer
+            "CockroachPig": self.derived_road_analyzer,
+            "Statistical": self.statistical_analyzer # V10.0.0: Added Statistical
         }
         
         module_scores: Dict[str, float] = {}
@@ -1350,11 +1444,12 @@ class OracleBrain:
     def predict_next(self) -> Tuple[
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, 
         Optional[Literal["T"]], Optional[int], 
-        bool 
+        bool, str # recommendation_text
     ]:
         """
         Generates the next predictions for main outcome and side bets,
         along with main outcome's source, confidence, miss streak, and Sniper opportunity flag.
+        V10.0.0: Returns a direct recommendation text, incorporating statistical analysis.
         """
         main_history_filtered_for_pb = _get_main_outcome_history(self.history)
         p_count = main_history_filtered_for_pb.count("P")
@@ -1367,20 +1462,12 @@ class OracleBrain:
         MIN_HISTORY_FOR_SNIPER = 25 
         MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 
         
-        # V8.7.0: Dynamic MIN_DISPLAY_CONFIDENCE_MAIN based on choppiness and miss streak
-        MIN_DISPLAY_CONFIDENCE_MAIN = 50 
-        if current_miss_streak >= 3: # If miss streak is high, require higher confidence to predict
-            MIN_DISPLAY_CONFIDENCE_MAIN = 50 + (current_miss_streak - 2) * 5 # 55 for 3, 60 for 4, 65 for 5, 70 for 6
-            MIN_DISPLAY_CONFIDENCE_MAIN = min(80, MIN_DISPLAY_CONFIDENCE_MAIN) # Cap at 80%
-
-        # V8.7.0: Allow prediction even with high miss streak if confidence is very high
-        # This will be handled by the scorer's final confidence check.
-        
+        RECOMMEND_BET_CONFIDENCE_THRESHOLD = 65 
         MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 
 
         final_prediction_main = None
         source_module_name_main = None
-        confidence_main = None
+        confidence_main = None 
         pattern_code_main = None
         is_sniper_opportunity_main = False 
         
@@ -1388,13 +1475,12 @@ class OracleBrain:
         tie_confidence = None
 
         is_tie_sniper_opportunity = False
+        recommendation_text = "กำลังวิเคราะห์ข้อมูล..." 
 
-        # V8.7.0: Smart Re-engagement: Allow prediction if history is long enough, even with high miss streak
-        # The scorer will determine if confidence is high enough.
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION:
             self.last_prediction = None
             self.last_module = None
-            return None, None, None, None, current_miss_streak, False, None, None, False 
+            return None, None, None, None, current_miss_streak, False, None, None, False, "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย" 
         
         choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
 
@@ -1404,14 +1490,14 @@ class OracleBrain:
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
             "2-2 Pattern": self.two_two_pattern.predict(self.history),
             "Sniper": self.sniper_pattern.predict(self.history), 
-            "Fallback": self.fallback_module.predict(self.history),
+            "Fallback": self.fallback_module.predict(self.history, current_miss_streak), 
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
             "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
-            "ThreeChop": self.three_chop_predictor.predict(self.history)
+            "ThreeChop": self.three_chop_predictor.predict(self.history),
+            "Statistical": self.statistical_analyzer.predict(self.history) # V10.0.0: Add Statistical prediction
         }
         
-        # V8.4.0: Get predictions from Derived Road Analyzer
         derived_road_preds = self.derived_road_analyzer.predict(self.history)
         predictions_from_modules.update(derived_road_preds)
 
@@ -1422,29 +1508,40 @@ class OracleBrain:
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
 
-        # V8.3.1: Temporary P/B Confidence Adjustment after Tie
         if self.history and self.history[-1].main_outcome == "T":
             if final_prediction_main is not None and confidence_main is not None:
-                confidence_main = max(MIN_DISPLAY_CONFIDENCE_MAIN, int(confidence_main * 0.85)) 
+                confidence_main = max(RECOMMEND_BET_CONFIDENCE_THRESHOLD, int(confidence_main * 0.85)) 
 
-        # V8.7.0: Apply MIN_DISPLAY_CONFIDENCE_MAIN here
-        if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE_MAIN: 
-            final_prediction_main = None
+        # V10.0.0: Logic to determine recommendation text
+        if current_miss_streak >= 6:
+            recommendation_text = "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่"
+            final_prediction_main = None 
             source_module_name_main = None
             confidence_main = None
             pattern_code_main = None
-
+        elif final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD: 
+            recommendation_text = f"✅ แนะนำ: {final_prediction_main}"
+        else:
+            if choppiness_rate > 0.65:
+                recommendation_text = "🚫 งดเดิมพัน: เค้าไพ่ผันผวนสูง"
+            else:
+                recommendation_text = "🚫 งดเดิมพัน: ยังไม่พบแพทเทิร์นชัดเจน"
+            
+            final_prediction_main = None
+            source_module_name_main = None
+            confidence_main = None
+            pattern_code_main = None 
+        
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            # V8.3.2: Stricter Main Sniper Criteria
-            if confidence_main >= 60 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
+            if confidence_main >= 70 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER: 
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 
                 relevant_contributing_modules = [m for m in contributing_modules if m not in ["Fallback", "NoPrediction"]]
 
                 high_accuracy_contributing_count = 0
                 
-                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 
+                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 65 
 
                 for module_name in relevant_contributing_modules:
                     acc_10 = module_accuracies_recent_10.get(module_name, 0.0)
@@ -1501,13 +1598,13 @@ class OracleBrain:
         return (
             final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
             tie_prediction, tie_confidence, 
-            is_tie_sniper_opportunity 
+            is_tie_sniper_opportunity, recommendation_text 
         )
 
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.7.1", layout="centered") # Updated version to V8.7.1
+st.set_page_config(page_title="🔮 Oracle V10.0.0", layout="centered") # Updated version to V10.0.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1621,6 +1718,45 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     right: -2px;
 }
 
+/* Derived Road Styles */
+.derived-road-container {
+    width: 100%;
+    overflow-x: auto;
+    padding: 5px 0;
+    background: #1A1A1A;
+    border-radius: 8px;
+    white-space: nowrap;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    min-height: 70px; /* Smaller height for derived roads */
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+    margin-top: 10px;
+}
+.derived-road-column {
+    display: inline-flex;
+    flex-direction: column;
+    margin-right: 1px;
+    border-right: 1px solid rgba(255,255,255,0.05);
+    padding-right: 1px;
+}
+.derived-road-cell {
+    width: 12px; /* Even smaller cells for derived roads */
+    height: 12px;
+    text-align: center;
+    line-height: 12px;
+    font-size: 8px; /* Very small font for derived road emojis */
+    margin-bottom: 0.5px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    color: white;
+}
+.derived-road-cell.P { background-color: #007BFF; } /* Blue for Player (Chop) */
+.derived-road-cell.B { background-color: #DC3545; } /* Red for Banker (Follow) */
+
 
 /* Button styling */
 .stButton>button {
@@ -1635,7 +1771,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 .stButton>button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+    box_shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
 }
 /* Specific button colors */
 #btn_P button { background-color: #007BFF; color: white; border: none; }
@@ -1781,6 +1917,8 @@ if 'tie_confidence' not in st.session_state:
 
 if 'is_tie_sniper_opportunity' not in st.session_state:
     st.session_state.is_tie_sniper_opportunity = False
+if 'recommendation_text' not in st.session_state: 
+    st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
 
 
 # --- UI Callback Functions ---
@@ -1795,17 +1933,17 @@ def handle_click(main_outcome_str: MainOutcome):
     
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
-    st.session_state.confidence = confidence
+    st.session_state.confidence = confidence 
     st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
     
     st.session_state.tie_prediction = tie_pred
     st.session_state.tie_confidence = tie_conf
-
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+    st.session_state.recommendation_text = recommendation_text 
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -1817,19 +1955,19 @@ def handle_click(main_outcome_str: MainOutcome):
         "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
         "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
         "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
+        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด", 
         "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
         "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
-        "ปิงปองตัด": "ปิงปองตัด", # New pattern for chop after ping-pong
-        "ตัดสาม": "ตัดสาม" # V8.3.3: Added Three-Chop pattern name
+        "มังกรตัด": "มังกรตัด", 
+        "ปิงปองตัด": "ปิงปองตัด", 
+        "ตัดสาม": "ตัดสาม" 
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) >= 15: # V8.1.1: Lowered for earlier predictions
+    if (p_count + b_count) >= 15: 
         st.session_state.initial_shown = True 
 
     st.query_params["_t"] = f"{time.time()}"
@@ -1842,7 +1980,7 @@ def handle_remove():
     st.session_state.oracle.remove_last()
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -1851,8 +1989,8 @@ def handle_remove():
 
     st.session_state.tie_prediction = tie_pred
     st.session_state.tie_confidence = tie_conf
-    
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+    st.session_state.recommendation_text = recommendation_text
     
     pattern_names = {
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -1868,15 +2006,15 @@ def handle_remove():
         "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
         "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
-        "ปิงปองตัด": "ปิงปองตัด", # New pattern for chop after ping-pong
-        "ตัดสาม": "ตัดสาม" # V8.3.3: Added Three-Chop pattern name
+        "มังกรตัด": "มังกรตัด", 
+        "ปิงปองตัด": "ปิงปองตัด", 
+        "ตัดสาม": "ตัดสาม" 
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
     p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
     b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) < 15: # V8.1.1: Lowered for earlier predictions
+    if (p_count + b_count) < 15: 
         st.session_state.initial_shown = False
     
     st.query_params["_t"] = f"{time.time()}"
@@ -1898,40 +2036,33 @@ def handle_start_new_shoe():
     st.session_state.tie_confidence = None
 
     st.session_state.is_tie_sniper_opportunity = False
+    st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.7.1</div>', unsafe_allow_html=True) # Updated version to V8.7.1
+st.markdown('<div class="big-title">🔮 Oracle V10.0.0</div>', unsafe_allow_html=True) # Updated version to V10.0.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-st.markdown("<b>📍 คำทำนายหลัก:</b>", unsafe_allow_html=True) 
+st.markdown("<b>📍 คำแนะนำการเดิมพัน:</b>", unsafe_allow_html=True) 
 
-if st.session_state.prediction:
-    # V8.3.4: Fix for 'D' being displayed instead of 'B'
-    display_prediction = "B" if st.session_state.prediction == "D" else st.session_state.prediction
-    emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(display_prediction, "❓")
-    st.markdown(f"<h2>{emoji} <b>{display_prediction}</b></h2>", unsafe_allow_html=True)
+# V9.0.0: Display recommendation text directly
+st.markdown(f"<h2>{st.session_state.recommendation_text}</h2>", unsafe_allow_html=True)
+
+# Only show supporting details if there's a direct prediction (not "No Bet" or "Learning")
+if st.session_state.prediction and st.session_state.prediction in ("P", "B"):
     if st.session_state.source:
-        st.caption(f"🧠 โมดูล: {st.session_state.source}")
+        st.caption(f"🧠 โมดูลที่สนับสนุน: {st.session_state.source}")
     if st.session_state.pattern_name:
-        st.caption(f"📊 เค้าไพ่: {st.session_state.pattern_name}")
+        st.caption(f"📊 เค้าไพ่ที่ตรวจพบ: {st.session_state.pattern_name}")
     if st.session_state.confidence is not None:
-        st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence:.1f}%") 
+        st.caption(f"🔎 ความมั่นใจภายใน: {st.session_state.confidence:.1f}%") # Show internal confidence for transparency
 else:
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    main_history_len = p_count + b_count
-    miss = st.session_state.oracle.calculate_miss_streak()
-
-    if main_history_len < 15 and not st.session_state.initial_shown: # V8.1.1: Lowered for earlier predictions
-        st.warning(f"⚠️ กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย (ปัจจุบัน {main_history_len} ตา)") # V8.1.1: Updated message
-    elif miss >= 6:
-        # V8.7.1: Updated message for "Game Over"
-        st.error("🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่") 
-    else:
-        st.info("⏳ กำลังวิเคราะห์ข้อมูล... ความมั่นใจยังไม่สูงพอที่จะทำนาย - โปรดป้อนข้อมูลต่อ") # V8.1.1: Updated message
+    # If no prediction, remove source/pattern name captions
+    st.session_state.source = None
+    st.session_state.pattern_name = None
+    st.session_state.confidence = None # Clear confidence if no prediction
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1939,13 +2070,13 @@ st.markdown("</div>", unsafe_allow_html=True)
 if st.session_state.is_sniper_opportunity_main: 
     st.markdown("""
         <div class="sniper-message">
-            🎯 SNIPER! มั่นใจเป็นพิเศษ
+            🎯 SNIPER! โอกาสเดิมพันสูง!
         </div>
     """, unsafe_allow_html=True)
 
 # --- Side Bet Prediction Display ---
 if st.session_state.tie_prediction and st.session_state.tie_confidence is not None:
-    st.markdown("<b>📍 คำทำนายเสริม:</b>", unsafe_allow_html=True) 
+    st.markdown("<b>📍 คำแนะนำเสริม:</b>", unsafe_allow_html=True) 
     col_side1, col_side_empty = st.columns(2) 
     with col_side1:
         st.markdown(f"<p style='text-align:center; color:#6C757D; font-weight:bold;'>⚪ เสมอ</p>", unsafe_allow_html=True)
@@ -1967,7 +2098,6 @@ st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
 if miss == 3:
     st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
 elif miss >= 6:
-    # V8.7.1: Updated message for "Game Over"
     st.error("🚨 เกมแตก! (แพ้ 6 ไม้ติด)")
 
 # --- Big Road Display ---
@@ -2039,6 +2169,68 @@ if history_results:
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
+# --- Derived Roads Display (New for V8.9.0) ---
+st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<b>📊 เค้าไพ่รอง (Derived Roads):</b>", unsafe_allow_html=True)
+
+derived_road_matrices = st.session_state.oracle.derived_road_analyzer.get_full_derived_road_matrices(st.session_state.oracle.history)
+
+if derived_road_matrices["BigEyeBoyMatrix"]:
+    st.markdown("<h5>Big Eye Boy (บิ๊กอายบอย)</h5>", unsafe_allow_html=True)
+    beb_html = "<div class='derived-road-container'>"
+    # Only display the last few columns to match Big Road display
+    beb_matrix_display = derived_road_matrices["BigEyeBoyMatrix"][-MAX_DISPLAY_COLUMNS:]
+    for col in beb_matrix_display:
+        beb_html += "<div class='derived-road-column'>"
+        for cell_val in col:
+            if cell_val:
+                emoji = "🔵" if cell_val == "P" else "🔴"
+                beb_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
+            else:
+                beb_html += f"<div class='derived-road-cell'></div>" # Empty cell for padding
+        beb_html += "</div>"
+    beb_html += "</div>"
+    st.markdown(beb_html, unsafe_allow_html=True)
+else:
+    st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Big Eye Boy")
+
+if derived_road_matrices["SmallRoadMatrix"]:
+    st.markdown("<h5>Small Road (ซาลาเปา)</h5>", unsafe_allow_html=True)
+    sr_html = "<div class='derived-road-container'>"
+    sr_matrix_display = derived_road_matrices["SmallRoadMatrix"][-MAX_DISPLAY_COLUMNS:]
+    for col in sr_matrix_display:
+        sr_html += "<div class='derived-road-column'>"
+        for cell_val in col:
+            if cell_val:
+                emoji = "🔵" if cell_val == "P" else "🔴"
+                sr_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
+            else:
+                sr_html += f"<div class='derived-road-cell'></div>"
+        sr_html += "</div>"
+    sr_html += "</div>"
+    st.markdown(sr_html, unsafe_allow_html=True)
+else:
+    st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Small Road")
+
+if derived_road_matrices["CockroachPigMatrix"]:
+    st.markdown("<h5>Cockroach Pig (ไม้ขีด)</h5>", unsafe_allow_html=True)
+    cp_html = "<div class='derived-road-container'>"
+    cp_matrix_display = derived_road_matrices["CockroachPigMatrix"][-MAX_DISPLAY_COLUMNS:]
+    for col in cp_matrix_display:
+        cp_html += "<div class='derived-road-column'>"
+        for cell_val in col:
+            if cell_val:
+                emoji = "🔵" if cell_val == "P" else "🔴"
+                cp_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
+            else:
+                cp_html += f"<div class='derived-road-cell'></div>"
+        cp_html += "</div>"
+    cp_html += "</div>"
+    st.markdown(cp_html, unsafe_allow_html=True)
+else:
+    st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Cockroach Pig")
+
+
 # --- Input Buttons (Main Outcomes) ---
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
@@ -2059,7 +2251,7 @@ with col4:
 with col5:
     st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe)
 
-# --- Data Management (New for V8.2.2) ---
+# --- Data Management ---
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>💾 จัดการข้อมูล All-Time:</b>", unsafe_allow_html=True)
 
@@ -2090,7 +2282,7 @@ with col_ul:
             # Re-run prediction to update UI with new data
             (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
              tie_pred, tie_conf,
-             is_tie_sniper_opportunity) = st.session_state.oracle.predict_next()
+             is_tie_sniper_opportunity, recommendation_text) = st.session_state.oracle.predict_next()
 
             st.session_state.prediction = prediction
             st.session_state.source = source
@@ -2099,6 +2291,7 @@ with col_ul:
             st.session_state.tie_prediction = tie_pred
             st.session_state.tie_confidence = tie_conf
             st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+            st.session_state.recommendation_text = recommendation_text
             
             pattern_names = {
                 "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -2144,11 +2337,18 @@ if st.session_state.show_debug_info:
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
     st.write("---") 
 
-    # V8.4.0: Display Derived Road Predictions in Debug Info
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
     derived_preds_debug = st.session_state.oracle.derived_road_analyzer.predict(st.session_state.oracle.history)
     for road_name, pred_val in derived_preds_debug.items():
         st.write(f"  - {road_name}: {pred_val if pred_val else 'None'}") 
+    st.write("---")
+
+    st.markdown("<h4>⚙️ การทำนายจากสถิติ (Statistical Predictions)</h4>", unsafe_allow_html=True)
+    # To show the statistical prediction, we need to call predict() again for debug purposes
+    # Or, we can expose the internal state of StatisticalAnalyzer if needed for deeper debug
+    stat_pred_debug = st.session_state.oracle.statistical_analyzer.predict(st.session_state.oracle.history)
+    st.write(f"  - Statistical Prediction: {stat_pred_debug if stat_pred_debug else 'None'}")
+    st.write(f"  - Statistical Analyzer Sequence Outcomes: {st.session_state.oracle.statistical_analyzer.sequence_outcomes}")
     st.write("---")
 
 
@@ -2161,8 +2361,7 @@ recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    # V8.4.0: Include new derived road modules in sorting
-    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig"], x)) 
+    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"], x)) 
     for name in sorted_module_names:
         acc = all_time_accuracies[name]
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
@@ -2173,16 +2372,14 @@ if all_time_accuracies:
 
     if main_history_len >= 10: 
         st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        # V8.4.0: Include new derived road modules in sorting
-        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig"], x)) 
+        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"], x)) 
         for name in sorted_module_names_recent_10:
             acc = recent_10_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 
     if main_history_len >= 20: 
         st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        # V8.4.0: Include new derived road modules in sorting
-        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig"], x)) 
+        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"], x)) 
         for name in sorted_module_names_recent_20:
             acc = recent_20_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
