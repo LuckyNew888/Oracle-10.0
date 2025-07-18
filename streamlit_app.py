@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.1 - Smart Recommendation Engine - Lean Core (Bugfix))
+# streamlit_app.py (Oracle V10.4.2 - Smart Recommendation Engine - Lean Core (Critical Bugfix))
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -149,6 +149,35 @@ class TrendScanner:
                 return "B"
 
         return None
+
+class FallbackModule:
+    """
+    Provides a more strategic prediction if no other module can make a prediction,
+    especially during a miss streak.
+    V8.8.0: Enhanced to be more adaptive during high miss streaks.
+    """
+    def predict(self, history: List[RoundResult], miss_streak: int) -> Optional[MainOutcome]:
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 2:
+            return random.choice(["P", "B"]) # Fallback to random if not enough history
+
+        last_outcome = filtered_history[-1]
+        second_last_outcome = filtered_history[-2]
+
+        if miss_streak >= 4: # More aggressive fallback when miss streak is high
+            # If it's a streak (e.g., PP or BB), try to chop it more aggressively
+            if last_outcome == second_last_outcome:
+                return _opposite_outcome(last_outcome)
+            # If it's alternating (e.g., PB or BP), try to continue the alternation
+            else:
+                return last_outcome
+        
+        # Default behavior for lower miss streaks
+        if last_outcome == second_last_outcome: # It's a streak (e.g., PP or BB)
+            return _opposite_outcome(last_outcome) # Predict to chop the streak (e.g., for PP, predict B)
+        else: # It's alternating (e.g., PB or BP)
+            return last_outcome # Predict to continue the alternating pattern (e.g., for PB, predict P)
+
 
 # --- Derived Road Analyzer ---
 class DerivedRoadAnalyzer:
@@ -1325,7 +1354,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.1", layout="centered") # Updated version to V10.4.1
+st.set_page_config(page_title="🔮 Oracle V10.4.2", layout="centered") # Updated version to V10.4.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1761,7 +1790,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V10.4.1</div>', unsafe_allow_html=True) # Updated version to V10.4.1
+st.markdown('<div class="big-title">🔮 Oracle V10.4.2</div>', unsafe_allow_html=True) # Updated version to V10.4.2
 
 # --- Input Buttons (Main Outcomes) - MOVED TO TOP ---
 st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
