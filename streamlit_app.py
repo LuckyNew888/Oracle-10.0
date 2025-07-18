@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.2 - Smart Recommendation Engine - Lean Core (Critical Bugfix))
+# streamlit_app.py (Oracle V10.4.3 - Smart Recommendation Engine - Lean Core (UI Refinement))
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -842,7 +842,7 @@ class OracleBrain:
         self.rule_engine = RuleEngine()
         self.pattern_analyzer = PatternAnalyzer()
         self.trend_scanner = TrendScanner()
-        self.fallback_module = FallbackModule() # Re-added this line to fix NameError
+        self.fallback_module = FallbackModule() 
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
         self.statistical_analyzer = StatisticalAnalyzer() 
 
@@ -1354,7 +1354,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.2", layout="centered") # Updated version to V10.4.2
+st.set_page_config(page_title="🔮 Oracle V10.4.3", layout="centered") # Updated version to V10.4.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1366,11 +1366,18 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     font-family: 'Sarabun', sans-serif !important;
 }
 .big-title {
-    font-size: 16px; /* Further reduced from 18px */
+    font-size: 20px; /* Increased size for Oracle */
     text-align: center;
     font-weight: bold;
     color: #FF4B4B; /* Streamlit's default primary color */
-    margin-bottom: 6px; /* Further reduced margin */
+    margin-bottom: 2px; /* Reduced margin */
+}
+.version-text {
+    font-size: 10px; /* Smaller size for version */
+    text-align: center;
+    color: #BBBBBB; /* Lighter color */
+    margin-top: 0px; /* No top margin */
+    margin-bottom: 10px; /* More bottom margin */
 }
 .predict-box {
     padding: 7px; /* Further reduced from 8px */
@@ -1395,6 +1402,10 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 
 /* Miss Streak warning text */
+.miss-streak-text p { /* Custom class for miss streak text */
+    font-size: 8px !important; /* Smaller size for miss streak */
+    margin-bottom: 0px !important; /* Reduced margin */
+}
 .st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
     font-size: 9px; /* Further reduced from 10px */
 }
@@ -1790,20 +1801,10 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V10.4.2</div>', unsafe_allow_html=True) # Updated version to V10.4.2
+st.markdown('<div class="big-title">🔮 Oracle</div>', unsafe_allow_html=True) 
+st.markdown('<div class="version-text">V10.4.3</div>', unsafe_allow_html=True) # Updated version to V10.4.3 and smaller
 
-# --- Input Buttons (Main Outcomes) - MOVED TO TOP ---
-st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
-with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
-with col3:
-    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
-
-# --- Prediction Output Box (Main Outcome) ---
+# --- Prediction Output Box (Main Outcome) - MOVED TO ABOVE BIG ROAD ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
 st.markdown("<b>📍 คำแนะนำการเดิมพัน:</b>", unsafe_allow_html=True) 
 
@@ -1854,7 +1855,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
-st.warning(f"❌ แพ้ติดกัน: {miss} ครั้ง")
+st.markdown(f"<p class='miss-streak-text'>❌ แพ้ติดกัน: {miss} ครั้ง</p>", unsafe_allow_html=True) # Smaller text
 if miss == 3:
     st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
 elif miss >= 6:
@@ -1929,7 +1930,22 @@ if history_results:
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
-# --- Derived Roads Display ---
+# --- Input Buttons (Main Outcomes) - MOVED TO BELOW BIG ROAD ---
+st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
+with col2:
+    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
+with col3:
+    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
+
+# --- Control Button: Remove Last (MOVED TO BELOW INPUT BUTTONS) ---
+st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
+
+
+# --- Derived Roads Display - MOVED TO BELOW REMOVE LAST BUTTON ---
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>📊 เค้าไพ่รอง (Derived Roads):</b>", unsafe_allow_html=True)
 
@@ -1991,13 +2007,10 @@ else:
     st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Cockroach Pig")
 
 
-# --- Control Buttons ---
+# --- Control Button: Start New Shoe (MOVED TO BELOW DERIVED ROADS) ---
 st.markdown("<hr>", unsafe_allow_html=True)
-col4, col5 = st.columns(2)
-with col4:
-    st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
-with col5:
-    st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe)
+st.markdown("<b>ควบคุม:</b>", unsafe_allow_html=True) # Added a header for control buttons
+st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe)
 
 # --- Data Management ---
 st.markdown("<hr>", unsafe_allow_html=True)
