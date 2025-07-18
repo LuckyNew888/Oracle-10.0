@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.3 - Smart Recommendation Engine - Lean Core (UI Refinement))
+# streamlit_app.py (Oracle V10.4.4 - Smart Recommendation Engine - Lean Core (Advanced UI Refinement))
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -209,7 +209,8 @@ class DerivedRoadAnalyzer:
             matrix.append(current_col)
         
         # Pad columns to a minimum height for consistent indexing (6 rows standard)
-        max_rows = 6 
+        # Changed max_rows from 6 to 10 for more vertical display
+        max_rows = 10 
         padded_matrix = []
         for col in matrix:
             padded_col = col + [None] * (max_rows - len(col))
@@ -393,7 +394,7 @@ class DerivedRoadAnalyzer:
         # Small Road starts from (2,0) of Big Road.
         # Cockroach Pig starts from (3,0) of Big Road.
 
-        max_rows = 6 # Standard height for derived road display
+        max_rows = 10 # Standard height for derived road display (matched to Big Road)
 
         for col_idx in range(len(big_road_matrix)):
             beb_col: List[Optional[MainOutcome]] = []
@@ -1354,7 +1355,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.3", layout="centered") # Updated version to V10.4.3
+st.set_page_config(page_title="🔮 Oracle V10.4.4", layout="centered") # Updated version to V10.4.4
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1365,79 +1366,116 @@ st.markdown("""
 html, body, [class*="st-emotion"] { /* Target Streamlit's main content div classes */
     font-family: 'Sarabun', sans-serif !important;
 }
-.big-title {
-    font-size: 20px; /* Increased size for Oracle */
+.header-container {
     text-align: center;
+    margin-bottom: 5px; /* Reduced margin */
+}
+.main-title {
+    font-size: 30px; /* Larger size for Oracle */
     font-weight: bold;
     color: #FF4B4B; /* Streamlit's default primary color */
-    margin-bottom: 2px; /* Reduced margin */
+    display: inline-block; /* Allow version text next to it */
+    margin-right: 5px; /* Space between Oracle and version */
 }
 .version-text {
-    font-size: 10px; /* Smaller size for version */
-    text-align: center;
+    font-size: 12px; /* Slightly larger for visibility, but still smaller than main title */
     color: #BBBBBB; /* Lighter color */
-    margin-top: 0px; /* No top margin */
-    margin-bottom: 10px; /* More bottom margin */
+    display: inline-block;
 }
+
 .predict-box {
-    padding: 7px; /* Further reduced from 8px */
+    padding: 5px; /* Reduced padding */
     background-color: #262730; /* Darker background for the box */
     border-radius: 5px; /* Further reduced border-radius */
     color: white;
-    margin-bottom: 7px; /* Further reduced margin */
+    margin-bottom: 5px; /* Reduced margin */
     box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
     text-align: center; /* Center content inside prediction box */
+    border: 1px solid #FFD700; /* Gold border for prediction box */
 }
 .predict-box h2 {
-    margin: 4px 0; /* Further reduced margin */
-    font-size: 20px; /* Further reduced from 22px */
+    margin: 2px 0; /* Reduced margin */
+    font-size: 16px; /* Significantly reduced for main recommendation text */
     font-weight: bold;
 }
 .predict-box b {
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 9px; /* Further reduced from 10px */
+    font-size: 8px; /* Further reduced from 9px */
     color: #BBBBBB;
 }
 
 /* Miss Streak warning text */
-.miss-streak-text p { /* Custom class for miss streak text */
-    font-size: 8px !important; /* Smaller size for miss streak */
-    margin-bottom: 0px !important; /* Reduced margin */
+.miss-streak-container {
+    background-color: #333333; /* Darker background for the miss streak box */
+    border: 1px solid #495057;
+    border-radius: 5px;
+    padding: 5px;
+    margin: 5px auto; /* Reduced margin, auto for centering */
+    max-width: 80%; /* Narrower width */
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
-.st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
-    font-size: 9px; /* Further reduced from 10px */
+.miss-streak-text p { /* Custom class for miss streak text */
+    font-size: 10px !important; /* Adjusted size for miss streak */
+    margin-bottom: 2px !important; /* Reduced margin */
+    color: #FFC107; /* Warning color for miss streak */
+    font-weight: bold;
+}
+.st-emotion-cache-1f1d6zpt { /* Warning box */
+    background-color: #FFC10720; 
+    border-left: 2px solid #FFC107; 
+    color: #FFC107;
+    padding: 5px; 
+    margin-bottom: 5px; /* Reduced margin */
+    font-size: 9px;
+}
+.st-emotion-cache-1s04v0m { /* Error box */
+    background-color: #DC354520; 
+    border-left: 2px solid #DC3545; 
+    color: #DC3545;
+    padding: 5px; 
+    margin-bottom: 5px; /* Reduced margin */
+    font-size: 9px;
+}
+.st-emotion-cache-13ln4z2 { /* Info box */
+    background-color: #17A2B820; 
+    border-left: 2px solid #17A2B8; 
+    color: #17A2B8;
+    padding: 5px; 
+    margin-bottom: 5px; /* Reduced margin */
+    font-size: 9px;
 }
 
 
 .big-road-container {
     width: 100%;
     overflow-x: auto; /* Allows horizontal scrolling if many columns */
-    padding: 3px 0; /* Further reduced padding */
+    padding: 2px 0; /* Reduced padding */
     background: #1A1A1A; /* Slightly darker background for the road */
-    border-radius: 3px; /* Further reduced border-radius */
+    border-radius: 3px; /* Reduced border-radius */
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 80px; /* Further adjusted minimum height for the road */
+    min-height: 105px; /* Adjusted minimum height for 10 rows (10px cell + 0.5px margin * 9) */
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); /* Slightly smaller shadow */
 }
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 0.2px; /* Further reduced margin */
-    border-right: 1px solid rgba(255,255,255,0.02); /* Slightly lighter border */
-    padding-right: 0.2px; /* Further reduced padding */
+    margin-right: 0.1px; /* Reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.01); /* Lighter border */
+    padding-right: 0.1px; /* Reduced padding */
 }
 .big-road-cell {
-    width: 13px; /* Further reduced from 14px */
-    height: 13px; /* Further reduced from 14px */
+    width: 10px; /* Reduced from 13px for 10 rows */
+    height: 10px; /* Reduced from 13px for 10 rows */
     text-align: center;
-    line-height: 13px; /* Adjusted line-height for new size */
-    font-size: 9px; /* Further reduced from 10px */
-    margin-bottom: 0.1px; /* Further reduced margin */
+    line-height: 10px; /* Adjusted line-height for new size */
+    font-size: 7px; /* Reduced from 9px */
+    margin-bottom: 0.5px; /* Adjusted margin for better spacing */
     border-radius: 50%; /* Make cells round */
     display: flex;
     justify-content: center;
@@ -1451,62 +1489,62 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 5px; /* Further reduced from 6px */
+    font-size: 4px; /* Reduced from 5px */
     position: absolute;
     bottom: -0.5px; /* Adjusted position */
     right: -0.5px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 0px 0.75px; /* Further reduced padding */
+    padding: 0px 0.5px; /* Reduced padding */
     line-height: 1;
-    min-width: 8px; /* Ensure minimum width for single digit */
+    min-width: 7px; /* Ensure minimum width for single digit */
     text-align: center;
     box-shadow: 0 0.25px 0.5px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 4px; /* Further reduced from 5px */
+    font-size: 3px; /* Reduced from 4px */
     font-weight: bold;
     color: white;
     line-height: 1;
-    padding: 0.125px 0.75px; /* Further reduced padding */
-    border-radius: 0.75px; /* Further reduced border-radius */
+    padding: 0.1px 0.5px; /* Reduced padding */
+    border-radius: 0.5px; /* Reduced border-radius */
     z-index: 10;
     background-color: #4CAF50; /* Green for Natural */
-    top: -0.75px; /* Adjusted position */
-    right: -0.75px; /* Adjusted position */
+    top: -0.5px; /* Adjusted position */
+    right: -0.5px; /* Adjusted position */
 }
 
 /* Derived Road Styles */
 .derived-road-container {
     width: 100%;
     overflow-x: auto;
-    padding: 1.5px 0; /* Further reduced padding */
+    padding: 1px 0; /* Reduced padding */
     background: #1A1A1A;
-    border-radius: 3px; /* Further reduced border-radius */
+    border-radius: 3px; /* Reduced border-radius */
     white-space: nowrap;
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 35px; /* Further reduced height for derived roads */
+    min-height: 25px; /* Reduced height for derived roads */
     box-shadow: inset 0 0.75px 1.5px rgba(0,0,0,0.2); 
-    margin-top: 4px; /* Further reduced margin */
+    margin-top: 3px; /* Reduced margin */
 }
 .derived-road-column {
     display: inline-flex;
     flex-direction: column;
-    margin-right: 0.1px; /* Further reduced margin */
-    border-right: 1px solid rgba(255,255,255,0.01); /* Even lighter border */
-    padding-right: 0.1px; /* Further reduced padding */
+    margin-right: 0.1px; /* Reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.005); /* Even lighter border */
+    padding-right: 0.1px; /* Reduced padding */
 }
 .derived-road-cell {
-    width: 7px; /* Further reduced from 8px */
-    height: 7px; /* Further reduced from 8px */
+    width: 6px; /* Reduced from 7px */
+    height: 6px; /* Reduced from 7px */
     text-align: center;
-    line-height: 7px; /* Adjusted line-height */
-    font-size: 4px; /* Further reduced from 5px */
+    line-height: 6px; /* Adjusted line-height */
+    font-size: 3px; /* Reduced from 4px */
     margin-bottom: 0.03125px; /* Further reduced margin */
     border-radius: 50%;
     display: flex;
@@ -1522,11 +1560,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Button styling */
 .stButton>button {
     width: 100%;
-    border-radius: 4px; /* Further reduced border-radius */
-    font-size: 11px; /* Further reduced from 12px */
+    border-radius: 4px; /* Reduced border-radius */
+    font-size: 10px; /* Reduced from 11px */
     font-weight: bold;
-    padding: 5px 0; /* Further reduced padding */
-    margin-bottom: 5px; /* Further reduced margin */
+    padding: 4px 0; /* Reduced padding */
+    margin-bottom: 4px; /* Reduced margin */
     transition: all 0.2s ease-in-out;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
 }
@@ -1540,14 +1578,14 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_T button { background-color: #6C757D; color: white; border: none; }
 /* Checkbox styling adjustments */
 .stCheckbox > label {
-    padding: 3px 5px; /* Further reduced padding */
+    padding: 2px 4px; /* Reduced padding */
     border: 1px solid #495057;
-    border-radius: 4px; /* Further reduced border-radius */
+    border-radius: 3px; /* Reduced border-radius */
     background-color: #343A40;
     color: white;
-    font-size: 10px; /* Further reduced from 11px */
+    font-size: 9px; /* Reduced from 10px */
     font-weight: bold;
-    margin-bottom: 5px; /* Further reduced margin */
+    margin-bottom: 4px; /* Reduced margin */
     display: flex; 
     align-items: center;
     justify-content: center; 
@@ -1560,7 +1598,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 .stCheckbox > label > div:first-child { 
-    margin-right: 3px; /* Further reduced margin */
+    margin-right: 2px; /* Reduced margin */
 }
 /* Style for checked checkboxes */
 .stCheckbox > label[data-checked="true"] {
@@ -1579,83 +1617,88 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 
 /* Warning/Error messages */
-.st-emotion-cache-1f1d6zpt { 
+.st-emotion-cache-1f1d6zpt { /* Warning box */
     background-color: #FFC10720; 
-    border-left: 2px solid #FFC107; /* Further reduced border thickness */
+    border-left: 2px solid #FFC107; 
     color: #FFC107;
-    padding: 5px; /* Further reduced padding */
-    margin-bottom: 6px; /* Further reduced margin */
+    padding: 5px; 
+    margin-bottom: 5px; 
 }
 
-.st-emotion-cache-1s04v0m { 
+.st-emotion-cache-1s04v0m { /* Error box */
     background-color: #DC354520; 
-    border-left: 2px solid #DC3545; /* Further reduced border thickness */
+    border-left: 2px solid #DC3545; 
     color: #DC3545;
-    padding: 5px; /* Further reduced padding */
-    margin-bottom: 6px; /* Further reduced margin */
+    padding: 5px; 
+    margin-bottom: 5px; 
 }
 
-.st-emotion-cache-13ln4z2 { 
+.st-emotion-cache-13ln4z2 { /* Info box */
     background-color: #17A2B820; 
-    border-left: 2px solid #17A2B8; /* Further reduced border thickness */
+    border-left: 2px solid #17A2B8; 
     color: #17A2B8;
-    padding: 5px; /* Further reduced padding */
-    margin-bottom: 6px; /* Further reduced margin */
+    padding: 5px; 
+    margin-bottom: 5px; 
 }
 
 /* Accuracy by Module section */
 h3 { 
-    font-size: 8px !important; /* Further reduced from 9px */
-    margin-top: 5px !important; /* Further reduced margin */
-    margin-bottom: 0.25px !important; /* Further reduced margin */
+    font-size: 10px !important; /* Adjusted size */
+    margin-top: 5px !important; 
+    margin-bottom: 0.25px !important; 
+}
+h4 {
+    font-size: 9px !important; /* Adjusted size */
+    margin-top: 5px !important;
+    margin-bottom: 0.25px !important;
 }
 /* Target for the custom class used for accuracy items */
 .accuracy-item { 
-    font-size: 6px !important; /* Further reduced from 7px */
-    margin-bottom: 0.0625px !important; /* Further reduced margin */
+    font-size: 7px !important; /* Adjusted size */
+    margin-bottom: 0.0625px !important; 
 }
 
 /* Sniper message styling */
 .sniper-message {
     background-color: #4CAF50; 
     color: white;
-    padding: 5px; /* Further reduced padding */
-    border-radius: 4px; /* Further reduced border-radius */
+    padding: 5px; 
+    border-radius: 4px; 
     font-weight: bold;
     text-align: center;
-    margin-top: 7px; /* Further reduced margin */
-    margin-bottom: 7px; /* Further reduced margin */
+    margin-top: 5px; /* Reduced margin */
+    margin-bottom: 5px; /* Reduced margin */
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     animation: pulse 1.5s infinite; 
-    font-size: 11px; /* Further reduced from 12px */
+    font-size: 10px; /* Reduced from 11px */
 }
 
 /* NEW: Side Bet Sniper message styling */
 .side-bet-sniper-message {
     background-color: #007bff; 
     color: white;
-    padding: 3px; /* Further reduced padding */
-    border-radius: 2px; /* Further reduced border-radius */
+    padding: 3px; 
+    border-radius: 2px; 
     font-weight: bold;
     text-align: center;
-    margin-top: 5px; /* Further reduced margin */
-    margin-bottom: 5px; /* Further reduced margin */
+    margin-top: 3px; /* Reduced margin */
+    margin-bottom: 3px; /* Reduced margin */
     box-shadow: 0 0.75px 1.5px rgba(0, 0, 0, 0.2);
     animation: pulse 1.5s infinite; 
-    font-size: 9px; /* Further reduced from 10px */
+    font-size: 8px; /* Reduced from 9px */
 }
 
 
 @keyframes pulse {
     0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.001); opacity: 0.995; } /* Even less aggressive pulse */
+    50% { transform: scale(1.001); opacity: 0.995; } 
     100% { transform: scale(1); opacity: 1; }
 }
 
 
 hr {
-    border-top: 1px solid rgba(255,255,255,0.02); /* Even lighter border */
-    margin: 10px 0; /* Further reduced margin */
+    border-top: 1px solid rgba(255,255,255,0.05); /* Slightly more visible border */
+    margin: 5px 0; /* Reduced margin */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1801,10 +1844,9 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle</div>', unsafe_allow_html=True) 
-st.markdown('<div class="version-text">V10.4.3</div>', unsafe_allow_html=True) # Updated version to V10.4.3 and smaller
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.4.4</span></div>', unsafe_allow_html=True) 
 
-# --- Prediction Output Box (Main Outcome) - MOVED TO ABOVE BIG ROAD ---
+# --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
 st.markdown("<b>📍 คำแนะนำการเดิมพัน:</b>", unsafe_allow_html=True) 
 
@@ -1855,7 +1897,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
-st.markdown(f"<p class='miss-streak-text'>❌ แพ้ติดกัน: {miss} ครั้ง</p>", unsafe_allow_html=True) # Smaller text
+st.markdown(f"<div class='miss-streak-container'><p class='miss-streak-text'>❌ แพ้ติดกัน: {miss} ครั้ง</p></div>", unsafe_allow_html=True) # Smaller text
 if miss == 3:
     st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
 elif miss >= 6:
@@ -1868,7 +1910,8 @@ st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 history_results = st.session_state.oracle.history 
 
 if history_results:
-    max_row = 6
+    # Adjusted max_row to 10 for better fit on mobile
+    max_row = 10 
     columns = []
     current_col = []
     last_non_tie_result = None
@@ -1908,7 +1951,7 @@ if history_results:
     if current_col:
         columns.append(current_col)
 
-    MAX_DISPLAY_COLUMNS = 14 
+    MAX_DISPLAY_COLUMNS = 16 # Increased to 16 columns as requested
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:] 
 
@@ -2009,7 +2052,7 @@ else:
 
 # --- Control Button: Start New Shoe (MOVED TO BELOW DERIVED ROADS) ---
 st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<b>ควบคุม:</b>", unsafe_allow_html=True) # Added a header for control buttons
+# Removed "ควบคุม:" header as requested
 st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe)
 
 # --- Data Management ---
