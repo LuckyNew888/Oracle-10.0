@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.2.0 - Smart Recommendation Engine with Advanced Statistical & Professional Road Analysis - Ultra Compact UI)
+# streamlit_app.py (Oracle V10.4.0 - Smart Recommendation Engine - Lean Core)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -150,223 +150,16 @@ class TrendScanner:
 
         return None
 
-class TwoTwoPattern:
-    """
-    Predicts based on a specific 2-2 alternating pattern (e.g., PPBB -> P).
-    """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 4:
-            return None
-        
-        last4 = filtered_history[-4:]
-        if last4[0] == last4[1] and last4[2] == last4[3] and last4[0] != last4[2]:
-            return last4[0]
-        return None
-
-class SniperPattern:
-    """
-    A more aggressive pattern matching module, often looking for specific "sniper" setups.
-    """
-    def __init__(self):
-        self.known_patterns = {
-            "PBPB": "P", "BPBP": "B",
-            "PPBB": "P", "BBPP": "B",
-            "PPBPP": "P", "BBPBB": "B",
-            "PPPBBB": "B", "BBBPBB": "P", 
-            "PPPP": "P", "BBBB": "B",
-            "PBBP": "B", "BPPB": "P",
-            "PBBBP": "B", "BPBPP": "P", 
-            "PBBBP": "B", "BPBPP": "P", 
-            "PBPBPP": "P", "BPBPBB": "B", 
-            "PPPPB": "B", "BBBB P": "P" 
-        }
-
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 4: 
-            return None
-        
-        joined = "".join(filtered_history)
-        
-        for length in range(6, 3, -1): 
-            if len(joined) >= length:
-                current_pattern = joined[-length:]
-                if current_pattern in self.known_patterns:
-                    return self.known_patterns[current_pattern]
-        return None
-
-class FallbackModule:
-    """
-    Provides a more strategic prediction if no other module can make a prediction,
-    especially during a miss streak.
-    V8.8.0: Enhanced to be more adaptive during high miss streaks.
-    """
-    def predict(self, history: List[RoundResult], miss_streak: int) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 2:
-            return random.choice(["P", "B"]) # Fallback to random if not enough history
-
-        last_outcome = filtered_history[-1]
-        second_last_outcome = filtered_history[-2]
-
-        if miss_streak >= 4: # More aggressive fallback when miss streak is high
-            # If it's a streak (e.g., PP or BB), try to chop it more aggressively
-            if last_outcome == second_last_outcome:
-                return _opposite_outcome(last_outcome)
-            # If it's alternating (e.g., PB or BP), try to continue the alternation
-            else:
-                return last_outcome
-        
-        # Default behavior for lower miss streaks
-        if last_outcome == second_last_outcome: # It's a streak (e.g., PP or BB)
-            return _opposite_outcome(last_outcome) # Predict to chop the streak (e.g., for PP, predict B)
-        else: # It's alternating (e.g., PB or BP)
-            return last_outcome # Predict to continue the alternating pattern (e.g., for PB, predict P)
-
-class ChopDetector:
-    """
-    Specifically designed to detect "chop" patterns (long streak broken by opposite).
-    When a chop is detected, it predicts the outcome that broke the streak.
-    """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        
-        if len(filtered_history) >= 6: 
-            last_6 = filtered_history[-6:]
-            if last_6[0] == last_6[1] == last_6[2] == last_6[3] == last_6[4] and last_6[4] != last_6[5]:
-                return last_6[5] 
-        
-        if len(filtered_history) >= 5: 
-            last_5 = filtered_history[-5:]
-            if last_5[0] == last_5[1] == last_5[2] == last_5[3] and last_5[3] != last_5[4]:
-                return last_5[4] 
-
-        if len(filtered_history) >= 3:
-            if filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
-                return filtered_history[-2] 
-
-        return None
-
-class DragonTailDetector:
-    """
-    Detects a 'Dragon Tail' pattern (e.g., PPPPBP -> P or BBBBPB -> B)
-    where a long streak is broken by one opposite, then resumes.
-    """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 6: # Need at least 5 for streak + 1 opposite
-            return None
-
-        # Check for PPPPBP (4 P's, then B, then P)
-        if filtered_history[-6:] == ["P", "P", "P", "P", "B", "P"]:
-            return "P"
-        # Check for BBBBPB (4 B's, then P, then B)
-        if filtered_history[-6:] == ["B", "B", "B", "B", "P", "B"]:
-            return "B"
-        
-        # Consider shorter versions too, like PPPBP or BBBPB
-        if len(filtered_history) >= 5:
-            # Check for PPPBP (3 P's, then B, then P)
-            if filtered_history[-5:] == ["P", "P", "P", "B", "P"]:
-                return "P"
-            # Check for BBBPB (3 B's, then P, then B)
-            if filtered_history[-5:] == ["B", "B", "B", "P", "B"]:
-                return "B"
-
-        return None
-
-class AdvancedChopPredictor:
-    """
-    Predicts a 'chop' (break) after established long streaks (Dragon) or alternating patterns (Ping-Pong).
-    V8.1.5: Enhanced to specifically handle PPPBBB/BBBPPP ("สามตัวตัด") patterns.
-    """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        
-        # V8.1.5: Specific handling for PPPBBB / BBBPPP ("สามตัวตัด")
-        if len(filtered_history) >= 6:
-            last_6 = filtered_history[-6:]
-            if last_6 == ["P", "P", "P", "B", "B", "B"]:
-                return "B" # Predict B after PPPBBB
-            if last_6 == ["B", "B", "B", "P", "P", "P"]:
-                return "P" # Predict P after BBBPPP
-
-        # --- Dragon Chop Detection ---
-        # Look for a streak of at least 4, followed by an opposite, and predict that opposite
-        # Example: PPPPP B -> Predict B
-        for streak_len in range(6, 3, -1): # Check for streaks of 6 down to 4
-            if len(filtered_history) >= streak_len + 1:
-                recent_segment = filtered_history[-(streak_len + 1):]
-                
-                # Check if the first 'streak_len' elements are the same
-                if all(x == recent_segment[0] for x in recent_segment[:streak_len]):
-                    # Check if the last element is different from the streak
-                    if recent_segment[-1] != recent_segment[0]:
-                        # This means a streak was broken by the last outcome.
-                        # We predict that the *next* outcome will be the same as the one that broke the streak.
-                        # Example: P P P P P B. The streak was P, broken by B. We predict B for the next one.
-                        return recent_segment[-1] 
-
-        # --- Ping-Pong Chop Detection ---
-        # Look for a ping-pong pattern of at least 5, followed by a repeat, and predict the repeat
-        # Example: P B P B P P -> Predict P
-        # Example: B P B P B B -> Predict B
-        if len(filtered_history) >= 6: # Need at least 6 for PBPBP P or BPBPB B
-            last_6 = filtered_history[-6:]
-            # Check for PBPBP P
-            if last_6 == ["P", "B", "P", "B", "P", "P"]:
-                return "P"
-            # Check for BPBPB B
-            if last_6 == ["B", "P", "B", "P", "B", "B"]:
-                return "B"
-        
-        if len(filtered_history) >= 5: # Check for shorter ping-pong chop
-            last_5 = filtered_history[-5:]
-            # Check for PBP P (Ping-pong of 4, then a repeat)
-            if last_5 == ["P", "B", "P", "B", "P"]: # This is a ping-pong, not a chop
-                pass # Do nothing, let other modules handle
-            elif last_5 == ["B", "P", "B", "P", "B"]: # This is a ping-pong, not a chop
-                pass # Do nothing, let other modules handle
-            elif len(filtered_history) >= 4: # Check for PBP P or BPB B
-                last_4 = filtered_history[-4:]
-                if last_4 == ["P", "B", "P", "P"]: # PBPP -> Predict P (Chop from ping-pong)
-                    return "P"
-                if last_4 == ["B", "P", "B", "B"]: # BPBB -> Predict B (Chop from ping-pong)
-                    return "B"
-
-
-        return None
-
-class ThreeChopPredictor:
-    """
-    V8.3.3: Dedicated module for "Three-Chop" pattern (XXX YYY).
-    Predicts the opposite outcome after 3 consecutive identical outcomes.
-    """
-    def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 3:
-            return None
-        
-        last_three = filtered_history[-3:]
-        if last_three[0] == last_three[1] == last_three[2]:
-            return _opposite_outcome(last_three[0]) # Predict the chop
-        return None
-
-# --- Derived Road Analyzer (V8.8.0 Robustness, V8.9.0 Enhanced for Visualization) ---
+# --- Derived Road Analyzer ---
 class DerivedRoadAnalyzer:
     """
     Analyzes Big Road to derive Big Eye Boy, Small Road, and Cockroach Pig patterns
     and makes predictions based on their trends.
-    V8.8.0: Further robustness improvements for derived road calculation.
-    V8.9.0: Enhanced to provide the full derived road matrix for visualization,
-            and more consistent "simulated" predictions.
     """
     def _build_big_road_matrix(self, history_pb: List[MainOutcome]) -> List[List[Optional[MainOutcome]]]:
         """
         Builds a matrix representation of the Big Road.
         Each column represents a streak.
-        V8.8.0: Ensures matrix is built correctly for all valid histories.
         """
         if not history_pb:
             return []
@@ -398,7 +191,6 @@ class DerivedRoadAnalyzer:
     def _get_big_eye_boy_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
         Calculates Big Eye Boy value for a given cell (col_idx, row_idx) in the Big Road matrix.
-        V8.8.0: Refined logic for more consistent predictions.
         """
         # Ensure the current cell (col_idx, row_idx) itself is valid and not None
         if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
@@ -422,7 +214,7 @@ class DerivedRoadAnalyzer:
             else:
                 return "P" # Blue (Chops pattern)
         
-        # V8.8.0: Additional check for very short columns (e.g., singletons)
+        # Additional check for very short columns (e.g., singletons)
         if row_idx == 0 and col_idx >= 2 and len(matrix[col_idx-2]) == 1:
             return "P" # Blue (indicates a chop/alternation in the derived road)
         
@@ -431,7 +223,6 @@ class DerivedRoadAnalyzer:
     def _get_small_road_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
         Calculates Small Road value for a given cell (col_idx, row_idx) in the Big Road matrix.
-        V8.8.0: Refined logic for more consistent predictions.
         """
         # Ensure the current cell (col_idx, row_idx) itself is valid and not None
         if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
@@ -455,7 +246,7 @@ class DerivedRoadAnalyzer:
             else:
                 return "P" # Blue (Chops pattern)
 
-        # V8.8.0: Additional check for very short columns (e.g., singletons)
+        # Additional check for very short columns (e.g., singletons)
         if row_idx == 0 and col_idx >= 1 and len(matrix[col_idx-1]) == 1:
             return "P" # Blue (indicates a chop/alternation in the derived road)
 
@@ -464,7 +255,6 @@ class DerivedRoadAnalyzer:
     def _get_cockroach_pig_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
         Calculates Cockroach Pig value for a given cell (col_idx, row_idx) in the Big Road matrix.
-        V8.8.0: Refined logic for more consistent predictions.
         """
         # Ensure the current cell (col_idx, row_idx) itself is valid and not None
         if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
@@ -488,7 +278,7 @@ class DerivedRoadAnalyzer:
             else:
                 return "P" # Blue (Chops pattern)
 
-        # V8.8.0: Additional check for very short columns (e.g., singletons)
+        # Additional check for very short columns (e.g., singletons)
         if row_idx == 0 and col_idx >= 1 and len(matrix[col_idx-1]) == 1: 
             return "P" # Blue (indicates a chop/alternation in the derived road)
         
@@ -557,7 +347,6 @@ class DerivedRoadAnalyzer:
     def get_full_derived_road_matrices(self, history: List[RoundResult]) -> Dict[str, List[List[Optional[MainOutcome]]]]:
         """
         Generates the full derived road matrices for visualization.
-        V8.9.0: New method to get the actual derived road values, not just predictions.
         """
         history_pb = _get_main_outcome_history(history)
         if len(history_pb) < 4: # Need enough history to start drawing derived roads
@@ -601,7 +390,7 @@ class DerivedRoadAnalyzer:
             "CockroachPigMatrix": cockroach_pig_matrix
         }
 
-# --- NEW: Statistical Analyzer (V10.0.0) ---
+# --- Statistical Analyzer ---
 class StatisticalAnalyzer:
     """
     Analyzes sequences of past outcomes to predict the next outcome based on conditional probabilities.
@@ -828,8 +617,6 @@ class AdaptiveScorer:
     Calculates the final prediction and its confidence based on module predictions
     and their historical accuracy, with adaptive weighting.
     This scorer is primarily for main P/B outcomes.
-    V9.0.0: Re-calibrated for direct "Smart Recommendation" output.
-    V10.0.0: Incorporates StatisticalAnalyzer predictions.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -859,23 +646,7 @@ class AdaptiveScorer:
 
             weight = (recent_norm * blend_recent_ratio) + (all_time_norm * (1 - blend_recent_ratio))
             
-            if name == "AdvancedChop" and predictions.get(name) is not None:
-                filtered_history = _get_main_outcome_history(history)
-                if len(filtered_history) >= 6:
-                    last_6 = filtered_history[-6:]
-                    if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
-                        weight += 0.2 
-                    else:
-                        weight += 0.1 
-            elif name == "ChopDetector" and predictions.get(name) is not None:
-                weight += 0.1 
-            
-            if name == "ThreeChop" and predictions.get(name) is not None:
-                if choppiness_rate > 0.4: 
-                    weight *= 1.5 
-                else:
-                    weight *= 1.2 
-            
+            # Simplified weighting logic after module reduction
             if name in ["BigEyeBoy", "SmallRoad", "CockroachPig"] and predictions.get(name) is not None:
                 base_derived_weight = 0.8 
                 if choppiness_rate > 0.6: 
@@ -885,26 +656,26 @@ class AdaptiveScorer:
                 else: 
                     weight += base_derived_weight * 1.2
             
-            # V8.8.0: Further refined Dynamic module weighting based on choppiness
-            if choppiness_rate > 0.7: 
-                if name in ["ChopDetector", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"]: 
+            # Dynamic module weighting based on choppiness
+            if choppiness_rate > 0.6: # More choppy
+                if name in ["BigEyeBoy", "SmallRoad", "CockroachPig"]: 
                     weight *= 1.3 
-                elif name in ["Trend", "Rule", "Pattern", "Sniper", "Statistical"]: 
-                    weight *= 0.6 
-            elif choppiness_rate < 0.3: 
-                if name in ["Trend", "Rule", "Pattern", "Sniper", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"]: 
+                elif name in ["Trend", "Rule", "Pattern", "Statistical"]: 
+                    weight *= 0.8 
+            elif choppiness_rate < 0.4: # More streaky
+                if name in ["Trend", "Rule", "Pattern", "Statistical"]: 
                     weight *= 1.3 
-                elif name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: 
-                    weight *= 0.6 
-            elif choppiness_rate >= 0.3 and choppiness_rate <= 0.7: 
-                if name in ["BigEyeBoy", "SmallRoad", "CockroachPig", "ChopDetector", "AdvancedChop", "ThreeChop", "Statistical"]: 
+                elif name in ["BigEyeBoy", "SmallRoad", "CockroachPig"]: 
+                    weight *= 0.8 
+            else: # Moderate choppiness
+                if name in ["BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"]: 
                     weight *= 1.1 
                 elif name == "Fallback":
                     weight *= 1.05 
                 else:
                     weight *= 0.95 
             
-            # V10.0.0: Specific weighting for Statistical module
+            # Specific weighting for Statistical module
             if name == "Statistical" and predictions.get(name) is not None:
                 if choppiness_rate > 0.5: # Give more weight in balanced/choppy scenarios
                     weight *= 1.2
@@ -933,16 +704,16 @@ class AdaptiveScorer:
             if pred == best_prediction_outcome and name != "Fallback":
                 consensus_count += 1
         
-        if consensus_count >= 7:
+        if consensus_count >= 4: # Adjusted consensus count for fewer modules
             raw_confidence *= 1.15 
-        elif consensus_count >= 4:
+        elif consensus_count >= 2:
             raw_confidence *= 1.08 
         elif consensus_count >= 1:
             raw_confidence *= 1.02 
 
         confidence = min(int(raw_confidence), 95)
 
-        # V8.7.0: Dynamic Confidence Threshold based on Choppiness Rate
+        # Dynamic Confidence Threshold based on Choppiness Rate
         if choppiness_rate > 0.75: 
             confidence = max(50, int(confidence * 0.70)) 
         elif choppiness_rate > 0.6: 
@@ -1001,35 +772,10 @@ class AdaptiveScorer:
             if last_6 == "PBPBPB" or last_6 == "BPBPBP":
                 return "ปิงปองยาว"
 
-        # Check for specific chop patterns (สามตัวตัด, มังกรตัด, ปิงปองตัด)
-        if "AdvancedChop" in predictions and predictions["AdvancedChop"] is not None:
-            if len(filtered_history) >= 6:
-                last_6 = filtered_history[-6:]
-                if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
-                    return "สามตัวตัด"
-            if len(filtered_history) >= 5:
-                # Check for Dragon Chop pattern: XXXXXY
-                if all(x == filtered_history[-6] for x in filtered_history[-6:-1]) and filtered_history[-1] != filtered_history[-6]:
-                    return "มังกรตัด"
-            if len(filtered_history) >= 4:
-                # Check for Ping-Pong Chop pattern: XYX X
-                if filtered_history[-4] != filtered_history[-3] and filtered_history[-3] == filtered_history[-2] and filtered_history[-2] == filtered_history[-1]:
-                    return "ปิงปองตัด"
-
-        # Check for "Three-Chop" specifically (PPP -> B or BBB -> P)
-        if "ThreeChop" in predictions and predictions["ThreeChop"] is not None:
-            if len(filtered_history) >= 3:
-                last_three = "".join(filtered_history[-3:])
-                if last_three == "PPP" or last_three == "BBB":
-                    return "ตัดสาม"
-
-        # Other common patterns
+        # Other common patterns (simplified list)
         common_patterns = {
             "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
             "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", 
-            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด", 
-            "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", 
             "PBBP": "คู่สลับ", "BPPB": "คู่สลับ" 
         }
         for length in range(6, 2, -1): 
@@ -1051,29 +797,23 @@ class OracleBrain:
 
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
+            "Rule": [], "Pattern": [], "Trend": [], "Fallback": [], 
             "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] 
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
+            "Rule": [], "Pattern": [], "Trend": [], "Fallback": [], 
             "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [], "Statistical": [] 
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
-        # Initialize all prediction modules (P/B)
+        # Initialize all prediction modules (P/B) - Simplified list
         self.rule_engine = RuleEngine()
         self.pattern_analyzer = PatternAnalyzer()
         self.trend_scanner = TrendScanner()
-        self.two_two_pattern = TwoTwoPattern()
-        self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
-        self.chop_detector = ChopDetector() 
-        self.dragon_tail_detector = DragonTailDetector() 
-        self.advanced_chop_predictor = AdvancedChopPredictor() 
-        self.three_chop_predictor = ThreeChopPredictor() 
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
         self.statistical_analyzer = StatisticalAnalyzer() 
 
@@ -1100,13 +840,7 @@ class OracleBrain:
             "Rule": self.rule_engine.predict(self.history),
             "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate_for_trend), 
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), 
-            "2-2 Pattern": self.two_two_pattern.predict(self.history),
-            "Sniper": self.sniper_pattern.predict(self.history), 
             "Fallback": self.fallback_module.predict(self.history, current_miss_streak), 
-            "ChopDetector": self.chop_detector.predict(self.history),
-            "DragonTail": self.dragon_tail_detector.predict(self.history),
-            "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
-            "ThreeChop": self.three_chop_predictor.predict(self.history),
             "Statistical": self.statistical_analyzer.predict(self.history) 
         }
         
@@ -1135,7 +869,7 @@ class OracleBrain:
         self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
         
-        # V10.0.0: Update StatisticalAnalyzer's internal history
+        # Update StatisticalAnalyzer's internal history
         self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history))
 
         self._trim_global_logs() 
@@ -1157,7 +891,7 @@ class OracleBrain:
         if self.tie_module_prediction_log_current_shoe:
             self.tie_module_prediction_log_current_shoe.pop()
         
-        # V10.0.0: Re-initialize StatisticalAnalyzer to clear its history (simpler than reverse-updating)
+        # Re-initialize StatisticalAnalyzer to clear its history (simpler than reverse-updating)
         self.statistical_analyzer = StatisticalAnalyzer()
         self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history)) # Rebuild from current history
 
@@ -1182,7 +916,7 @@ class OracleBrain:
         self.last_module = None
         self.show_initial_wait_message = True
         
-        # V10.0.0: Reset StatisticalAnalyzer
+        # Reset StatisticalAnalyzer
         self.statistical_analyzer = StatisticalAnalyzer()
 
     def start_new_shoe(self):
@@ -1202,7 +936,7 @@ class OracleBrain:
         self.last_module = None
         self.show_initial_wait_message = True
         
-        # V10.0.0: Reset StatisticalAnalyzer for new shoe
+        # Reset StatisticalAnalyzer for new shoe
         self.statistical_analyzer = StatisticalAnalyzer()
 
 
@@ -1244,7 +978,7 @@ class OracleBrain:
         else:
             st.warning("Skipping import for invalid tie module accuracy log.")
 
-        # V10.0.0: Import statistical analyzer data
+        # Import statistical analyzer data
         if "statistical_analyzer_sequence_outcomes" in imported_data and isinstance(imported_data["statistical_analyzer_sequence_outcomes"], dict):
             self.statistical_analyzer.sequence_outcomes = imported_data["statistical_analyzer_sequence_outcomes"]
             st.success("ข้อมูลสถิติ All-Time ถูกอัปโหลดเรียบร้อยแล้ว!")
@@ -1301,7 +1035,7 @@ class OracleBrain:
         Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] 
+        main_modules = ["Rule", "Pattern", "Trend", "Fallback", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] 
         for module_name in main_modules:
             if module_name in self.module_accuracy_global_log:
                 accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
@@ -1317,7 +1051,7 @@ class OracleBrain:
         Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] 
+        main_modules = ["Rule", "Pattern", "Trend", "Fallback", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] 
         for module_name in main_modules:
             if module_name in self.individual_module_prediction_log_current_shoe:
                 accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
@@ -1330,12 +1064,12 @@ class OracleBrain:
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical", "Tie"] 
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "Fallback", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical", "Tie"] 
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] and v > 0} 
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "BigEyeBoy", "SmallRoad", "CockroachPig", "Statistical"] and v > 0} 
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -1358,12 +1092,6 @@ class OracleBrain:
             "Rule": self.rule_engine,
             "Pattern": self.pattern_analyzer,
             "Trend": self.trend_scanner, 
-            "2-2 Pattern": self.two_two_pattern,
-            "Sniper": self.sniper_pattern,
-            "ChopDetector": self.chop_detector,
-            "DragonTail": self.dragon_tail_detector, 
-            "AdvancedChop": self.advanced_chop_predictor,
-            "ThreeChop": self.three_chop_predictor,
             "BigEyeBoy": self.derived_road_analyzer, 
             "SmallRoad": self.derived_road_analyzer,
             "CockroachPig": self.derived_road_analyzer,
@@ -1449,7 +1177,6 @@ class OracleBrain:
         """
         Generates the next predictions for main outcome and side bets,
         along with main outcome's source, confidence, miss streak, and Sniper opportunity flag.
-        V10.0.0: Returns a direct recommendation text, incorporating statistical analysis.
         """
         main_history_filtered_for_pb = _get_main_outcome_history(self.history)
         p_count = main_history_filtered_for_pb.count("P")
@@ -1488,13 +1215,7 @@ class OracleBrain:
             "Rule": self.rule_engine.predict(self.history),
             "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), 
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
-            "2-2 Pattern": self.two_two_pattern.predict(self.history),
-            "Sniper": self.sniper_pattern.predict(self.history), 
             "Fallback": self.fallback_module.predict(self.history, current_miss_streak), 
-            "ChopDetector": self.chop_detector.predict(self.history),
-            "DragonTail": self.dragon_tail_detector.predict(self.history),
-            "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
-            "ThreeChop": self.three_chop_predictor.predict(self.history),
             "Statistical": self.statistical_analyzer.predict(self.history) 
         }
         
@@ -1512,7 +1233,7 @@ class OracleBrain:
             if final_prediction_main is not None and confidence_main is not None:
                 confidence_main = max(RECOMMEND_BET_CONFIDENCE_THRESHOLD, int(confidence_main * 0.85)) 
 
-        # V10.0.0: Logic to determine recommendation text
+        # Logic to determine recommendation text
         if current_miss_streak >= 6:
             recommendation_text = "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่"
             final_prediction_main = None 
@@ -1552,7 +1273,7 @@ class OracleBrain:
                     if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD: 
                         high_accuracy_contributing_count += 1
                 
-                if high_accuracy_contributing_count >= 3: 
+                if high_accuracy_contributing_count >= 2: # Adjusted for fewer modules
                     is_sniper_opportunity_main = True
         # --- END Main Outcome Sniper Logic ---
 
@@ -1604,7 +1325,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.2.0", layout="centered") # Updated version to V10.2.0
+st.set_page_config(page_title="🔮 Oracle V10.4.0", layout="centered") # Updated version to V10.4.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1616,67 +1337,67 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     font-family: 'Sarabun', sans-serif !important;
 }
 .big-title {
-    font-size: 20px; /* Further reduced from 24px */
+    font-size: 16px; /* Further reduced from 18px */
     text-align: center;
     font-weight: bold;
     color: #FF4B4B; /* Streamlit's default primary color */
-    margin-bottom: 10px; /* Further reduced margin */
+    margin-bottom: 6px; /* Further reduced margin */
 }
 .predict-box {
-    padding: 10px; /* Further reduced from 12px */
+    padding: 7px; /* Further reduced from 8px */
     background-color: #262730; /* Darker background for the box */
-    border-radius: 8px; /* Further reduced border-radius */
+    border-radius: 5px; /* Further reduced border-radius */
     color: white;
-    margin-bottom: 10px; /* Further reduced margin */
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
+    margin-bottom: 7px; /* Further reduced margin */
+    box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
     text-align: center; /* Center content inside prediction box */
 }
 .predict-box h2 {
-    margin: 6px 0; /* Further reduced margin */
-    font-size: 26px; /* Further reduced from 32px */
+    margin: 4px 0; /* Further reduced margin */
+    font-size: 20px; /* Further reduced from 22px */
     font-weight: bold;
 }
 .predict-box b {
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 11px; /* Further reduced from 12px */
+    font-size: 9px; /* Further reduced from 10px */
     color: #BBBBBB;
 }
 
 /* Miss Streak warning text */
 .st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
-    font-size: 11px; /* Further reduced from 12px */
+    font-size: 9px; /* Further reduced from 10px */
 }
 
 
 .big-road-container {
     width: 100%;
     overflow-x: auto; /* Allows horizontal scrolling if many columns */
-    padding: 5px 0; /* Further reduced padding */
+    padding: 3px 0; /* Further reduced padding */
     background: #1A1A1A; /* Slightly darker background for the road */
-    border-radius: 5px; /* Further reduced border-radius */
+    border-radius: 3px; /* Further reduced border-radius */
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 100px; /* Further adjusted minimum height for the road */
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.3); /* Slightly smaller shadow */
+    min-height: 80px; /* Further adjusted minimum height for the road */
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); /* Slightly smaller shadow */
 }
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 0.5px; /* Further reduced margin */
-    border-right: 1px solid rgba(255,255,255,0.05); /* Slightly lighter border */
-    padding-right: 0.5px; /* Further reduced padding */
+    margin-right: 0.2px; /* Further reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.02); /* Slightly lighter border */
+    padding-right: 0.2px; /* Further reduced padding */
 }
 .big-road-cell {
-    width: 16px; /* Further reduced from 18px */
-    height: 16px; /* Further reduced from 18px */
+    width: 13px; /* Further reduced from 14px */
+    height: 13px; /* Further reduced from 14px */
     text-align: center;
-    line-height: 16px; /* Adjusted line-height for new size */
-    font-size: 11px; /* Further reduced from 12px */
-    margin-bottom: 0.25px; /* Further reduced margin */
+    line-height: 13px; /* Adjusted line-height for new size */
+    font-size: 9px; /* Further reduced from 10px */
+    margin-bottom: 0.1px; /* Further reduced margin */
     border-radius: 50%; /* Make cells round */
     display: flex;
     justify-content: center;
@@ -1690,63 +1411,63 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 7px; /* Further reduced from 8px */
+    font-size: 5px; /* Further reduced from 6px */
     position: absolute;
-    bottom: -1px; /* Adjusted position */
-    right: -1px; /* Adjusted position */
+    bottom: -0.5px; /* Adjusted position */
+    right: -0.5px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 0px 1.5px; /* Further reduced padding */
+    padding: 0px 0.75px; /* Further reduced padding */
     line-height: 1;
-    min-width: 10px; /* Ensure minimum width for single digit */
+    min-width: 8px; /* Ensure minimum width for single digit */
     text-align: center;
-    box-shadow: 0 0.5px 1px rgba(0,0,0,0.2); /* Slightly smaller shadow */
+    box-shadow: 0 0.25px 0.5px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 6px; /* Further reduced from 7px */
+    font-size: 4px; /* Further reduced from 5px */
     font-weight: bold;
     color: white;
     line-height: 1;
-    padding: 0.5px 1.5px; /* Further reduced padding */
-    border-radius: 2px; /* Further reduced border-radius */
+    padding: 0.125px 0.75px; /* Further reduced padding */
+    border-radius: 0.75px; /* Further reduced border-radius */
     z-index: 10;
     background-color: #4CAF50; /* Green for Natural */
-    top: -1.5px; /* Adjusted position */
-    right: -1.5px; /* Adjusted position */
+    top: -0.75px; /* Adjusted position */
+    right: -0.75px; /* Adjusted position */
 }
 
 /* Derived Road Styles */
 .derived-road-container {
     width: 100%;
     overflow-x: auto;
-    padding: 3px 0; /* Further reduced padding */
+    padding: 1.5px 0; /* Further reduced padding */
     background: #1A1A1A;
-    border-radius: 5px; /* Further reduced border-radius */
+    border-radius: 3px; /* Further reduced border-radius */
     white-space: nowrap;
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 50px; /* Further reduced height for derived roads */
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.2); 
-    margin-top: 6px; /* Further reduced margin */
+    min-height: 35px; /* Further reduced height for derived roads */
+    box-shadow: inset 0 0.75px 1.5px rgba(0,0,0,0.2); 
+    margin-top: 4px; /* Further reduced margin */
 }
 .derived-road-column {
     display: inline-flex;
     flex-direction: column;
-    margin-right: 0.25px; /* Further reduced margin */
-    border-right: 1px solid rgba(255,255,255,0.02); /* Lighter border */
-    padding-right: 0.25px; /* Further reduced padding */
+    margin-right: 0.1px; /* Further reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.01); /* Even lighter border */
+    padding-right: 0.1px; /* Further reduced padding */
 }
 .derived-road-cell {
-    width: 9px; /* Further reduced from 10px */
-    height: 9px; /* Further reduced from 10px */
+    width: 7px; /* Further reduced from 8px */
+    height: 7px; /* Further reduced from 8px */
     text-align: center;
-    line-height: 9px; /* Adjusted line-height */
-    font-size: 6px; /* Further reduced from 7px */
-    margin-bottom: 0.125px; /* Further reduced margin */
+    line-height: 7px; /* Adjusted line-height */
+    font-size: 4px; /* Further reduced from 5px */
+    margin-bottom: 0.03125px; /* Further reduced margin */
     border-radius: 50%;
     display: flex;
     justify-content: center;
@@ -1761,17 +1482,17 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Button styling */
 .stButton>button {
     width: 100%;
-    border-radius: 6px; /* Further reduced border-radius */
-    font-size: 14px; /* Further reduced from 16px */
+    border-radius: 4px; /* Further reduced border-radius */
+    font-size: 11px; /* Further reduced from 12px */
     font-weight: bold;
-    padding: 7px 0; /* Further reduced padding */
-    margin-bottom: 7px; /* Further reduced margin */
+    padding: 5px 0; /* Further reduced padding */
+    margin-bottom: 5px; /* Further reduced margin */
     transition: all 0.2s ease-in-out;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
 }
 .stButton>button:hover {
-    transform: translateY(-1px); 
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2); 
+    transform: translateY(-0.25px); /* Reduced transform */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); 
 }
 /* Specific button colors */
 #btn_P button { background-color: #007BFF; color: white; border: none; }
@@ -1779,14 +1500,14 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_T button { background-color: #6C757D; color: white; border: none; }
 /* Checkbox styling adjustments */
 .stCheckbox > label {
-    padding: 5px 7px; /* Further reduced padding */
+    padding: 3px 5px; /* Further reduced padding */
     border: 1px solid #495057;
-    border-radius: 6px; /* Further reduced border-radius */
+    border-radius: 4px; /* Further reduced border-radius */
     background-color: #343A40;
     color: white;
-    font-size: 12px; /* Further reduced from 13px */
+    font-size: 10px; /* Further reduced from 11px */
     font-weight: bold;
-    margin-bottom: 7px; /* Further reduced margin */
+    margin-bottom: 5px; /* Further reduced margin */
     display: flex; 
     align-items: center;
     justify-content: center; 
@@ -1795,11 +1516,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 .stCheckbox > label:hover {
     background-color: #495057;
-    transform: translateY(-1px);
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+    transform: translateY(-0.25px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 .stCheckbox > label > div:first-child { 
-    margin-right: 5px; /* Further reduced margin */
+    margin-right: 3px; /* Further reduced margin */
 }
 /* Style for checked checkboxes */
 .stCheckbox > label[data-checked="true"] {
@@ -1820,58 +1541,43 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Warning/Error messages */
 .st-emotion-cache-1f1d6zpt { 
     background-color: #FFC10720; 
-    border-left: 4px solid #FFC107; /* Reduced border thickness */
+    border-left: 2px solid #FFC107; /* Further reduced border thickness */
     color: #FFC107;
-    padding: 7px; /* Further reduced padding */
-    margin-bottom: 8px; /* Further reduced margin */
+    padding: 5px; /* Further reduced padding */
+    margin-bottom: 6px; /* Further reduced margin */
 }
 
 .st-emotion-cache-1s04v0m { 
     background-color: #DC354520; 
-    border-left: 4px solid #DC3545; /* Reduced border thickness */
+    border-left: 2px solid #DC3545; /* Further reduced border thickness */
     color: #DC3545;
-    padding: 7px; /* Further reduced padding */
-    margin-bottom: 8px; /* Further reduced margin */
+    padding: 5px; /* Further reduced padding */
+    margin-bottom: 6px; /* Further reduced margin */
 }
 
 .st-emotion-cache-13ln4z2 { 
     background-color: #17A2B820; 
-    border-left: 4px solid #17A2B8; /* Reduced border thickness */
+    border-left: 2px solid #17A2B8; /* Further reduced border thickness */
     color: #17A2B8;
-    padding: 7px; /* Further reduced padding */
-    margin-bottom: 8px; /* Further reduced margin */
+    padding: 5px; /* Further reduced padding */
+    margin-bottom: 6px; /* Further reduced margin */
 }
 
 /* Accuracy by Module section */
 h3 { 
-    font-size: 10px !important; /* Further reduced from 11px */
-    margin-top: 7px !important; /* Further reduced margin */
-    margin-bottom: 1px !important; /* Further reduced margin */
+    font-size: 8px !important; /* Further reduced from 9px */
+    margin-top: 5px !important; /* Further reduced margin */
+    margin-bottom: 0.25px !important; /* Further reduced margin */
 }
 /* Target for the custom class used for accuracy items */
 .accuracy-item { 
-    font-size: 8px !important; /* Further reduced from 9px */
-    margin-bottom: 0.25px !important; /* Further reduced margin */
+    font-size: 6px !important; /* Further reduced from 7px */
+    margin-bottom: 0.0625px !important; /* Further reduced margin */
 }
 
 /* Sniper message styling */
 .sniper-message {
     background-color: #4CAF50; 
-    color: white;
-    padding: 7px; /* Further reduced padding */
-    border-radius: 6px; /* Further reduced border-radius */
-    font-weight: bold;
-    text-align: center;
-    margin-top: 10px; /* Further reduced margin */
-    margin-bottom: 10px; /* Further reduced margin */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    animation: pulse 1.5s infinite; 
-    font-size: 13px; /* Further reduced from 15px */
-}
-
-/* NEW: Side Bet Sniper message styling */
-.side-bet-sniper-message {
-    background-color: #007bff; 
     color: white;
     padding: 5px; /* Further reduced padding */
     border-radius: 4px; /* Further reduced border-radius */
@@ -1879,22 +1585,37 @@ h3 {
     text-align: center;
     margin-top: 7px; /* Further reduced margin */
     margin-bottom: 7px; /* Further reduced margin */
-    box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     animation: pulse 1.5s infinite; 
     font-size: 11px; /* Further reduced from 12px */
+}
+
+/* NEW: Side Bet Sniper message styling */
+.side-bet-sniper-message {
+    background-color: #007bff; 
+    color: white;
+    padding: 3px; /* Further reduced padding */
+    border-radius: 2px; /* Further reduced border-radius */
+    font-weight: bold;
+    text-align: center;
+    margin-top: 5px; /* Further reduced margin */
+    margin-bottom: 5px; /* Further reduced margin */
+    box-shadow: 0 0.75px 1.5px rgba(0, 0, 0, 0.2);
+    animation: pulse 1.5s infinite; 
+    font-size: 9px; /* Further reduced from 10px */
 }
 
 
 @keyframes pulse {
     0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.005); opacity: 0.98; } /* Even less aggressive pulse */
+    50% { transform: scale(1.001); opacity: 0.995; } /* Even less aggressive pulse */
     100% { transform: scale(1); opacity: 1; }
 }
 
 
 hr {
-    border-top: 1px solid rgba(255,255,255,0.05); /* Even lighter border */
-    margin: 15px 0; /* Further reduced margin */
+    border-top: 1px solid rgba(255,255,255,0.02); /* Even lighter border */
+    margin: 10px 0; /* Further reduced margin */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1952,20 +1673,16 @@ def handle_click(main_outcome_str: MainOutcome):
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
     st.session_state.recommendation_text = recommendation_text 
     
-    pattern_names = {
+    pattern_names = { # Simplified pattern names for display
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
         "PPPP": "มังกร", "BBBB": "มังกร", 
-        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
-        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
         "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
         "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด", 
-        "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
         "มังกรตัด": "มังกรตัด", 
         "ปิงปองตัด": "ปิงปองตัด", 
         "ตัดสาม": "ตัดสาม" 
@@ -1999,20 +1716,16 @@ def handle_remove():
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
     st.session_state.recommendation_text = recommendation_text
     
-    pattern_names = {
+    pattern_names = { # Simplified pattern names for display
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
         "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
         "PPPP": "มังกร", "BBBB": "มังกร", 
-        "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
-        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
         "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
         "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
-        "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
         "มังกรตัด": "มังกรตัด", 
         "ปิงปองตัด": "ปิงปองตัด", 
         "ตัดสาม": "ตัดสาม" 
@@ -2048,13 +1761,24 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V10.2.0</div>', unsafe_allow_html=True) # Updated version to V10.2.0
+st.markdown('<div class="big-title">🔮 Oracle V10.4.0</div>', unsafe_allow_html=True) # Updated version to V10.4.0
+
+# --- Input Buttons (Main Outcomes) - MOVED TO TOP ---
+st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
+with col2:
+    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
+with col3:
+    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
 st.markdown("<b>📍 คำแนะนำการเดิมพัน:</b>", unsafe_allow_html=True) 
 
-# V9.0.0: Display recommendation text directly
+# Display recommendation text directly
 st.markdown(f"<h2>{st.session_state.recommendation_text}</h2>", unsafe_allow_html=True)
 
 # Only show supporting details if there's a direct prediction (not "No Bet" or "Learning")
@@ -2176,7 +1900,7 @@ if history_results:
 else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
-# --- Derived Roads Display (New for V8.9.0) ---
+# --- Derived Roads Display ---
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>📊 เค้าไพ่รอง (Derived Roads):</b>", unsafe_allow_html=True)
 
@@ -2238,18 +1962,6 @@ else:
     st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Cockroach Pig")
 
 
-# --- Input Buttons (Main Outcomes) ---
-st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.button("🔵 P", on_click=handle_click, args=("P",), key="btn_P")
-with col2:
-    st.button("🔴 B", on_click=handle_click, args=("B",), key="btn_B")
-with col3:
-    st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
-
 # --- Control Buttons ---
 st.markdown("<hr>", unsafe_allow_html=True)
 col4, col5 = st.columns(2)
@@ -2300,20 +2012,16 @@ with col_ul:
             st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
             st.session_state.recommendation_text = recommendation_text
             
-            pattern_names = {
+            pattern_names = { # Simplified pattern names for display
                 "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
                 "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
                 "PPPP": "มังกร", "BBBB": "มังกร", 
-                "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว", 
-                "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-                "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
                 "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
                 "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-                "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-                "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
-                "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-                "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
                 "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+                "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+                "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+                "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
                 "มังกรตัด": "มังกรตัด",
                 "ปิงปองตัด": "ปิงปองตัด",
                 "ตัดสาม": "ตัดสาม"
