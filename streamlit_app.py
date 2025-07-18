@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.3.3 - Dedicated Three-Chop Predictor)
+# streamlit_app.py (Oracle V8.4.0 - Derived Roads Integration)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -343,6 +343,201 @@ class ThreeChopPredictor:
             return _opposite_outcome(last_three[0]) # Predict the chop
         return None
 
+# --- NEW: Derived Road Analyzer (V8.4.0) ---
+class DerivedRoadAnalyzer:
+    """
+    Analyzes Big Road to derive Big Eye Boy, Small Road, and Cockroach Pig patterns
+    and makes predictions based on their trends.
+    """
+    def _build_big_road_matrix(self, history_pb: List[MainOutcome]) -> List[List[Optional[MainOutcome]]]:
+        """
+        Builds a matrix representation of the Big Road.
+        Each column represents a streak.
+        """
+        if not history_pb:
+            return []
+
+        matrix: List[List[Optional[MainOutcome]]] = []
+        current_col: List[Optional[MainOutcome]] = []
+        last_outcome = None
+
+        for outcome in history_pb:
+            if outcome != last_outcome and last_outcome is not None:
+                matrix.append(current_col)
+                current_col = []
+            
+            current_col.append(outcome)
+            last_outcome = outcome
+        
+        if current_col:
+            matrix.append(current_col)
+        
+        # Pad columns to a minimum height for consistent indexing if needed (e.g., 6 rows)
+        max_rows = 6 # Standard Big Road height
+        padded_matrix = []
+        for col in matrix:
+            padded_col = col + [None] * (max_rows - len(col))
+            padded_matrix.append(padded_col)
+
+        return padded_matrix
+
+    def _get_big_eye_boy_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
+        """
+        Calculates Big Eye Boy value for a given cell.
+        Rule: Check two cells back in the current row (if exists) OR one cell back in the same column.
+        """
+        if col_idx < 1 or row_idx >= len(matrix[col_idx]): # Big Eye Boy starts from 2nd column, 1st row (0-indexed)
+            return None
+
+        # Rule 1: Check two cells back in the current row (horizontal movement)
+        if col_idx >= 2 and matrix[col_idx-2][row_idx] is not None:
+            if matrix[col_idx-2][row_idx] == matrix[col_idx][row_idx]: # Same as 2 back in row
+                return "B" # Red (Follows pattern)
+            else:
+                return "P" # Blue (Chops pattern)
+        
+        # Rule 2: Check one cell back in the current column (vertical movement)
+        elif row_idx >= 1 and matrix[col_idx][row_idx-1] is not None:
+            if matrix[col_idx][row_idx-1] == matrix[col_idx][row_idx]: # Same as 1 back in column
+                return "B" # Red (Follows pattern)
+            else:
+                return "P" # Blue (Chops pattern)
+        
+        return None
+
+    def _get_small_road_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
+        """
+        Calculates Small Road value for a given cell.
+        Rule: Check one cell back in the current row (if exists) OR one cell back in the column before the previous one.
+        """
+        if col_idx < 2 or row_idx >= len(matrix[col_idx]): # Small Road starts from 3rd column, 1st row (0-indexed)
+            return None
+
+        # Rule 1: Check one cell back in the current row (horizontal movement)
+        if col_idx >= 1 and matrix[col_idx-1][row_idx] is not None:
+            if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]: # Same as 1 back in row
+                return "B" # Red (Follows pattern)
+            else:
+                return "P" # Blue (Chops pattern)
+        
+        # Rule 2: Check one cell back in the column before the previous one (vertical movement)
+        elif row_idx >= 1 and col_idx >= 2 and matrix[col_idx-2][row_idx-1] is not None:
+            if matrix[col_idx-2][row_idx-1] == matrix[col_idx][row_idx]: # Same as cell in previous column, previous row
+                return "B" # Red (Follows pattern)
+            else:
+                return "P" # Blue (Chops pattern)
+        
+        return None
+
+    def _get_cockroach_pig_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
+        """
+        Calculates Cockroach Pig value for a given cell.
+        Rule: Check one cell back in the current row (if exists) OR one cell back in the column before the one before the previous one.
+        """
+        if col_idx < 3 or row_idx >= len(matrix[col_idx]): # Cockroach Pig starts from 4th column, 1st row (0-indexed)
+            return None
+
+        # Rule 1: Check one cell back in the current row (horizontal movement)
+        if col_idx >= 1 and matrix[col_idx-1][row_idx] is not None:
+            if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]: # Same as 1 back in row
+                return "B" # Red (Follows pattern)
+            else:
+                return "P" # Blue (Chops pattern)
+        
+        # Rule 2: Check one cell back in the column before the one before the previous one (vertical movement)
+        elif row_idx >= 1 and col_idx >= 3 and matrix[col_idx-3][row_idx-1] is not None:
+            if matrix[col_idx-3][row_idx-1] == matrix[col_idx][row_idx]: # Same as cell in previous column, previous row
+                return "B" # Red (Follows pattern)
+            else:
+                return "P" # Blue (Chops pattern)
+        
+        return None
+
+    def predict(self, history: List[RoundResult]) -> Dict[str, Optional[MainOutcome]]:
+        predictions: Dict[str, Optional[MainOutcome]] = {}
+        
+        history_pb = _get_main_outcome_history(history)
+        if len(history_pb) < 4: # Need enough history to start forming derived roads
+            return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None}
+
+        matrix = self._build_big_road_matrix(history_pb)
+        
+        # Get the last valid cell in the matrix for prediction
+        last_col_idx = len(matrix) - 1
+        last_row_idx = len(matrix[last_col_idx]) - 1
+        
+        # Find the actual last non-None cell in the last column
+        while last_row_idx >= 0 and matrix[last_col_idx][last_row_idx] is None:
+            last_row_idx -= 1
+        
+        if last_row_idx < 0: # Last column is empty or only Nones
+            if last_col_idx > 0: # Check previous column
+                last_col_idx -= 1
+                last_row_idx = len(matrix[last_col_idx]) - 1
+                while last_row_idx >= 0 and matrix[last_col_idx][last_row_idx] is None:
+                    last_row_idx -= 1
+            else:
+                return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None} # Not enough data
+
+        # Simulate the next outcome (P or B) to see what the derived roads would predict
+        # This is a common way to predict derived roads: see what they *would* show if P or B came next.
+        
+        # Scenario 1: Next is Player (P)
+        simulated_history_p = history_pb + ["P"]
+        simulated_matrix_p = self._build_big_road_matrix(simulated_history_p)
+        
+        # Get the new last cell for prediction after adding P
+        sim_last_col_idx_p = len(simulated_matrix_p) - 1
+        sim_last_row_idx_p = len(simulated_matrix_p[sim_last_col_idx_p]) - 1
+        while sim_last_row_idx_p >= 0 and simulated_matrix_p[sim_last_col_idx_p][sim_last_row_idx_p] is None:
+            sim_last_row_idx_p -= 1
+
+        big_eye_p = self._get_big_eye_boy_value(simulated_matrix_p, sim_last_col_idx_p, sim_last_row_idx_p)
+        small_road_p = self._get_small_road_value(simulated_matrix_p, sim_last_col_idx_p, sim_last_row_idx_p)
+        cockroach_p = self._get_cockroach_pig_value(simulated_matrix_p, sim_last_col_idx_p, sim_last_row_idx_p)
+
+        # Scenario 2: Next is Banker (B)
+        simulated_history_b = history_pb + ["B"]
+        simulated_matrix_b = self._build_big_road_matrix(simulated_history_b)
+
+        # Get the new last cell for prediction after adding B
+        sim_last_col_idx_b = len(simulated_matrix_b) - 1
+        sim_last_row_idx_b = len(simulated_matrix_b[sim_last_col_idx_b]) - 1
+        while sim_last_row_idx_b >= 0 and simulated_matrix_b[sim_last_col_idx_b][sim_last_row_idx_b] is None:
+            sim_last_row_idx_b -= 1
+
+        big_eye_b = self._get_big_eye_boy_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
+        small_road_b = self._get_small_road_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
+        cockroach_b = self._get_cockroach_pig_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
+
+        # Now, make predictions for each derived road based on what they would show
+        # If Big Eye Boy would be Red for P, and Blue for B, then it predicts P.
+        # If Big Eye Boy would be Red for P, and Red for B, then it's ambiguous for BEB.
+
+        if big_eye_p == "B" and big_eye_b == "P": # BEB predicts B for P, P for B -> BEB predicts P
+            predictions["BigEyeBoy"] = "P"
+        elif big_eye_p == "P" and big_eye_b == "B": # BEB predicts P for P, B for B -> BEB predicts B
+            predictions["BigEyeBoy"] = "B"
+        else:
+            predictions["BigEyeBoy"] = None # Ambiguous or not enough data
+
+        if small_road_p == "B" and small_road_b == "P": # SR predicts B for P, P for B -> SR predicts P
+            predictions["SmallRoad"] = "P"
+        elif small_road_p == "P" and small_road_b == "B": # SR predicts P for P, B for B -> SR predicts B
+            predictions["SmallRoad"] = "B"
+        else:
+            predictions["SmallRoad"] = None
+
+        if cockroach_p == "B" and cockroach_b == "P": # CP predicts B for P, P for B -> CP predicts P
+            predictions["CockroachPig"] = "P"
+        elif cockroach_p == "P" and cockroach_b == "B": # CP predicts P for P, B for B -> CP predicts B
+            predictions["CockroachPig"] = "B"
+        else:
+            predictions["CockroachPig"] = None
+
+        return predictions
+
+
 # --- ENHANCED PREDICTION MODULES FOR SIDE BETS (V8.0.0, V8.0.1, V8.0.2, V8.0.3, V8.0.4, V8.0.5) ---
 
 class TiePredictor:
@@ -420,9 +615,7 @@ class TiePredictor:
         # combined with ties being underrepresented.
         current_round_count = len(history) # Total rounds played
         if current_round_count >= 20: # Only apply if enough history
-            # Check for "every 8-10 rounds" pattern
             if (current_round_count % 8 == 0 or current_round_count % 9 == 0 or current_round_count % 10 == 0):
-                # And if ties are still due overall
                 if actual_tie_count_long < expected_tie_count_long * 1.0: # Ties are not over-represented
                     return "T", 68 # Moderate confidence
 
@@ -449,7 +642,6 @@ class TiePredictor:
             rounds_since_last_tie = len(tie_flags) - 1 - last_tie_index
             
             if rounds_since_last_tie == 4: # If it's exactly 4 rounds since the last tie
-                # Add a condition for general tie "due-ness" to avoid over-prediction
                 if actual_tie_count_long < expected_tie_count_long * 1.0: # Ties are not over-represented
                     return "T", 70 # Higher confidence for this specific trigger
 
@@ -464,7 +656,6 @@ class TiePredictor:
         if len(main_history_pb) >= 5:
             last_five_pb = "".join(main_history_pb[-5:])
             if last_five_pb == "PBPBP" or last_five_pb == "BPBPB":
-                # Check if ties are not over-represented recently
                 if actual_tie_count_short < expected_tie_count_short * 1.2: # Not too many ties recently
                     return "T", 72 # High confidence for this specific pattern break
 
@@ -478,8 +669,6 @@ class TiePredictor:
                 rounds_since_last_tie = len(tie_flags) - 1 - last_tie_index
             
             if rounds_since_last_tie >= drought_threshold or rounds_since_last_tie == -1: # -1 means no ties ever
-                # Increase confidence based on how long the drought has been
-                # Factor increases from 0 to 1 over 10 rounds past threshold
                 drought_factor = min(1.0, (max(0, rounds_since_last_tie - drought_threshold + 1)) / 10) 
                 tie_confidence = min(95, 75 + int(drought_factor * 20)) # Base 75, up to 95 (increased base)
                 return "T", tie_confidence
@@ -508,6 +697,8 @@ class AdaptiveScorer:
     V8.3.1: Even more aggressive miss streak penalty.
     V8.3.2: Even more aggressive miss streak penalty.
     V8.3.3: Even more aggressive miss streak penalty and special weighting for ThreeChopPredictor.
+    V8.3.4: Further increased miss streak penalty.
+    V8.4.0: Integrated Derived Road predictions with adaptive weighting.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -557,28 +748,40 @@ class AdaptiveScorer:
             
             # V8.3.3: Special weighting for ThreeChopPredictor
             if name == "ThreeChop" and predictions.get(name) is not None:
-                # Give a significant boost to ThreeChopPredictor if it makes a prediction
-                # Especially if choppiness is moderate to high, indicating alternating patterns
-                if choppiness_rate > 0.4: # If not very streaky
-                    weight *= 1.5 # Significant boost
+                if choppiness_rate > 0.4: 
+                    weight *= 1.5 
                 else:
-                    weight *= 1.2 # Moderate boost even if slightly streaky
+                    weight *= 1.2 
+            
+            # V8.4.0: Special weighting for Derived Road Predictors
+            if name in ["BigEyeBoy", "SmallRoad", "CockroachPig"] and predictions.get(name) is not None:
+                # Derived roads should have a good base weight, and get more weight if the pattern is clear
+                base_derived_weight = 0.8 # Base influence
+                
+                # If the derived road is predicting a "streak" (Red), give it more weight if main road is streaky
+                # If the derived road is predicting a "chop" (Blue), give it more weight if main road is choppy
+                if pred == "B" and choppiness_rate < 0.5: # Red in derived road = follows streak
+                    weight += base_derived_weight * 1.2
+                elif pred == "P" and choppiness_rate > 0.5: # Blue in derived road = chops streak
+                    weight += base_derived_weight * 1.2
+                else:
+                    weight += base_derived_weight * 0.8 # Standard weight
             
             # V8.2.8: Dynamic module weighting based on choppiness
             if choppiness_rate > 0.7: # Very choppy
-                if name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: # Include ThreeChop
+                if name in ["ChopDetector", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"]: # Include Derived Roads
                     weight *= 1.15 # Boost these modules
                 elif name in ["Trend", "Rule"]:
                     weight *= 0.85 # Slightly reduce others
             elif choppiness_rate < 0.3: # Very streaky
-                if name in ["Trend", "Rule"]:
+                if name in ["Trend", "Rule", "BigEyeBoy", "SmallRoad", "CockroachPig"]: # Include Derived Roads
                     weight *= 1.15 # Boost these modules
                 elif name in ["ChopDetector", "AdvancedChop", "ThreeChop"]: # Include ThreeChop
                     weight *= 0.85 # Slightly reduce others
 
-            # V8.3.2: Even more aggressive miss streak penalty (increased from 18% to 20%)
+            # V8.3.4: Even more aggressive miss streak penalty (increased from 20% to 22%)
             if current_miss_streak > 0:
-                penalty_factor = 1.0 - (current_miss_streak * 0.20) # 20% penalty per miss
+                penalty_factor = 1.0 - (current_miss_streak * 0.22) # 22% penalty per miss
                 weight *= max(0.05, penalty_factor) # Don't let weight drop below 5%
             
             total_score[pred] += weight
@@ -613,35 +816,49 @@ class AdaptiveScorer:
         
         joined_filtered = "".join(filtered_history)
 
-        common_patterns = {
-            "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-            "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-            "PPPP": "มังกร", "BBBB": "มังกร",
-            "PPBPP": "ปิงปองยาว", "BBPBB": "ปิงปองยาว",
-            "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-            "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว", 
-            "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว", 
-            "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", 
-            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
-            "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
-            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", 
-            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
-        }
-
-        if len(filtered_history) >= 6: # V8.1.5: Check for "สามตัวตัด" pattern name
-            last_6 = filtered_history[-6:]
-            if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
-                return "สามตัวตัด"
+        # V8.4.0: Prioritize pattern names based on common understanding and clarity
+        # Check for long streaks (Dragon) first
+        if len(filtered_history) >= 4:
+            last_4 = filtered_history[-4:]
+            if last_4.count("P") == 4:
+                return "มังกร"
+            if last_4.count("B") == 4:
+                return "มังกร"
         
         if len(filtered_history) >= 5:
-            if filtered_history[-5] == filtered_history[-4] == filtered_history[-3] == filtered_history[-2] and filtered_history[-2] != filtered_history[-1]:
-                return "มังกรตัด" 
+            last_5 = filtered_history[-5:]
+            if last_5.count("P") == 5:
+                return "มังกรยาว"
+            if last_5.count("B") == 5:
+                return "มังกรยาว"
         
-        # Check for AdvancedChopPredictor patterns
+        if len(filtered_history) >= 6:
+            last_6 = filtered_history[-6:]
+            if last_6.count("P") == 6:
+                return "มังกรยาว"
+            if last_6.count("B") == 6:
+                return "มังกรยาว"
+
+        # Check for Ping Pong (alternating) patterns
+        if len(filtered_history) >= 4:
+            last_4 = "".join(filtered_history[-4:])
+            if last_4 == "PBPB" or last_4 == "BPBP":
+                return "ปิงปอง"
+        if len(filtered_history) >= 5:
+            last_5 = "".join(filtered_history[-5:])
+            if last_5 == "PBPBP" or last_5 == "BPBPB":
+                return "ปิงปองยาว"
+        if len(filtered_history) >= 6:
+            last_6 = "".join(filtered_history[-6:])
+            if last_6 == "PBPBPB" or last_6 == "BPBPBP":
+                return "ปิงปองยาว"
+
+        # Check for specific chop patterns (สามตัวตัด, มังกรตัด, ปิงปองตัด)
         if "AdvancedChop" in predictions and predictions["AdvancedChop"] is not None:
-            # If AdvancedChopPredictor made a prediction, it's likely a chop pattern
-            # We can try to infer the pattern type from the recent history
+            if len(filtered_history) >= 6:
+                last_6 = filtered_history[-6:]
+                if last_6 == ["P", "P", "P", "B", "B", "B"] or last_6 == ["B", "B", "B", "P", "P", "P"]:
+                    return "สามตัวตัด"
             if len(filtered_history) >= 5:
                 # Check for Dragon Chop pattern: XXXXXY
                 if all(x == filtered_history[-6] for x in filtered_history[-6:-1]) and filtered_history[-1] != filtered_history[-6]:
@@ -651,19 +868,28 @@ class AdaptiveScorer:
                 if filtered_history[-4] != filtered_history[-3] and filtered_history[-3] == filtered_history[-2] and filtered_history[-2] == filtered_history[-1]:
                     return "ปิงปองตัด"
 
-        # V8.3.3: Check for "Three-Chop" pattern specifically
+        # Check for "Three-Chop" specifically (PPP -> B or BBB -> P)
         if "ThreeChop" in predictions and predictions["ThreeChop"] is not None:
             if len(filtered_history) >= 3:
                 last_three = "".join(filtered_history[-3:])
                 if last_three == "PPP" or last_three == "BBB":
                     return "ตัดสาม"
 
-
+        # Other common patterns
+        common_patterns = {
+            "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+            "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", 
+            "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด", # BBPA is a typo, should be BBPP or similar
+            "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", # BPBB is two Banker, then one Player, then one Banker
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ" # Already covered above with specific chop logic
+        }
         for length in range(6, 2, -1): 
             if len(joined_filtered) >= length:
                 current_pattern_str = joined_filtered[-length:]
                 if current_pattern_str in common_patterns:
                     return common_patterns[current_pattern_str]
+        
         return None
 
 
@@ -677,13 +903,15 @@ class OracleBrain:
 
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [] 
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], # V8.3.3
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] # V8.4.0: New derived road modules
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [] 
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], # V8.3.3
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] # V8.4.0: New derived road modules
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
@@ -698,6 +926,7 @@ class OracleBrain:
         self.dragon_tail_detector = DragonTailDetector() 
         self.advanced_chop_predictor = AdvancedChopPredictor() 
         self.three_chop_predictor = ThreeChopPredictor() # V8.3.3: New dedicated module
+        self.derived_road_analyzer = DerivedRoadAnalyzer() # V8.4.0: New derived road analyzer
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
@@ -730,16 +959,22 @@ class OracleBrain:
             "ThreeChop": self.three_chop_predictor.predict(self.history) # V8.3.3: Include new module
         }
         
+        # V8.4.0: Get predictions from Derived Road Analyzer
+        derived_road_preds = self.derived_road_analyzer.predict(self.history)
+        current_predictions_from_modules_main.update(derived_road_preds)
+
         for module_name, pred in current_predictions_from_modules_main.items():
             if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
+                # Ensure module_name exists in global log before appending
+                if module_name not in self.module_accuracy_global_log:
+                    self.module_accuracy_global_log[module_name] = []
+                if module_name not in self.individual_module_prediction_log_current_shoe:
+                    self.individual_module_prediction_log_current_shoe[module_name] = []
+
                 self.module_accuracy_global_log[module_name].append((pred, main_outcome))
                 self.individual_module_prediction_log_current_shoe[module_name].append((pred, main_outcome))
 
         # --- Record individual side bet module predictions *before* adding the new outcome ---
-        # The Tie predictor should predict based on history *before* the current round's result
-        # However, due to the current UI flow, add_result happens first.
-        # So, we need to make sure the TiePredictor's logic doesn't react to the *just added* result.
-        # This is handled by refining Rule 3 in TiePredictor.predict()
         tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
 
         if tie_pred_for_log is not None:
@@ -902,9 +1137,13 @@ class OracleBrain:
         Calculates all-time accuracy from global logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"] 
         for module_name in main_modules:
-            accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
+            # Ensure module_name exists in global log before accessing
+            if module_name in self.module_accuracy_global_log:
+                accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.module_accuracy_global_log[module_name], lookback=None)
+            else:
+                accuracy_results[module_name] = 0.0 # Default to 0 if no data yet
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_accuracy_global_log, lookback=None)
 
@@ -915,9 +1154,13 @@ class OracleBrain:
         Calculates recent accuracy from current shoe logs.
         """
         accuracy_results = {}
-        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop"] 
+        main_modules = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"] 
         for module_name in main_modules:
-            accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
+            # Ensure module_name exists in current shoe log before accessing
+            if module_name in self.individual_module_prediction_log_current_shoe:
+                accuracy_results[module_name] = self._calculate_main_module_accuracy_from_log(self.individual_module_prediction_log_current_shoe[module_name], lookback)
+            else:
+                accuracy_results[module_name] = 0.0 # Default to 0 if no data yet
         
         accuracy_results["Tie"] = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_prediction_log_current_shoe, lookback)
 
@@ -925,12 +1168,12 @@ class OracleBrain:
 
     def get_module_accuracy_normalized(self) -> Dict[str, float]:
         acc = self.get_module_accuracy_all_time() 
-        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "Tie"] 
+        all_known_modules_for_norm = ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "Fallback", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig", "Tie"] 
         
         if not acc:
             return {name: 0.5 for name in all_known_modules_for_norm}
         
-        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop"] and v > 0} 
+        active_main_accuracies = {k: v for k, v in acc.items() if k in ["Rule", "Pattern", "Trend", "2-2 Pattern", "Sniper", "ChopDetector", "DragonTail", "AdvancedChop", "ThreeChop", "BigEyeBoy", "SmallRoad", "CockroachPig"] and v > 0} 
         
         if not active_main_accuracies:
             return {name: 0.5 for name in all_known_modules_for_norm}
@@ -958,7 +1201,10 @@ class OracleBrain:
             "ChopDetector": self.chop_detector,
             "DragonTail": self.dragon_tail_detector, 
             "AdvancedChop": self.advanced_chop_predictor,
-            "ThreeChop": self.three_chop_predictor # V8.3.3: Include new module
+            "ThreeChop": self.three_chop_predictor,
+            "BigEyeBoy": self.derived_road_analyzer, # Note: derived_road_analyzer is the *source* module
+            "SmallRoad": self.derived_road_analyzer,
+            "CockroachPig": self.derived_road_analyzer
         }
         
         module_scores: Dict[str, float] = {}
@@ -1047,13 +1293,11 @@ class OracleBrain:
         
         current_miss_streak = self.calculate_miss_streak()
 
-        # V8.1.1: Lowered MIN_HISTORY_FOR_PREDICTION for earlier predictions
         MIN_HISTORY_FOR_PREDICTION = 15 
         
         MIN_HISTORY_FOR_SNIPER = 25 
         MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 
         
-        # V8.3.0: Dynamic MIN_DISPLAY_CONFIDENCE based on miss streak (more aggressive)
         MIN_DISPLAY_CONFIDENCE_MAIN = 50 
         if current_miss_streak == 3:
             MIN_DISPLAY_CONFIDENCE_MAIN = 55
@@ -1092,9 +1336,13 @@ class OracleBrain:
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
             "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
-            "ThreeChop": self.three_chop_predictor.predict(self.history) # V8.3.3: Include new module
+            "ThreeChop": self.three_chop_predictor.predict(self.history)
         }
         
+        # V8.4.0: Get predictions from Derived Road Analyzer and add them
+        derived_road_predictions = self.derived_road_analyzer.predict(self.history)
+        predictions_from_modules.update(derived_road_predictions)
+
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
@@ -1105,11 +1353,10 @@ class OracleBrain:
         # V8.3.1: Temporary P/B Confidence Adjustment after Tie
         if self.history and self.history[-1].main_outcome == "T":
             if final_prediction_main is not None and confidence_main is not None:
-                # Reduce confidence by a factor, e.g., 15% of its current value
-                confidence_main = max(MIN_DISPLAY_CONFIDENCE_MAIN, int(confidence_main * 0.85)) # Ensure it doesn't drop below min display confidence
+                confidence_main = max(MIN_DISPLAY_CONFIDENCE_MAIN, int(confidence_main * 0.85)) 
 
         # Ensure prediction is None if confidence is too low, even after recovery attempts
-        if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE_MAIN: # Use dynamic MIN_DISPLAY_CONFIDENCE_MAIN
+        if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE_MAIN: 
             final_prediction_main = None
             source_module_name_main = None
             confidence_main = None
@@ -1118,9 +1365,6 @@ class OracleBrain:
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
             # V8.3.2: Stricter Main Sniper Criteria
-            # confidence_main >= 60 (from 50)
-            # current_miss_streak <= 2 (from 3)
-            # CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 (from 50)
             if confidence_main >= 60 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 
@@ -1128,7 +1372,7 @@ class OracleBrain:
 
                 high_accuracy_contributing_count = 0
                 
-                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 # Changed from 50
+                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 
 
                 for module_name in relevant_contributing_modules:
                     acc_10 = module_accuracies_recent_10.get(module_name, 0.0)
@@ -1139,7 +1383,7 @@ class OracleBrain:
                     if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD: 
                         high_accuracy_contributing_count += 1
                 
-                if high_accuracy_contributing_count >= 3: # Keep this at 3 for now, or suggest increasing it.
+                if high_accuracy_contributing_count >= 3: 
                     is_sniper_opportunity_main = True
         # --- END Main Outcome Sniper Logic ---
 
@@ -1150,7 +1394,6 @@ class OracleBrain:
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
 
         if self.tie_module_prediction_log_current_shoe: 
-            # V8.2.1: This logic is now primarily for adjusting confidence *down* if previous Tie prediction was wrong
             last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log_current_shoe[-1]
             if last_logged_tie_pred == "T" and not last_actual_is_tie:
                 if tie_conf_raw is not None:
@@ -1174,7 +1417,6 @@ class OracleBrain:
 
         # Tie Sniper
         if tie_prediction == "T" and tie_confidence is not None:
-            # V8.2.5: Changed condition to be tie_confidence >= 60 as per user request for Sniper Shot
             if tie_confidence >= 60 and (p_count + b_count) >= MIN_HISTORY_FOR_SIDE_BET_SNIPER: 
                 if len(self.tie_module_prediction_log_current_shoe) >= SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT:
                     tie_recent_acc = self._calculate_side_bet_module_accuracy_from_log(self.tie_module_prediction_log_current_shoe, SIDE_BET_SNIPER_RECENT_PREDICTION_COUNT)
@@ -1193,7 +1435,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.3.3", layout="centered") # Updated version to V8.3.3
+st.set_page_config(page_title="🔮 Oracle V8.4.0", layout="centered") # Updated version to V8.4.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1588,15 +1830,17 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.3.3</div>', unsafe_allow_html=True) # Updated version to V8.3.3
+st.markdown('<div class="big-title">🔮 Oracle V8.4.0</div>', unsafe_allow_html=True) # Updated version to V8.4.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
 st.markdown("<b>📍 คำทำนายหลัก:</b>", unsafe_allow_html=True) 
 
 if st.session_state.prediction:
-    emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(st.session_state.prediction, "❓")
-    st.markdown(f"<h2>{emoji} <b>{st.session_state.prediction}</b></h2>", unsafe_allow_html=True)
+    # V8.3.4: Fix for 'D' being displayed instead of 'B'
+    display_prediction = "B" if st.session_state.prediction == "D" else st.session_state.prediction
+    emoji = {"P": "🔵", "B": "🔴", "T": "⚪"}.get(display_prediction, "❓")
+    st.markdown(f"<h2>{emoji} <b>{display_prediction}</b></h2>", unsafe_allow_html=True)
     if st.session_state.source:
         st.caption(f"🧠 โมดูล: {st.session_state.source}")
     if st.session_state.pattern_name:
@@ -1770,7 +2014,6 @@ with col_ul:
             loaded_data = json.loads(decoded_data)
             st.session_state.oracle.import_all_time_data(loaded_data)
             # Re-run prediction to update UI with new data
-            # This is important because accuracy stats affect predictions
             (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
              tie_pred, tie_conf,
              is_tie_sniper_opportunity) = st.session_state.oracle.predict_next()
@@ -1827,6 +2070,13 @@ if st.session_state.show_debug_info:
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
     st.write("---") 
 
+    # V8.4.0: Display Derived Road Predictions in Debug Info
+    st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
+    derived_preds_debug = st.session_state.oracle.derived_road_analyzer.predict(st.session_state.oracle.history)
+    for road_name, pred_val in derived_preds_debug.items():
+        st.write(f"  - {road_name}: {pred_val if pred_val else 'None'}")
+    st.write("---")
+
 
 # --- Accuracy by Module ---
 st.markdown("<h3>📈 ความแม่นยำรายโมดูล</h3>", unsafe_allow_html=True) 
@@ -1837,7 +2087,8 @@ recent_20_accuracies = st.session_state.oracle.get_module_accuracy_recent(20)
 
 if all_time_accuracies:
     st.markdown("<h4>ความแม่นยำ (All-Time)</h4>", unsafe_allow_html=True)
-    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) 
+    # V8.4.0: Include new derived road modules in sorting
+    sorted_module_names = sorted(all_time_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig"], x)) 
     for name in sorted_module_names:
         acc = all_time_accuracies[name]
         st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
@@ -1848,14 +2099,16 @@ if all_time_accuracies:
 
     if main_history_len >= 10: 
         st.markdown("<h4>ความแม่นยำ (10 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) 
+        # V8.4.0: Include new derived road modules in sorting
+        sorted_module_names_recent_10 = sorted(recent_10_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig"], x)) 
         for name in sorted_module_names_recent_10:
             acc = recent_10_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
 
     if main_history_len >= 20: 
         st.markdown("<h4>ความแม่นยำ (20 ตาล่าสุด)</h4>", unsafe_allow_html=True)
-        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x)) 
+        # V8.4.0: Include new derived road modules in sorting
+        sorted_module_names_recent_20 = sorted(recent_20_accuracies.keys(), key=lambda x: (x in ["Tie"], x in ["BigEyeBoy", "SmallRoad", "CockroachPig"], x)) 
         for name in sorted_module_names_recent_20:
             acc = recent_20_accuracies[name]
             st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
