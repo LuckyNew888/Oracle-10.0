@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.3.0 - Enhanced Accuracy & Tie)
+# streamlit_app.py (Oracle V8.3.1 - Tie Overhaul & Post-Tie Adaption)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -343,6 +343,7 @@ class TiePredictor:
     V8.2.5: Further refinement of tie prediction rules based on user feedback (Trigger Point, Bayesian).
     V8.2.7: Added Tie prediction rule for long alternating patterns.
     V8.3.0: Enhanced "Due" logic and added "Tie Drought" rule for higher confidence.
+    V8.3.1: Tie Drought enhancement for higher confidence and more specific Tie patterns.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -454,6 +455,7 @@ class TiePredictor:
                     return "T", 72 # High confidence for this specific pattern break
 
         # V8.3.0: New Rule 14: Tie Drought - Predict if ties have been absent for a long period
+        # V8.3.1: Enhanced confidence for Tie Drought
         if len(tie_flags) >= 20: # Needs sufficient history to detect a drought
             drought_threshold = 15 # If no ties in the last 15 rounds
             rounds_since_last_tie = -1
@@ -465,7 +467,7 @@ class TiePredictor:
                 # Increase confidence based on how long the drought has been
                 # Factor increases from 0 to 1 over 10 rounds past threshold
                 drought_factor = min(1.0, (max(0, rounds_since_last_tie - drought_threshold + 1)) / 10) 
-                tie_confidence = min(95, 70 + int(drought_factor * 25)) # Base 70, up to 95
+                tie_confidence = min(95, 75 + int(drought_factor * 20)) # Base 75, up to 95 (increased base)
                 return "T", tie_confidence
 
         # Rule 15 (formerly Rule 7/10/12/13): If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
@@ -489,6 +491,7 @@ class AdaptiveScorer:
     V8.2.7: Even more aggressive miss streak penalty.
     V8.2.8: Dynamic module weighting based on choppiness.
     V8.3.0: Even more aggressive miss streak penalty.
+    V8.3.1: Even more aggressive miss streak penalty.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -548,9 +551,9 @@ class AdaptiveScorer:
                 elif name in ["ChopDetector", "AdvancedChop"]:
                     weight *= 0.85 # Slightly reduce others
 
-            # V8.3.0: Even more aggressive miss streak penalty (increased from 12% to 15%)
+            # V8.3.1: Even more aggressive miss streak penalty (increased from 15% to 18%)
             if current_miss_streak > 0:
-                penalty_factor = 1.0 - (current_miss_streak * 0.15) # 15% penalty per miss
+                penalty_factor = 1.0 - (current_miss_streak * 0.18) # 18% penalty per miss
                 weight *= max(0.05, penalty_factor) # Don't let weight drop below 5%
             
             total_score[pred] += weight
@@ -1063,6 +1066,12 @@ class OracleBrain:
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
 
+        # V8.3.1: Temporary P/B Confidence Adjustment after Tie
+        if self.history and self.history[-1].main_outcome == "T":
+            if final_prediction_main is not None and confidence_main is not None:
+                # Reduce confidence by a factor, e.g., 15% of its current value
+                confidence_main = max(MIN_DISPLAY_CONFIDENCE_MAIN, int(confidence_main * 0.85)) # Ensure it doesn't drop below min display confidence
+
         # Ensure prediction is None if confidence is too low, even after recovery attempts
         if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE_MAIN: # Use dynamic MIN_DISPLAY_CONFIDENCE_MAIN
             final_prediction_main = None
@@ -1144,7 +1153,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.3.0", layout="centered") # Updated version to V8.3.0
+st.set_page_config(page_title="🔮 Oracle V8.3.1", layout="centered") # Updated version to V8.3.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1537,7 +1546,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.3.0</div>', unsafe_allow_html=True) # Updated version to V8.3.0
+st.markdown('<div class="big-title">🔮 Oracle V8.3.1</div>', unsafe_allow_html=True) # Updated version to V8.3.1
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
