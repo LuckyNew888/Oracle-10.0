@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.4 - Smart Recommendation Engine - Lean Core (Advanced UI Refinement))
+# streamlit_app.py (Oracle V10.4.5 - Smart Recommendation Engine - Lean Core (Ultimate UI Refinement))
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -209,8 +209,8 @@ class DerivedRoadAnalyzer:
             matrix.append(current_col)
         
         # Pad columns to a minimum height for consistent indexing (6 rows standard)
-        # Changed max_rows from 6 to 10 for more vertical display
-        max_rows = 10 
+        # Changed max_rows from 6 to 14 for more vertical display
+        max_rows = 14 
         padded_matrix = []
         for col in matrix:
             padded_col = col + [None] * (max_rows - len(col))
@@ -394,7 +394,7 @@ class DerivedRoadAnalyzer:
         # Small Road starts from (2,0) of Big Road.
         # Cockroach Pig starts from (3,0) of Big Road.
 
-        max_rows = 10 # Standard height for derived road display (matched to Big Road)
+        max_rows = 14 # Standard height for derived road display (matched to Big Road)
 
         for col_idx in range(len(big_road_matrix)):
             beb_col: List[Optional[MainOutcome]] = []
@@ -1355,7 +1355,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.4", layout="centered") # Updated version to V10.4.4
+st.set_page_config(page_title="🔮 Oracle V10.4.5", layout="centered") # Updated version to V10.4.5
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1371,20 +1371,20 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     margin-bottom: 5px; /* Reduced margin */
 }
 .main-title {
-    font-size: 30px; /* Larger size for Oracle */
+    font-size: 38px; /* Larger size for Oracle */
     font-weight: bold;
     color: #FF4B4B; /* Streamlit's default primary color */
     display: inline-block; /* Allow version text next to it */
     margin-right: 5px; /* Space between Oracle and version */
 }
 .version-text {
-    font-size: 12px; /* Slightly larger for visibility, but still smaller than main title */
+    font-size: 12px; /* Same size as before */
     color: #BBBBBB; /* Lighter color */
     display: inline-block;
 }
 
 .predict-box {
-    padding: 5px; /* Reduced padding */
+    padding: 3px; /* Further reduced padding */
     background-color: #262730; /* Darker background for the box */
     border-radius: 5px; /* Further reduced border-radius */
     color: white;
@@ -1394,15 +1394,15 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border: 1px solid #FFD700; /* Gold border for prediction box */
 }
 .predict-box h2 {
-    margin: 2px 0; /* Reduced margin */
-    font-size: 16px; /* Significantly reduced for main recommendation text */
+    margin: 1px 0; /* Further reduced margin */
+    font-size: 13px; /* Reduced by 3 levels from 16px */
     font-weight: bold;
 }
 .predict-box b {
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 8px; /* Further reduced from 9px */
+    font-size: 7px; /* Further reduced from 8px */
     color: #BBBBBB;
 }
 
@@ -1411,14 +1411,14 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     background-color: #333333; /* Darker background for the miss streak box */
     border: 1px solid #495057;
     border-radius: 5px;
-    padding: 5px;
+    padding: 3px; /* Reduced padding */
     margin: 5px auto; /* Reduced margin, auto for centering */
-    max-width: 80%; /* Narrower width */
+    max-width: 60%; /* Narrower width */
     text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
 .miss-streak-text p { /* Custom class for miss streak text */
-    font-size: 10px !important; /* Adjusted size for miss streak */
+    font-size: 9px !important; /* Adjusted size for miss streak */
     margin-bottom: 2px !important; /* Reduced margin */
     color: #FFC107; /* Warning color for miss streak */
     font-weight: bold;
@@ -1428,7 +1428,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-left: 2px solid #FFC107; 
     color: #FFC107;
     padding: 5px; 
-    margin-bottom: 5px; /* Reduced margin */
+    margin-bottom: 5px; 
     font-size: 9px;
 }
 .st-emotion-cache-1s04v0m { /* Error box */
@@ -1436,7 +1436,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-left: 2px solid #DC3545; 
     color: #DC3545;
     padding: 5px; 
-    margin-bottom: 5px; /* Reduced margin */
+    margin-bottom: 5px; 
     font-size: 9px;
 }
 .st-emotion-cache-13ln4z2 { /* Info box */
@@ -1444,7 +1444,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-left: 2px solid #17A2B8; 
     color: #17A2B8;
     padding: 5px; 
-    margin-bottom: 5px; /* Reduced margin */
+    margin-bottom: 5px; 
     font-size: 9px;
 }
 
@@ -1459,7 +1459,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 105px; /* Adjusted minimum height for 10 rows (10px cell + 0.5px margin * 9) */
+    min-height: 145px; /* Adjusted minimum height for 14 rows (10px cell + 0.5px margin * 13) */
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); /* Slightly smaller shadow */
 }
 .big-road-column {
@@ -1470,11 +1470,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding-right: 0.1px; /* Reduced padding */
 }
 .big-road-cell {
-    width: 10px; /* Reduced from 13px for 10 rows */
-    height: 10px; /* Reduced from 13px for 10 rows */
+    width: 10px; /* Same as previous for 10 rows */
+    height: 10px; /* Same as previous for 10 rows */
     text-align: center;
     line-height: 10px; /* Adjusted line-height for new size */
-    font-size: 7px; /* Reduced from 9px */
+    font-size: 7px; /* Same as previous */
     margin-bottom: 0.5px; /* Adjusted margin for better spacing */
     border-radius: 50%; /* Make cells round */
     display: flex;
@@ -1528,7 +1528,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 25px; /* Reduced height for derived roads */
+    min-height: 30px; /* Adjusted height for derived roads based on new cell size */
     box-shadow: inset 0 0.75px 1.5px rgba(0,0,0,0.2); 
     margin-top: 3px; /* Reduced margin */
 }
@@ -1567,6 +1567,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     margin-bottom: 4px; /* Reduced margin */
     transition: all 0.2s ease-in-out;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
+    background-color: #4CAF50; /* Green for general buttons */
+    color: white;
+    border: none;
 }
 .stButton>button:hover {
     transform: translateY(-0.25px); /* Reduced transform */
@@ -1576,6 +1579,17 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_P button { background-color: #007BFF; color: white; border: none; }
 #btn_B button { background-color: #DC3545; color: white; border: none; }
 #btn_T button { background-color: #6C757D; color: white; border: none; }
+
+/* Secondary buttons like download/upload */
+.stButton button[kind="secondary"] { 
+    background-color: #343A40;
+    color: white;
+    border: 1px solid #495057;
+}
+.stButton button[kind="secondary"]:hover {
+    background-color: #495057;
+}
+
 /* Checkbox styling adjustments */
 .stCheckbox > label {
     padding: 2px 4px; /* Reduced padding */
@@ -1607,85 +1621,34 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 
 
-.stButton button[kind="secondary"] { 
-    background-color: #343A40;
-    color: white;
-    border: 1px solid #495057;
-}
-.stButton button[kind="secondary"]:hover {
-    background-color: #495057;
-}
-
-/* Warning/Error messages */
-.st-emotion-cache-1f1d6zpt { /* Warning box */
-    background-color: #FFC10720; 
-    border-left: 2px solid #FFC107; 
-    color: #FFC107;
-    padding: 5px; 
-    margin-bottom: 5px; 
-}
-
-.st-emotion-cache-1s04v0m { /* Error box */
-    background-color: #DC354520; 
-    border-left: 2px solid #DC3545; 
-    color: #DC3545;
-    padding: 5px; 
-    margin-bottom: 5px; 
-}
-
-.st-emotion-cache-13ln4z2 { /* Info box */
-    background-color: #17A2B820; 
-    border-left: 2px solid #17A2B8; 
-    color: #17A2B8;
-    padding: 5px; 
-    margin-bottom: 5px; 
-}
-
-/* Accuracy by Module section */
-h3 { 
-    font-size: 10px !important; /* Adjusted size */
-    margin-top: 5px !important; 
-    margin-bottom: 0.25px !important; 
-}
-h4 {
-    font-size: 9px !important; /* Adjusted size */
-    margin-top: 5px !important;
-    margin-bottom: 0.25px !important;
-}
-/* Target for the custom class used for accuracy items */
-.accuracy-item { 
-    font-size: 7px !important; /* Adjusted size */
-    margin-bottom: 0.0625px !important; 
-}
-
 /* Sniper message styling */
 .sniper-message {
     background-color: #4CAF50; 
     color: white;
-    padding: 5px; 
+    padding: 4px; /* Reduced padding */
     border-radius: 4px; 
     font-weight: bold;
     text-align: center;
-    margin-top: 5px; /* Reduced margin */
-    margin-bottom: 5px; /* Reduced margin */
+    margin-top: 4px; /* Reduced margin */
+    margin-bottom: 4px; /* Reduced margin */
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     animation: pulse 1.5s infinite; 
-    font-size: 10px; /* Reduced from 11px */
+    font-size: 9px; /* Reduced from 10px */
 }
 
 /* NEW: Side Bet Sniper message styling */
 .side-bet-sniper-message {
     background-color: #007bff; 
     color: white;
-    padding: 3px; 
+    padding: 2px; /* Reduced padding */
     border-radius: 2px; 
     font-weight: bold;
     text-align: center;
-    margin-top: 3px; /* Reduced margin */
-    margin-bottom: 3px; /* Reduced margin */
+    margin-top: 2px; /* Reduced margin */
+    margin-bottom: 2px; /* Reduced margin */
     box-shadow: 0 0.75px 1.5px rgba(0, 0, 0, 0.2);
     animation: pulse 1.5s infinite; 
-    font-size: 8px; /* Reduced from 9px */
+    font-size: 7px; /* Reduced from 8px */
 }
 
 
@@ -1697,9 +1660,62 @@ h4 {
 
 
 hr {
-    border-top: 1px solid rgba(255,255,255,0.05); /* Slightly more visible border */
+    border-top: 1px solid rgba(255,255,255,0.08); /* Slightly more visible border for better section separation */
     margin: 5px 0; /* Reduced margin */
 }
+
+/* General spacing for headers */
+h3 { 
+    font-size: 10px !important; 
+    margin-top: 5px !important; 
+    margin-bottom: 2px !important; /* Reduced margin */
+}
+h4 {
+    font-size: 9px !important; 
+    margin-top: 3px !important; /* Reduced margin */
+    margin-bottom: 1px !important; /* Reduced margin */
+}
+h5 {
+    font-size: 8px !important; /* Reduced for derived road titles */
+    margin-top: 2px !important; /* Reduced margin */
+    margin-bottom: 1px !important; /* Reduced margin */
+}
+
+/* General paragraph text for captions etc. */
+p {
+    margin-bottom: 2px !important; /* Reduced default paragraph margin */
+    font-size: 8px; /* Default small text size */
+}
+
+/* Adjust Streamlit's default elements to reduce spacing */
+.st-emotion-cache-1r6dm1s { /* This is often a container for columns, adjust its padding */
+    padding-top: 0rem;
+    padding-bottom: 0rem;
+}
+.st-emotion-cache-1v0mbdj { /* Another common container for elements */
+    padding-top: 0rem;
+    padding-bottom: 0rem;
+}
+.st-emotion-cache-1oe5f0g { /* Padding around elements */
+    padding: 0.1rem 0.1rem; /* Reduced padding */
+}
+.st-emotion-cache-1c7y2vl { /* Caption text */
+    margin-top: 0px;
+    margin-bottom: 0px;
+    font-size: 7px; /* Even smaller for captions */
+}
+.st-emotion-cache-1g62nvv { /* General text element */
+    margin-bottom: 0px;
+}
+.st-emotion-cache-1kyx06k { /* Column padding */
+    padding-left: 0.1rem;
+    padding-right: 0.1rem;
+}
+.st-emotion-cache-1av225b { /* Column padding */
+    padding-left: 0.1rem;
+    padding-right: 0.1rem;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1844,7 +1860,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.4.4</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.4.5</span></div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1910,8 +1926,8 @@ st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 history_results = st.session_state.oracle.history 
 
 if history_results:
-    # Adjusted max_row to 10 for better fit on mobile
-    max_row = 10 
+    # Adjusted max_row to 14 for better fit on mobile
+    max_row = 14 
     columns = []
     current_col = []
     last_non_tie_result = None
@@ -1951,20 +1967,23 @@ if history_results:
     if current_col:
         columns.append(current_col)
 
-    MAX_DISPLAY_COLUMNS = 16 # Increased to 16 columns as requested
+    MAX_DISPLAY_COLUMNS = 16 # Retained 16 columns as requested
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:] 
 
     big_road_html = f"<div class='big-road-container' id='big-road-container-unique'>"
     for col in columns:
         big_road_html += "<div class='big-road-column'>"
-        for cell_result, tie_count, natural_flag in col: 
-            emoji = "🔵" if cell_result == "P" else "🔴"
-            tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
-            
-            natural_indicator = f"<span class='natural-indicator'>N</span>" if natural_flag else ""
-
-            big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{natural_indicator}</div>" 
+        # Ensure that cells are always created up to max_row for consistent column height
+        for row_idx in range(max_row):
+            if row_idx < len(col):
+                cell_result, tie_count, natural_flag = col[row_idx]
+                emoji = "🔵" if cell_result == "P" else "🔴"
+                tie_html = f"<span class='tie-count'>{tie_count}</span>" if tie_count > 0 else ""
+                natural_indicator = f"<span class='natural-indicator'>N</span>" if natural_flag else ""
+                big_road_html += f"<div class='big-road-cell {cell_result}'>{emoji}{tie_html}{natural_indicator}</div>" 
+            else:
+                big_road_html += f"<div class='big-road-cell'></div>" # Empty cell for padding
         big_road_html += "</div>" 
     big_road_html += "</div>" 
     
@@ -2001,7 +2020,8 @@ if derived_road_matrices["BigEyeBoyMatrix"]:
     beb_matrix_display = derived_road_matrices["BigEyeBoyMatrix"][-MAX_DISPLAY_COLUMNS:]
     for col in beb_matrix_display:
         beb_html += "<div class='derived-road-column'>"
-        for cell_val in col:
+        for row_idx in range(max_row): # Iterate up to max_row for consistent height
+            cell_val = col[row_idx] if row_idx < len(col) else None
             if cell_val:
                 emoji = "🔵" if cell_val == "P" else "🔴"
                 beb_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
@@ -2019,7 +2039,8 @@ if derived_road_matrices["SmallRoadMatrix"]:
     sr_matrix_display = derived_road_matrices["SmallRoadMatrix"][-MAX_DISPLAY_COLUMNS:]
     for col in sr_matrix_display:
         sr_html += "<div class='derived-road-column'>"
-        for cell_val in col:
+        for row_idx in range(max_row): # Iterate up to max_row for consistent height
+            cell_val = col[row_idx] if row_idx < len(col) else None
             if cell_val:
                 emoji = "🔵" if cell_val == "P" else "🔴"
                 sr_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
@@ -2037,7 +2058,8 @@ if derived_road_matrices["CockroachPigMatrix"]:
     cp_matrix_display = derived_road_matrices["CockroachPigMatrix"][-MAX_DISPLAY_COLUMNS:]
     for col in cp_matrix_display:
         cp_html += "<div class='derived-road-column'>"
-        for cell_val in col:
+        for row_idx in range(max_row): # Iterate up to max_row for consistent height
+            cell_val = col[row_idx] if row_idx < len(col) else None
             if cell_val:
                 emoji = "🔵" if cell_val == "P" else "🔴"
                 cp_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
@@ -2052,7 +2074,6 @@ else:
 
 # --- Control Button: Start New Shoe (MOVED TO BELOW DERIVED ROADS) ---
 st.markdown("<hr>", unsafe_allow_html=True)
-# Removed "ควบคุม:" header as requested
 st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe)
 
 # --- Data Management ---
