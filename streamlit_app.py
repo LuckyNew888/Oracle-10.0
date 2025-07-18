@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.1.0 - Smart Recommendation Engine with Advanced Statistical & Professional Road Analysis - UI Refinement)
+# streamlit_app.py (Oracle V10.2.0 - Smart Recommendation Engine with Advanced Statistical & Professional Road Analysis - Ultra Compact UI)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1604,7 +1604,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.1.0", layout="centered") # Updated version to V10.1.0
+st.set_page_config(page_title="🔮 Oracle V10.2.0", layout="centered") # Updated version to V10.2.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1616,67 +1616,67 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     font-family: 'Sarabun', sans-serif !important;
 }
 .big-title {
-    font-size: 24px; /* Reduced from 28px */
+    font-size: 20px; /* Further reduced from 24px */
     text-align: center;
     font-weight: bold;
     color: #FF4B4B; /* Streamlit's default primary color */
-    margin-bottom: 15px; /* Reduced margin */
+    margin-bottom: 10px; /* Further reduced margin */
 }
 .predict-box {
-    padding: 12px; /* Reduced from 15px */
+    padding: 10px; /* Further reduced from 12px */
     background-color: #262730; /* Darker background for the box */
-    border-radius: 10px; /* Slightly smaller border-radius */
+    border-radius: 8px; /* Further reduced border-radius */
     color: white;
-    margin-bottom: 15px; /* Reduced margin */
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
+    margin-bottom: 10px; /* Further reduced margin */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
     text-align: center; /* Center content inside prediction box */
 }
 .predict-box h2 {
-    margin: 8px 0; /* Reduced margin */
-    font-size: 32px; /* Reduced from 40px */
+    margin: 6px 0; /* Further reduced margin */
+    font-size: 26px; /* Further reduced from 32px */
     font-weight: bold;
 }
 .predict-box b {
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 12px; /* Reduced from 14px */
+    font-size: 11px; /* Further reduced from 12px */
     color: #BBBBBB;
 }
 
 /* Miss Streak warning text */
 .st-emotion-cache-1f1d6zpt p, .st-emotion-cache-1s04v0m p { /* Target text inside warning/error boxes */
-    font-size: 12px; /* Reduced from 14px */
+    font-size: 11px; /* Further reduced from 12px */
 }
 
 
 .big-road-container {
     width: 100%;
     overflow-x: auto; /* Allows horizontal scrolling if many columns */
-    padding: 6px 0; /* Reduced padding */
+    padding: 5px 0; /* Further reduced padding */
     background: #1A1A1A; /* Slightly darker background for the road */
-    border-radius: 6px; /* Slightly smaller border-radius */
+    border-radius: 5px; /* Further reduced border-radius */
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 120px; /* Adjusted minimum height for the road */
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); /* Slightly smaller shadow */
+    min-height: 100px; /* Further adjusted minimum height for the road */
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.3); /* Slightly smaller shadow */
 }
 .big-road-column {
     display: inline-flex; /* Use inline-flex for vertical stacking within column */
     flex-direction: column;
-    margin-right: 1px; /* Reduced margin */
-    border-right: 1px solid rgba(255,255,255,0.08); /* Slightly lighter border */
-    padding-right: 1px; /* Reduced padding */
+    margin-right: 0.5px; /* Further reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.05); /* Slightly lighter border */
+    padding-right: 0.5px; /* Further reduced padding */
 }
 .big-road-cell {
-    width: 18px; /* Reduced from 20px */
-    height: 18px; /* Reduced from 20px */
+    width: 16px; /* Further reduced from 18px */
+    height: 16px; /* Further reduced from 18px */
     text-align: center;
-    line-height: 18px; /* Adjusted line-height for new size */
-    font-size: 12px; /* Reduced from 14px */
-    margin-bottom: 0.5px; /* Reduced margin */
+    line-height: 16px; /* Adjusted line-height for new size */
+    font-size: 11px; /* Further reduced from 12px */
+    margin-bottom: 0.25px; /* Further reduced margin */
     border-radius: 50%; /* Make cells round */
     display: flex;
     justify-content: center;
@@ -1690,63 +1690,63 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 8px; /* Reduced from 9px */
+    font-size: 7px; /* Further reduced from 8px */
     position: absolute;
     bottom: -1px; /* Adjusted position */
     right: -1px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 0px 2px; /* Reduced padding */
+    padding: 0px 1.5px; /* Further reduced padding */
     line-height: 1;
-    min-width: 12px; /* Ensure minimum width for single digit */
+    min-width: 10px; /* Ensure minimum width for single digit */
     text-align: center;
-    box-shadow: 0 1px 1px rgba(0,0,0,0.2); /* Slightly smaller shadow */
+    box-shadow: 0 0.5px 1px rgba(0,0,0,0.2); /* Slightly smaller shadow */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 7px; /* Reduced from 8px */
+    font-size: 6px; /* Further reduced from 7px */
     font-weight: bold;
     color: white;
     line-height: 1;
-    padding: 1px 2px;
-    border-radius: 3px;
+    padding: 0.5px 1.5px; /* Further reduced padding */
+    border-radius: 2px; /* Further reduced border-radius */
     z-index: 10;
     background-color: #4CAF50; /* Green for Natural */
-    top: -2px;
-    right: -2px;
+    top: -1.5px; /* Adjusted position */
+    right: -1.5px; /* Adjusted position */
 }
 
 /* Derived Road Styles */
 .derived-road-container {
     width: 100%;
     overflow-x: auto;
-    padding: 4px 0; /* Reduced padding */
+    padding: 3px 0; /* Further reduced padding */
     background: #1A1A1A;
-    border-radius: 6px; /* Slightly smaller border-radius */
+    border-radius: 5px; /* Further reduced border-radius */
     white-space: nowrap;
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 60px; /* Reduced height for derived roads */
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.2); /* Slightly smaller shadow */
-    margin-top: 8px; /* Reduced margin */
+    min-height: 50px; /* Further reduced height for derived roads */
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.2); 
+    margin-top: 6px; /* Further reduced margin */
 }
 .derived-road-column {
     display: inline-flex;
     flex-direction: column;
-    margin-right: 0.5px; /* Reduced margin */
-    border-right: 1px solid rgba(255,255,255,0.03); /* Lighter border */
-    padding-right: 0.5px; /* Reduced padding */
+    margin-right: 0.25px; /* Further reduced margin */
+    border-right: 1px solid rgba(255,255,255,0.02); /* Lighter border */
+    padding-right: 0.25px; /* Further reduced padding */
 }
 .derived-road-cell {
-    width: 10px; /* Reduced from 12px */
-    height: 10px; /* Reduced from 12px */
+    width: 9px; /* Further reduced from 10px */
+    height: 9px; /* Further reduced from 10px */
     text-align: center;
-    line-height: 10px; /* Adjusted line-height */
-    font-size: 7px; /* Reduced from 8px */
-    margin-bottom: 0.25px; /* Reduced margin */
+    line-height: 9px; /* Adjusted line-height */
+    font-size: 6px; /* Further reduced from 7px */
+    margin-bottom: 0.125px; /* Further reduced margin */
     border-radius: 50%;
     display: flex;
     justify-content: center;
@@ -1761,17 +1761,17 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Button styling */
 .stButton>button {
     width: 100%;
-    border-radius: 7px; /* Slightly smaller border-radius */
-    font-size: 16px; /* Reduced from 18px */
+    border-radius: 6px; /* Further reduced border-radius */
+    font-size: 14px; /* Further reduced from 16px */
     font-weight: bold;
-    padding: 8px 0; /* Reduced padding */
-    margin-bottom: 8px; /* Reduced margin */
+    padding: 7px 0; /* Further reduced padding */
+    margin-bottom: 7px; /* Further reduced margin */
     transition: all 0.2s ease-in-out;
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
 }
 .stButton>button:hover {
-    transform: translateY(-1px); /* Reduced transform */
-    box-shadow: 0 4px 7px rgba(0, 0, 0, 0.2); /* Slightly smaller shadow */
+    transform: translateY(-1px); 
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2); 
 }
 /* Specific button colors */
 #btn_P button { background-color: #007BFF; color: white; border: none; }
@@ -1779,14 +1779,14 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 #btn_T button { background-color: #6C757D; color: white; border: none; }
 /* Checkbox styling adjustments */
 .stCheckbox > label {
-    padding: 6px 8px; /* Reduced padding */
+    padding: 5px 7px; /* Further reduced padding */
     border: 1px solid #495057;
-    border-radius: 7px; /* Slightly smaller border-radius */
+    border-radius: 6px; /* Further reduced border-radius */
     background-color: #343A40;
     color: white;
-    font-size: 13px; /* Reduced from 14px */
+    font-size: 12px; /* Further reduced from 13px */
     font-weight: bold;
-    margin-bottom: 8px; /* Reduced margin */
+    margin-bottom: 7px; /* Further reduced margin */
     display: flex; 
     align-items: center;
     justify-content: center; 
@@ -1796,10 +1796,10 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .stCheckbox > label:hover {
     background-color: #495057;
     transform: translateY(-1px);
-    box-shadow: 0 4px 7px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
 }
 .stCheckbox > label > div:first-child { 
-    margin-right: 6px; /* Reduced margin */
+    margin-right: 5px; /* Further reduced margin */
 }
 /* Style for checked checkboxes */
 .stCheckbox > label[data-checked="true"] {
@@ -1820,81 +1820,81 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Warning/Error messages */
 .st-emotion-cache-1f1d6zpt { 
     background-color: #FFC10720; 
-    border-left: 5px solid #FFC107;
+    border-left: 4px solid #FFC107; /* Reduced border thickness */
     color: #FFC107;
-    padding: 8px; /* Reduced padding */
-    margin-bottom: 10px; /* Reduced margin */
+    padding: 7px; /* Further reduced padding */
+    margin-bottom: 8px; /* Further reduced margin */
 }
 
 .st-emotion-cache-1s04v0m { 
     background-color: #DC354520; 
-    border-left: 5px solid #DC3545;
+    border-left: 4px solid #DC3545; /* Reduced border thickness */
     color: #DC3545;
-    padding: 8px; /* Reduced padding */
-    margin-bottom: 10px; /* Reduced margin */
+    padding: 7px; /* Further reduced padding */
+    margin-bottom: 8px; /* Further reduced margin */
 }
 
 .st-emotion-cache-13ln4z2 { 
     background-color: #17A2B820; 
-    border-left: 5px solid #17A2B8;
+    border-left: 4px solid #17A2B8; /* Reduced border thickness */
     color: #17A2B8;
-    padding: 8px; /* Reduced padding */
-    margin-bottom: 10px; /* Reduced margin */
+    padding: 7px; /* Further reduced padding */
+    margin-bottom: 8px; /* Further reduced margin */
 }
 
 /* Accuracy by Module section */
 h3 { 
-    font-size: 11px !important; /* Reduced from 12px */
-    margin-top: 8px !important; /* Reduced margin */
-    margin-bottom: 2px !important; /* Reduced margin */
+    font-size: 10px !important; /* Further reduced from 11px */
+    margin-top: 7px !important; /* Further reduced margin */
+    margin-bottom: 1px !important; /* Further reduced margin */
 }
 /* Target for the custom class used for accuracy items */
 .accuracy-item { 
-    font-size: 9px !important; /* Reduced from 10px */
-    margin-bottom: 0.5px !important; /* Reduced margin */
+    font-size: 8px !important; /* Further reduced from 9px */
+    margin-bottom: 0.25px !important; /* Further reduced margin */
 }
 
 /* Sniper message styling */
 .sniper-message {
     background-color: #4CAF50; 
     color: white;
-    padding: 8px; /* Reduced padding */
-    border-radius: 7px; /* Slightly smaller border-radius */
+    padding: 7px; /* Further reduced padding */
+    border-radius: 6px; /* Further reduced border-radius */
     font-weight: bold;
     text-align: center;
-    margin-top: 12px; /* Reduced margin */
-    margin-bottom: 12px; /* Reduced margin */
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    margin-top: 10px; /* Further reduced margin */
+    margin-bottom: 10px; /* Further reduced margin */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     animation: pulse 1.5s infinite; 
-    font-size: 15px; /* Reduced from 16px */
+    font-size: 13px; /* Further reduced from 15px */
 }
 
 /* NEW: Side Bet Sniper message styling */
 .side-bet-sniper-message {
     background-color: #007bff; 
     color: white;
-    padding: 6px; /* Reduced padding */
-    border-radius: 5px; /* Slightly smaller border-radius */
+    padding: 5px; /* Further reduced padding */
+    border-radius: 4px; /* Further reduced border-radius */
     font-weight: bold;
     text-align: center;
-    margin-top: 8px; /* Reduced margin */
-    margin-bottom: 8px; /* Reduced margin */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    margin-top: 7px; /* Further reduced margin */
+    margin-bottom: 7px; /* Further reduced margin */
+    box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.2);
     animation: pulse 1.5s infinite; 
-    font-size: 12px; /* Reduced from 14px */
+    font-size: 11px; /* Further reduced from 12px */
 }
 
 
 @keyframes pulse {
     0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.01); opacity: 0.95; } /* Slightly less aggressive pulse */
+    50% { transform: scale(1.005); opacity: 0.98; } /* Even less aggressive pulse */
     100% { transform: scale(1); opacity: 1; }
 }
 
 
 hr {
-    border-top: 1px solid rgba(255,255,255,0.08); /* Lighter border */
-    margin: 20px 0; /* Reduced margin */
+    border-top: 1px solid rgba(255,255,255,0.05); /* Even lighter border */
+    margin: 15px 0; /* Further reduced margin */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1925,7 +1925,7 @@ if 'tie_confidence' not in st.session_state:
 if 'is_tie_sniper_opportunity' not in st.session_state:
     st.session_state.is_tie_sniper_opportunity = False
 if 'recommendation_text' not in st.session_state: 
-    st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
+    st.session_state.recommendation_text = "กำลังวิเคราะห์ข้อมูล..." # Default message
 
 
 # --- UI Callback Functions ---
@@ -2048,7 +2048,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V10.1.0</div>', unsafe_allow_html=True) # Updated version to V10.1.0
+st.markdown('<div class="big-title">🔮 Oracle V10.2.0</div>', unsafe_allow_html=True) # Updated version to V10.2.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
