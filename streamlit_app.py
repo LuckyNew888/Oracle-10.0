@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.4.1 - Derived Roads Indexing Fix)
+# streamlit_app.py (Oracle V8.4.2 - DragonTailDetector Name Fix)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -933,7 +933,7 @@ class OracleBrain:
         self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
         self.chop_detector = ChopDetector() 
-        self.dragon_tail_detector = DragonTailTwoDetector() # Typo in original, should be DragonTailDetector
+        self.dragon_tail_detector = DragonTailDetector() # Corrected typo here!
         self.advanced_chop_predictor = AdvancedChopPredictor() 
         self.three_chop_predictor = ThreeChopPredictor() 
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
@@ -1349,7 +1349,7 @@ class OracleBrain:
             "ThreeChop": self.three_chop_predictor.predict(self.history)
         }
         
-        # V8.4.0: Get predictions from Derived Road Analyzer and add them
+        # V8.4.0: Get predictions from Derived Road Analyzer
         derived_road_predictions = self.derived_road_analyzer.predict(self.history)
         predictions_from_modules.update(derived_road_predictions)
 
@@ -1445,7 +1445,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.4.1", layout="centered") # Updated version to V8.4.1
+st.set_page_config(page_title="🔮 Oracle V8.4.2", layout="centered") # Updated version to V8.4.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1840,7 +1840,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.4.1</div>', unsafe_allow_html=True) # Updated version to V8.4.1
+st.markdown('<div class="big-title">🔮 Oracle V8.4.2</div>', unsafe_allow_html=True) # Updated version to V8.4.2
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
