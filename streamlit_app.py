@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.3.1 - Tie Overhaul & Post-Tie Adaption)
+# streamlit_app.py (Oracle V8.3.2 - Stricter Main Sniper & Three-Chop Pattern)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -66,6 +66,7 @@ class PatternAnalyzer:
     """
     Predicts based on specific predefined patterns in the recent history.
     V8.2.0: Dynamically adjusts pattern checking priority based on choppiness.
+    V8.3.2: Added specific "Three-Chop" pattern.
     """
     def __init__(self):
         self.patterns_and_predictions = { # Moved to init for clarity
@@ -81,16 +82,27 @@ class PatternAnalyzer:
             "PBPBPB": "P", "BPBPBP": "B", 
             "PPPBBB": "B", "BBBPBB": "P", 
             "PPBPP": "P", "BBPBB": "B", 
-            "PBBP": "B", "BPPB": "P" 
+            "PBBP": "B", "BPPB": "P",
+            # V8.3.2: Three-Chop patterns
+            "PPP": "B", # If P P P, predict B to chop
+            "BBB": "P"  # If B B B, predict P to chop
         }
 
     def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]: # Added choppiness_rate
         filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 4:
+        if len(filtered_history) < 3: # Need at least 3 for Three-Chop
             return None
 
         joined_filtered = "".join(filtered_history)
         
+        # V8.3.2: Prioritize Three-Chop pattern if detected
+        if len(joined_filtered) >= 3:
+            last_three = joined_filtered[-3:]
+            if last_three == "PPP":
+                return "B"
+            if last_three == "BBB":
+                return "P"
+
         # V8.2.0: Dynamic pattern window - adjust iteration based on choppiness
         # If very choppy, prioritize shorter patterns (e.g., 3-length patterns first)
         if choppiness_rate > 0.7: 
@@ -105,7 +117,8 @@ class PatternAnalyzer:
         for length in lengths_to_check: 
             if len(joined_filtered) >= length:
                 current_pattern = joined_filtered[-length:]
-                if current_pattern in self.patterns_and_predictions:
+                # Exclude "PPP" and "BBB" as they are handled above specifically for Three-Chop
+                if current_pattern in self.patterns_and_predictions and current_pattern not in ["PPP", "BBB"]:
                     return self.patterns_and_predictions[current_pattern]
         return None
 
@@ -492,6 +505,7 @@ class AdaptiveScorer:
     V8.2.8: Dynamic module weighting based on choppiness.
     V8.3.0: Even more aggressive miss streak penalty.
     V8.3.1: Even more aggressive miss streak penalty.
+    V8.3.2: Even more aggressive miss streak penalty.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -551,9 +565,9 @@ class AdaptiveScorer:
                 elif name in ["ChopDetector", "AdvancedChop"]:
                     weight *= 0.85 # Slightly reduce others
 
-            # V8.3.1: Even more aggressive miss streak penalty (increased from 15% to 18%)
+            # V8.3.2: Even more aggressive miss streak penalty (increased from 18% to 20%)
             if current_miss_streak > 0:
-                penalty_factor = 1.0 - (current_miss_streak * 0.18) # 18% penalty per miss
+                penalty_factor = 1.0 - (current_miss_streak * 0.20) # 20% penalty per miss
                 weight *= max(0.05, penalty_factor) # Don't let weight drop below 5%
             
             total_score[pred] += weight
@@ -601,7 +615,9 @@ class AdaptiveScorer:
             "PPBP": "สองตัวตัด", "BBPA": "สองตัวตัด",
             "PBPP": "คู่สลับ", "BPPB": "คู่สลับ",
             "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด", 
-            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว"
+            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+            "PPP": "ตัดสาม", # V8.3.2: Added Three-Chop pattern name
+            "BBB": "ตัดสาม"  # V8.3.2: Added Three-Chop pattern name
         }
 
         if len(filtered_history) >= 6: # V8.1.5: Check for "สามตัวตัด" pattern name
@@ -625,6 +641,12 @@ class AdaptiveScorer:
                 # Check for Ping-Pong Chop pattern: XYX X
                 if filtered_history[-4] != filtered_history[-3] and filtered_history[-3] == filtered_history[-2] and filtered_history[-2] == filtered_history[-1]:
                     return "ปิงปองตัด"
+
+        # V8.3.2: Check for "Three-Chop" pattern specifically
+        if len(filtered_history) >= 3:
+            last_three = "".join(filtered_history[-3:])
+            if last_three == "PPP" or last_three == "BBB":
+                return "ตัดสาม"
 
 
         for length in range(6, 2, -1): 
@@ -1081,14 +1103,18 @@ class OracleBrain:
 
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            if confidence_main >= 50 and current_miss_streak <= 3 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
+            # V8.3.2: Stricter Main Sniper Criteria
+            # confidence_main >= 60 (from 50)
+            # current_miss_streak <= 2 (from 3)
+            # CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 (from 50)
+            if confidence_main >= 60 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER:
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 
                 relevant_contributing_modules = [m for m in contributing_modules if m not in ["Fallback", "NoPrediction"]]
 
                 high_accuracy_contributing_count = 0
                 
-                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 50 
+                CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD = 60 # Changed from 50
 
                 for module_name in relevant_contributing_modules:
                     acc_10 = module_accuracies_recent_10.get(module_name, 0.0)
@@ -1099,7 +1125,7 @@ class OracleBrain:
                     if effective_recent_acc >= CONTRIBUTING_MODULE_RECENT_ACCURACY_THRESHOLD: 
                         high_accuracy_contributing_count += 1
                 
-                if high_accuracy_contributing_count >= 3:
+                if high_accuracy_contributing_count >= 3: # Keep this at 3 for now, or suggest increasing it.
                     is_sniper_opportunity_main = True
         # --- END Main Outcome Sniper Logic ---
 
@@ -1153,7 +1179,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.3.1", layout="centered") # Updated version to V8.3.1
+st.set_page_config(page_title="🔮 Oracle V8.3.2", layout="centered") # Updated version to V8.3.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1468,7 +1494,8 @@ def handle_click(main_outcome_str: MainOutcome):
         "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
         "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
-        "ปิงปองตัด": "ปิงปองตัด" # New pattern for chop after ping-pong
+        "ปิงปองตัด": "ปิงปองตัด", # New pattern for chop after ping-pong
+        "ตัดสาม": "ตัดสาม" # V8.3.2: Added Three-Chop pattern name
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -1514,7 +1541,8 @@ def handle_remove():
         "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
         "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
         "มังกรตัด": "มังกรตัด", # Existing pattern for chop after streak
-        "ปิงปองตัด": "ปิงปองตัด" # New pattern for chop after ping-pong
+        "ปิงปองตัด": "ปิงปองตัด", # New pattern for chop after ping-pong
+        "ตัดสาม": "ตัดสาม" # V8.3.2: Added Three-Chop pattern name
     }
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
@@ -1546,7 +1574,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.3.1</div>', unsafe_allow_html=True) # Updated version to V8.3.1
+st.markdown('<div class="big-title">🔮 Oracle V8.3.2</div>', unsafe_allow_html=True) # Updated version to V8.3.2
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1756,7 +1784,8 @@ with col_ul:
                 "PBBPP": "สองตัวตัด", "BPBB": "สองตัวติด",
                 "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
                 "มังกรตัด": "มังกรตัด",
-                "ปิงปองตัด": "ปิงปองตัด"
+                "ปิงปองตัด": "ปิงปองตัด",
+                "ตัดสาม": "ตัดสาม"
             }
             st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
 
