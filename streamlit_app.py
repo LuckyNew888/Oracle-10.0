@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.4.2 - DragonTailDetector Name Fix)
+# streamlit_app.py (Oracle V8.4.3 - Derived Roads Early Activation)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -343,11 +343,13 @@ class ThreeChopPredictor:
             return _opposite_outcome(last_three[0]) # Predict the chop
         return None
 
-# --- NEW: Derived Road Analyzer (V8.4.0, V8.4.1 Fixes) ---
+# --- NEW: Derived Road Analyzer (V8.4.0, V8.4.1 Fixes, V8.4.3 Early Activation) ---
 class DerivedRoadAnalyzer:
     """
     Analyzes Big Road to derive Big Eye Boy, Small Road, and Cockroach Pig patterns
     and makes predictions based on their trends.
+    V8.4.1: Improved boundary checks.
+    V8.4.3: Removed global history length check to allow earlier activation of BEB/SR.
     """
     def _build_big_road_matrix(self, history_pb: List[MainOutcome]) -> List[List[Optional[MainOutcome]]]:
         """
@@ -483,13 +485,10 @@ class DerivedRoadAnalyzer:
         predictions: Dict[str, Optional[MainOutcome]] = {}
         
         history_pb = _get_main_outcome_history(history)
-        # V8.4.1: Increased minimum history for derived roads to ensure enough columns for calculation
-        # Big Eye Boy needs at least 2 columns (P,B) -> history_pb len 2
-        # Small Road needs at least 3 columns (P,B,P) -> history_pb len 3
-        # Cockroach Pig needs at least 4 columns (P,B,P,B) -> history_pb len 4
-        # Since we simulate adding a new outcome, we need history_pb to be at least 1 for BEB, 2 for SR, 3 for CP.
-        # Let's set a general minimum for all derived roads to be safe.
-        if len(history_pb) < 4: # Need at least 4 P/B outcomes to reliably start derived roads for CP
+        
+        # V8.4.3: Removed the blanket history length check here.
+        # Individual _get_..._value functions will handle their own minimum history requirements.
+        if not history_pb: # If no P/B history at all, return None for all.
             return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None}
 
         matrix = self._build_big_road_matrix(history_pb)
@@ -933,7 +932,7 @@ class OracleBrain:
         self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
         self.chop_detector = ChopDetector() 
-        self.dragon_tail_detector = DragonTailDetector() # Corrected typo here!
+        self.dragon_tail_detector = DragonTailDetector() 
         self.advanced_chop_predictor = AdvancedChopPredictor() 
         self.three_chop_predictor = ThreeChopPredictor() 
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
@@ -1350,8 +1349,8 @@ class OracleBrain:
         }
         
         # V8.4.0: Get predictions from Derived Road Analyzer
-        derived_road_predictions = self.derived_road_analyzer.predict(self.history)
-        predictions_from_modules.update(derived_road_predictions)
+        derived_road_preds = self.derived_road_analyzer.predict(self.history)
+        predictions_from_modules.update(derived_road_preds)
 
         module_accuracies_all_time = self.get_module_accuracy_all_time()
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
@@ -1445,7 +1444,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.4.2", layout="centered") # Updated version to V8.4.2
+st.set_page_config(page_title="🔮 Oracle V8.4.3", layout="centered") # Updated version to V8.4.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1840,7 +1839,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.4.2</div>', unsafe_allow_html=True) # Updated version to V8.4.2
+st.markdown('<div class="big-title">🔮 Oracle V8.4.3</div>', unsafe_allow_html=True) # Updated version to V8.4.3
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
