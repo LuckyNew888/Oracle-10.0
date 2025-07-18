@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.2.5 - Enhanced Tie Prediction)
+# streamlit_app.py (Oracle V8.2.6 - Miss Streak Recovery)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -25,6 +25,14 @@ def _get_side_bet_history_flags(history: List[RoundResult], bet_type: str) -> Li
     if bet_type == "T":
         return [r.main_outcome == "T" for r in history]
     return []
+
+def _opposite_outcome(outcome: MainOutcome) -> MainOutcome:
+    """Returns the opposite of a P or B outcome."""
+    if outcome == "P":
+        return "B"
+    elif outcome == "B":
+        return "P"
+    return outcome # Should not happen for P/B inputs
 
 # --- Prediction Modules ---
 
@@ -189,10 +197,22 @@ class SniperPattern:
 
 class FallbackModule:
     """
-    Provides a random prediction if no other module can make a prediction.
+    Provides a more strategic prediction if no other module can make a prediction,
+    especially during a miss streak.
+    V8.2.6: Changed from random to strategic anti-streak/follow-chop.
     """
     def predict(self, history: List[RoundResult]) -> Optional[MainOutcome]:
-        return random.choice(["P", "B"])
+        filtered_history = _get_main_outcome_history(history)
+        if len(filtered_history) < 2:
+            return random.choice(["P", "B"]) # Fallback to random if not enough history
+
+        last_outcome = filtered_history[-1]
+        second_last_outcome = filtered_history[-2]
+
+        if last_outcome == second_last_outcome: # It's a streak (e.g., PP or BB)
+            return _opposite_outcome(last_outcome) # Predict to chop the streak (e.g., for PP, predict B)
+        else: # It's alternating (e.g., PB or BP)
+            return last_outcome # Predict to continue the alternating pattern (e.g., for PB, predict P)
 
 class ChopDetector:
     """
@@ -392,7 +412,7 @@ class TiePredictor:
             # Check for "every 8-10 rounds" pattern
             if (current_round_count % 8 == 0 or current_round_count % 9 == 0 or current_round_count % 10 == 0):
                 # And if ties are still due overall
-                if actual_tie_count_long < expected_tie_count_long * 0.9:
+                if actual_tie_count_long < expected_tie_count_long * 1.0: # Ties are not over-represented
                     return "T", 68 # Moderate confidence
 
         # V8.2.4: New Rule 8: Tie after a short streak of Banker/Player
@@ -445,6 +465,7 @@ class AdaptiveScorer:
     V8.1.3: Even more aggressive blending for real-time adaptation and confidence adjustment based on volatility.
     V8.1.5: Further refined weighting for AdvancedChopPredictor on specific patterns.
     V8.2.0: Ensures choppiness_rate is used for confidence adjustment.
+    V8.2.6: More aggressive miss streak penalty.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -492,9 +513,9 @@ class AdaptiveScorer:
             elif name == "ChopDetector" and predictions.get(name) is not None:
                 weight += 0.1 # Standard extra weight for ChopDetector
             
-            # V8.1.2: Apply miss streak penalty to module weights
+            # V8.2.6: More aggressive miss streak penalty
             if current_miss_streak > 0:
-                penalty_factor = 1.0 - (current_miss_streak * 0.05) # 5% penalty per miss
+                penalty_factor = 1.0 - (current_miss_streak * 0.08) # 8% penalty per miss (up from 5%)
                 weight *= max(0.1, penalty_factor) # Don't let weight drop below 10%
             
             total_score[pred] += weight
@@ -995,42 +1016,46 @@ class OracleBrain:
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
 
-        final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
-            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
+        # V8.2.6: Enhanced Miss Streak Recovery Logic - Prioritize simple, strong recovery patterns
+        if current_miss_streak >= 3:
+            filtered_history_pb = _get_main_outcome_history(self.history)
+            
+            if len(filtered_history_pb) >= 2:
+                last_outcome = filtered_history_pb[-1]
+                second_last_outcome = filtered_history_pb[-2]
 
+                # Recovery Strategy 1: Strong Simple Pattern (Streak or Chop)
+                if last_outcome == second_last_outcome: # Last two were a streak (e.g., PP or BB)
+                    final_prediction_main = last_outcome # Predict continuation of streak
+                    source_module_name_main = "Recovery-StrongStreak"
+                    confidence_main = 75 # High confidence for simple continuation
+                else: # Last two were alternating (e.g., PB or BP)
+                    final_prediction_main = _opposite_outcome(last_outcome) # Predict continuation of chop
+                    source_module_name_main = "Recovery-StrongChop"
+                    confidence_main = 70 # Moderate-high confidence for simple chop
+
+            # If not recovered by strong simple pattern, or history too short for it, try best recent module
+            if final_prediction_main is None:
+                best_module_for_recovery = self.get_best_recent_module()
+                if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
+                    final_prediction_main = predictions_from_modules[best_module_for_recovery]
+                    source_module_name_main = f"{best_module_for_recovery}-Recovery"
+                    confidence_main = 60 # Moderate confidence for module-based recovery
+                else:
+                    # As a last resort, use the intelligent Fallback
+                    final_prediction_main = self.fallback_module.predict(self.history)
+                    source_module_name_main = "Fallback-Recovery"
+                    confidence_main = 50 # Base confidence for intelligent fallback
+        else: # Not in a severe miss streak, use normal scoring
+            final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
+                self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
+
+        # Ensure prediction is None if confidence is too low, even after recovery attempts
         if final_prediction_main is not None and confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE:
             final_prediction_main = None
             source_module_name_main = None
             confidence_main = None
             pattern_code_main = None
-
-        # V8.1.3: Enhanced Miss Streak Recovery Logic
-        if current_miss_streak >= 3:
-            # If the main prediction is not confident enough OR it's None
-            if final_prediction_main is None or (confidence_main is not None and confidence_main < MIN_DISPLAY_CONFIDENCE):
-                filtered_history_pb = _get_main_outcome_history(self.history)
-                
-                if len(filtered_history_pb) >= 2 and len(self.prediction_log) >= 1:
-                    last_actual_outcome = filtered_history_pb[-1]
-                    # Check if the last actual outcome was a miss and if it started a new mini-streak
-                    # This means the previous prediction was wrong, and the last two actual outcomes are the same
-                    if self.prediction_log[-1] is not None and last_actual_outcome != self.prediction_log[-1] and filtered_history_pb[-1] == filtered_history_pb[-2]:
-                        final_prediction_main = last_actual_outcome # Predict continuation of this new mini-streak
-                        source_module_name_main = "Recovery-NewStreak"
-                        confidence_main = 70 # Higher confidence for detected new streak after a miss
-                    else:
-                        # If no clear new streak, try to find the best recent module
-                        best_module_for_recovery = self.get_best_recent_module()
-                        if best_module_for_recovery and predictions_from_modules.get(best_module_for_recovery) in ("P", "B"):
-                            final_prediction_main = predictions_from_modules[best_module_for_recovery]
-                            source_module_name_main = f"{best_module_for_recovery}-Recovery"
-                            confidence_main = 60 # Moderate confidence for module-based recovery
-                        else:
-                            # As a last resort, use Fallback if nothing else is confident
-                            final_prediction_main = self.fallback_module.predict(self.history)
-                            source_module_name_main = "Fallback-Recovery"
-                            confidence_main = 50 # Base confidence for pure fallback
-
 
         # --- Main Outcome Sniper Opportunity Logic ---
         if final_prediction_main in ("P", "B") and confidence_main is not None:
@@ -1106,7 +1131,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.2.5", layout="centered") # Updated version to V8.2.5
+st.set_page_config(page_title="🔮 Oracle V8.2.6", layout="centered") # Updated version to V8.2.6
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1499,7 +1524,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.2.5</div>', unsafe_allow_html=True) # Updated version to V8.2.5
+st.markdown('<div class="big-title">🔮 Oracle V8.2.6</div>', unsafe_allow_html=True) # Updated version to V8.2.6
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
