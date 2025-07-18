@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.0 - Smart Recommendation Engine - Lean Core)
+# streamlit_app.py (Oracle V10.4.1 - Smart Recommendation Engine - Lean Core (Bugfix))
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -813,7 +813,7 @@ class OracleBrain:
         self.rule_engine = RuleEngine()
         self.pattern_analyzer = PatternAnalyzer()
         self.trend_scanner = TrendScanner()
-        self.fallback_module = FallbackModule() 
+        self.fallback_module = FallbackModule() # Re-added this line to fix NameError
         self.derived_road_analyzer = DerivedRoadAnalyzer() 
         self.statistical_analyzer = StatisticalAnalyzer() 
 
@@ -1325,7 +1325,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.0", layout="centered") # Updated version to V10.4.0
+st.set_page_config(page_title="🔮 Oracle V10.4.1", layout="centered") # Updated version to V10.4.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1761,7 +1761,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V10.4.0</div>', unsafe_allow_html=True) # Updated version to V10.4.0
+st.markdown('<div class="big-title">🔮 Oracle V10.4.1</div>', unsafe_allow_html=True) # Updated version to V10.4.1
 
 # --- Input Buttons (Main Outcomes) - MOVED TO TOP ---
 st.markdown("<b>ป้อนผล:</b>", unsafe_allow_html=True) 
