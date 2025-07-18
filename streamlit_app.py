@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.2.7 - Smarter Recovery & Tie)
+# streamlit_app.py (Oracle V8.3.0 - Enhanced Accuracy & Tie)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -342,6 +342,7 @@ class TiePredictor:
     V8.2.4: Enhanced with positional and pattern-based tie prediction rules.
     V8.2.5: Further refinement of tie prediction rules based on user feedback (Trigger Point, Bayesian).
     V8.2.7: Added Tie prediction rule for long alternating patterns.
+    V8.3.0: Enhanced "Due" logic and added "Tie Drought" rule for higher confidence.
     """
     THEORETICAL_PROB = 0.0952 # Approx. 9.52% for 8 decks
 
@@ -364,24 +365,18 @@ class TiePredictor:
         expected_tie_count_long = long_lookback_for_prob * self.THEORETICAL_PROB
         expected_tie_count_short = short_lookback_for_prob * self.THEORETICAL_PROB
 
-        # V8.0.4: New rule - require at least one tie occurrence in the long lookback for "due" prediction
-        MIN_TIE_OCCURRENCES_FOR_DUE = 1 
-        if actual_tie_count_long < MIN_TIE_OCCURRENCES_FOR_DUE and len(tie_flags) >= long_lookback_for_prob:
-            # If no ties have occurred in the long lookback, and we have enough history, don't predict "due"
-            # This prevents predicting "due" too early in a shoe where ties are simply not appearing yet.
-            pass # Skip due rules, proceed to pattern rules
-        else:
-            # Rule 1: Ties are "due" based on long-term underperformance
-            if actual_tie_count_long < expected_tie_count_long * 0.9: 
-                due_factor = (expected_tie_count_long * 0.9 - actual_tie_count_long) / expected_tie_count_long
-                tie_confidence = min(90, 60 + int(due_factor * 100 * 0.7)) 
-                if tie_confidence >= 55: return "T", tie_confidence
+        # V8.3.0: Enhanced Rule 1 & 2: Ties are "due" based on underperformance
+        # Rule 1: Ties are "due" based on long-term underperformance
+        if actual_tie_count_long < expected_tie_count_long * 0.9: 
+            due_factor = (expected_tie_count_long * 0.9 - actual_tie_count_long) / expected_tie_count_long
+            tie_confidence = min(95, 65 + int(due_factor * 100 * 0.8)) # Increased base confidence and impact
+            if tie_confidence >= 55: return "T", tie_confidence
 
-            # Rule 2: Ties are "due" based on short-term underperformance, even if long-term is okay
-            if actual_tie_count_short < expected_tie_count_short * 0.8: 
-                due_factor_short = (expected_tie_count_short * 0.8 - actual_tie_count_short) / expected_tie_count_short
-                tie_confidence = min(85, 55 + int(due_factor_short * 100 * 0.6)) 
-                if tie_confidence >= 55: return "T", tie_confidence
+        # Rule 2: Ties are "due" based on short-term underperformance, even if long-term is okay
+        if actual_tie_count_short < expected_tie_count_short * 0.8: 
+            due_factor_short = (expected_tie_count_short * 0.8 - actual_tie_count_short) / expected_tie_count_short
+            tie_confidence = min(90, 60 + int(due_factor_short * 100 * 0.7)) # Increased base confidence and impact
+            if tie_confidence >= 55: return "T", tie_confidence
 
         # V8.2.1: Refined Rule 3: Tie Clustering - predict if a tie was *recently* seen, but not the immediate last round.
         # This prevents immediate re-prediction of Tie right after a Tie result is entered.
@@ -458,7 +453,22 @@ class TiePredictor:
                 if actual_tie_count_short < expected_tie_count_short * 1.2: # Not too many ties recently
                     return "T", 72 # High confidence for this specific pattern break
 
-        # Rule 13 (formerly Rule 7/10/12): If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
+        # V8.3.0: New Rule 14: Tie Drought - Predict if ties have been absent for a long period
+        if len(tie_flags) >= 20: # Needs sufficient history to detect a drought
+            drought_threshold = 15 # If no ties in the last 15 rounds
+            rounds_since_last_tie = -1
+            if True in tie_flags: # Check if there has been any tie in history
+                last_tie_index = len(tie_flags) - 1 - tie_flags[::-1].index(True)
+                rounds_since_last_tie = len(tie_flags) - 1 - last_tie_index
+            
+            if rounds_since_last_tie >= drought_threshold or rounds_since_last_tie == -1: # -1 means no ties ever
+                # Increase confidence based on how long the drought has been
+                # Factor increases from 0 to 1 over 10 rounds past threshold
+                drought_factor = min(1.0, (max(0, rounds_since_last_tie - drought_threshold + 1)) / 10) 
+                tie_confidence = min(95, 70 + int(drought_factor * 25)) # Base 70, up to 95
+                return "T", tie_confidence
+
+        # Rule 15 (formerly Rule 7/10/12/13): If ties have been slightly more frequent than expected, stop predicting (to prevent over-prediction)
         if actual_tie_count_long > expected_tie_count_long * 1.1: 
             return None, None 
 
@@ -477,6 +487,8 @@ class AdaptiveScorer:
     V8.2.0: Ensures choppiness_rate is used for confidence adjustment.
     V8.2.6: More aggressive miss streak penalty.
     V8.2.7: Even more aggressive miss streak penalty.
+    V8.2.8: Dynamic module weighting based on choppiness.
+    V8.3.0: Even more aggressive miss streak penalty.
     """
     def score(self, 
               predictions: Dict[str, Optional[MainOutcome]], 
@@ -524,9 +536,21 @@ class AdaptiveScorer:
             elif name == "ChopDetector" and predictions.get(name) is not None:
                 weight += 0.1 # Standard extra weight for ChopDetector
             
-            # V8.2.7: Even more aggressive miss streak penalty (increased from 8% to 10%)
+            # V8.2.8: Dynamic module weighting based on choppiness
+            if choppiness_rate > 0.7: # Very choppy
+                if name in ["ChopDetector", "AdvancedChop"]:
+                    weight *= 1.15 # Boost these modules
+                elif name in ["Trend", "Rule"]:
+                    weight *= 0.85 # Slightly reduce others
+            elif choppiness_rate < 0.3: # Very streaky
+                if name in ["Trend", "Rule"]:
+                    weight *= 1.15 # Boost these modules
+                elif name in ["ChopDetector", "AdvancedChop"]:
+                    weight *= 0.85 # Slightly reduce others
+
+            # V8.3.0: Even more aggressive miss streak penalty (increased from 12% to 15%)
             if current_miss_streak > 0:
-                penalty_factor = 1.0 - (current_miss_streak * 0.10) # 10% penalty per miss
+                penalty_factor = 1.0 - (current_miss_streak * 0.15) # 15% penalty per miss
                 weight *= max(0.05, penalty_factor) # Don't let weight drop below 5%
             
             total_score[pred] += weight
@@ -991,12 +1015,14 @@ class OracleBrain:
         MIN_HISTORY_FOR_SNIPER = 25 
         MIN_HISTORY_FOR_SIDE_BET_SNIPER = 25 
         
-        # V8.2.7: Dynamic MIN_DISPLAY_CONFIDENCE based on miss streak
+        # V8.3.0: Dynamic MIN_DISPLAY_CONFIDENCE based on miss streak (more aggressive)
         MIN_DISPLAY_CONFIDENCE_MAIN = 50 
-        if current_miss_streak == 4:
+        if current_miss_streak == 3:
             MIN_DISPLAY_CONFIDENCE_MAIN = 55
-        elif current_miss_streak == 5:
+        elif current_miss_streak == 4:
             MIN_DISPLAY_CONFIDENCE_MAIN = 60
+        elif current_miss_streak >= 5:
+            MIN_DISPLAY_CONFIDENCE_MAIN = 65
         
         MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 
 
@@ -1034,9 +1060,6 @@ class OracleBrain:
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
 
-        # V8.2.6: Enhanced Miss Streak Recovery Logic - Prioritize simple, strong recovery patterns
-        # V8.2.7: Removed the explicit recovery block here. Let AdaptiveScorer handle it with dynamic penalty and confidence.
-        
         final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
 
@@ -1121,7 +1144,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.2.7", layout="centered") # Updated version to V8.2.7
+st.set_page_config(page_title="🔮 Oracle V8.3.0", layout="centered") # Updated version to V8.3.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1514,7 +1537,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.2.7</div>', unsafe_allow_html=True) # Updated version to V8.2.7
+st.markdown('<div class="big-title">🔮 Oracle V8.3.0</div>', unsafe_allow_html=True) # Updated version to V8.3.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
