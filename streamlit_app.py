@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V8.4.0 - Derived Roads Integration)
+# streamlit_app.py (Oracle V8.4.1 - Derived Roads Indexing Fix)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -343,7 +343,7 @@ class ThreeChopPredictor:
             return _opposite_outcome(last_three[0]) # Predict the chop
         return None
 
-# --- NEW: Derived Road Analyzer (V8.4.0) ---
+# --- NEW: Derived Road Analyzer (V8.4.0, V8.4.1 Fixes) ---
 class DerivedRoadAnalyzer:
     """
     Analyzes Big Road to derive Big Eye Boy, Small Road, and Cockroach Pig patterns
@@ -372,8 +372,8 @@ class DerivedRoadAnalyzer:
         if current_col:
             matrix.append(current_col)
         
-        # Pad columns to a minimum height for consistent indexing if needed (e.g., 6 rows)
-        max_rows = 6 # Standard Big Road height
+        # Pad columns to a minimum height for consistent indexing (6 rows standard)
+        max_rows = 6 
         padded_matrix = []
         for col in matrix:
             padded_col = col + [None] * (max_rows - len(col))
@@ -383,22 +383,31 @@ class DerivedRoadAnalyzer:
 
     def _get_big_eye_boy_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
-        Calculates Big Eye Boy value for a given cell.
-        Rule: Check two cells back in the current row (if exists) OR one cell back in the same column.
+        Calculates Big Eye Boy value for a given cell (col_idx, row_idx) in the Big Road matrix.
+        V8.4.1: Improved boundary checks.
         """
-        if col_idx < 1 or row_idx >= len(matrix[col_idx]): # Big Eye Boy starts from 2nd column, 1st row (0-indexed)
+        # Ensure the current cell (col_idx, row_idx) itself is valid and not None
+        if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
+            return None
+        
+        # Big Eye Boy starts from the 2nd column (index 1) of the Big Road.
+        if col_idx < 1:
             return None
 
-        # Rule 1: Check two cells back in the current row (horizontal movement)
-        if col_idx >= 2 and matrix[col_idx-2][row_idx] is not None:
-            if matrix[col_idx-2][row_idx] == matrix[col_idx][row_idx]: # Same as 2 back in row
+        # Rule 1: Horizontal comparison (two columns back in the same row)
+        # Requires at least 3 columns in Big Road (col_idx >= 2)
+        # And the cell (col_idx-2, row_idx) must exist and have a value
+        if col_idx >= 2 and (col_idx - 2) < len(matrix) and row_idx < len(matrix[col_idx-2]) and matrix[col_idx-2][row_idx] is not None:
+            if matrix[col_idx-2][row_idx] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
-        # Rule 2: Check one cell back in the current column (vertical movement)
-        elif row_idx >= 1 and matrix[col_idx][row_idx-1] is not None:
-            if matrix[col_idx][row_idx-1] == matrix[col_idx][row_idx]: # Same as 1 back in column
+        # Rule 2: Vertical comparison (one cell up in the same column)
+        # This applies if the current cell is not the first in its column (row_idx >= 1)
+        # And the cell above (col_idx, row_idx-1) must exist and have a value
+        elif row_idx >= 1 and row_idx - 1 < len(matrix[col_idx]) and matrix[col_idx][row_idx-1] is not None:
+            if matrix[col_idx][row_idx-1] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
@@ -407,22 +416,31 @@ class DerivedRoadAnalyzer:
 
     def _get_small_road_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
-        Calculates Small Road value for a given cell.
-        Rule: Check one cell back in the current row (if exists) OR one cell back in the column before the previous one.
+        Calculates Small Road value for a given cell (col_idx, row_idx) in the Big Road matrix.
+        V8.4.1: Improved boundary checks.
         """
-        if col_idx < 2 or row_idx >= len(matrix[col_idx]): # Small Road starts from 3rd column, 1st row (0-indexed)
+        # Ensure the current cell (col_idx, row_idx) itself is valid and not None
+        if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
             return None
 
-        # Rule 1: Check one cell back in the current row (horizontal movement)
-        if col_idx >= 1 and matrix[col_idx-1][row_idx] is not None:
-            if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]: # Same as 1 back in row
+        # Small Road starts from 3rd column (index 2) of Big Road.
+        if col_idx < 2:
+            return None
+        
+        # Rule 1: Horizontal comparison (one column back in the same row)
+        # Requires at least 2 columns in Big Road (col_idx >= 1)
+        # And the cell (col_idx-1, row_idx) must exist and have a value
+        if col_idx >= 1 and (col_idx - 1) < len(matrix) and row_idx < len(matrix[col_idx-1]) and matrix[col_idx-1][row_idx] is not None:
+            if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
-        # Rule 2: Check one cell back in the column before the previous one (vertical movement)
-        elif row_idx >= 1 and col_idx >= 2 and matrix[col_idx-2][row_idx-1] is not None:
-            if matrix[col_idx-2][row_idx-1] == matrix[col_idx][row_idx]: # Same as cell in previous column, previous row
+        # Rule 2: Vertical comparison (one cell up in the column two back)
+        # This applies if current cell is not first in its column (row_idx >= 1)
+        # And the cell (col_idx-2, row_idx-1) must exist and have a value
+        elif row_idx >= 1 and col_idx >= 2 and (col_idx - 2) < len(matrix) and row_idx - 1 < len(matrix[col_idx-2]) and matrix[col_idx-2][row_idx-1] is not None:
+            if matrix[col_idx-2][row_idx-1] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
@@ -431,22 +449,30 @@ class DerivedRoadAnalyzer:
 
     def _get_cockroach_pig_value(self, matrix: List[List[Optional[MainOutcome]]], col_idx: int, row_idx: int) -> Optional[MainOutcome]:
         """
-        Calculates Cockroach Pig value for a given cell.
-        Rule: Check one cell back in the current row (if exists) OR one cell back in the column before the one before the previous one.
+        Calculates Cockroach Pig value for a given cell (col_idx, row_idx) in the Big Road matrix.
+        V8.4.1: Improved boundary checks.
         """
-        if col_idx < 3 or row_idx >= len(matrix[col_idx]): # Cockroach Pig starts from 4th column, 1st row (0-indexed)
+        # Ensure the current cell (col_idx, row_idx) itself is valid and not None
+        if col_idx >= len(matrix) or row_idx >= len(matrix[col_idx]) or matrix[col_idx][row_idx] is None:
             return None
 
-        # Rule 1: Check one cell back in the current row (horizontal movement)
-        if col_idx >= 1 and matrix[col_idx-1][row_idx] is not None:
-            if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]: # Same as 1 back in row
+        # Cockroach Pig starts from 4th column (index 3) of Big Road.
+        if col_idx < 3:
+            return None
+        
+        # Rule 1: Horizontal comparison (one column back in the same row)
+        # Same as Small Road's Rule 1
+        if col_idx >= 1 and (col_idx - 1) < len(matrix) and row_idx < len(matrix[col_idx-1]) and matrix[col_idx-1][row_idx] is not None:
+            if matrix[col_idx-1][row_idx] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
         
-        # Rule 2: Check one cell back in the column before the one before the previous one (vertical movement)
-        elif row_idx >= 1 and col_idx >= 3 and matrix[col_idx-3][row_idx-1] is not None:
-            if matrix[col_idx-3][row_idx-1] == matrix[col_idx][row_idx]: # Same as cell in previous column, previous row
+        # Rule 2: Vertical comparison (one cell up in the column three back)
+        # This applies if current cell is not first in its column (row_idx >= 1)
+        # And the cell (col_idx-3, row_idx-1) must exist and have a value
+        elif row_idx >= 1 and col_idx >= 3 and (col_idx - 3) < len(matrix) and row_idx - 1 < len(matrix[col_idx-3]) and matrix[col_idx-3][row_idx-1] is not None:
+            if matrix[col_idx-3][row_idx-1] == matrix[col_idx][row_idx]:
                 return "B" # Red (Follows pattern)
             else:
                 return "P" # Blue (Chops pattern)
@@ -457,41 +483,28 @@ class DerivedRoadAnalyzer:
         predictions: Dict[str, Optional[MainOutcome]] = {}
         
         history_pb = _get_main_outcome_history(history)
-        if len(history_pb) < 4: # Need enough history to start forming derived roads
+        # V8.4.1: Increased minimum history for derived roads to ensure enough columns for calculation
+        # Big Eye Boy needs at least 2 columns (P,B) -> history_pb len 2
+        # Small Road needs at least 3 columns (P,B,P) -> history_pb len 3
+        # Cockroach Pig needs at least 4 columns (P,B,P,B) -> history_pb len 4
+        # Since we simulate adding a new outcome, we need history_pb to be at least 1 for BEB, 2 for SR, 3 for CP.
+        # Let's set a general minimum for all derived roads to be safe.
+        if len(history_pb) < 4: # Need at least 4 P/B outcomes to reliably start derived roads for CP
             return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None}
 
         matrix = self._build_big_road_matrix(history_pb)
         
-        # Get the last valid cell in the matrix for prediction
-        last_col_idx = len(matrix) - 1
-        last_row_idx = len(matrix[last_col_idx]) - 1
-        
-        # Find the actual last non-None cell in the last column
-        while last_row_idx >= 0 and matrix[last_col_idx][last_row_idx] is None:
-            last_row_idx -= 1
-        
-        if last_row_idx < 0: # Last column is empty or only Nones
-            if last_col_idx > 0: # Check previous column
-                last_col_idx -= 1
-                last_row_idx = len(matrix[last_col_idx]) - 1
-                while last_row_idx >= 0 and matrix[last_col_idx][last_row_idx] is None:
-                    last_row_idx -= 1
-            else:
-                return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None} # Not enough data
-
-        # Simulate the next outcome (P or B) to see what the derived roads would predict
-        # This is a common way to predict derived roads: see what they *would* show if P or B came next.
+        # Simulate the next outcome (P or B) to see what the derived roads would predict.
+        # We need to find the coordinates of the *next* cell if P or B were added.
         
         # Scenario 1: Next is Player (P)
         simulated_history_p = history_pb + ["P"]
         simulated_matrix_p = self._build_big_road_matrix(simulated_history_p)
         
-        # Get the new last cell for prediction after adding P
+        # The new cell is always the last cell in the last column of the simulated matrix
         sim_last_col_idx_p = len(simulated_matrix_p) - 1
         sim_last_row_idx_p = len(simulated_matrix_p[sim_last_col_idx_p]) - 1
-        while sim_last_row_idx_p >= 0 and simulated_matrix_p[sim_last_col_idx_p][sim_last_row_idx_p] is None:
-            sim_last_row_idx_p -= 1
-
+        
         big_eye_p = self._get_big_eye_boy_value(simulated_matrix_p, sim_last_col_idx_p, sim_last_row_idx_p)
         small_road_p = self._get_small_road_value(simulated_matrix_p, sim_last_col_idx_p, sim_last_row_idx_p)
         cockroach_p = self._get_cockroach_pig_value(simulated_matrix_p, sim_last_col_idx_p, sim_last_row_idx_p)
@@ -500,37 +513,34 @@ class DerivedRoadAnalyzer:
         simulated_history_b = history_pb + ["B"]
         simulated_matrix_b = self._build_big_road_matrix(simulated_history_b)
 
-        # Get the new last cell for prediction after adding B
         sim_last_col_idx_b = len(simulated_matrix_b) - 1
         sim_last_row_idx_b = len(simulated_matrix_b[sim_last_col_idx_b]) - 1
-        while sim_last_row_idx_b >= 0 and simulated_matrix_b[sim_last_col_idx_b][sim_last_row_idx_b] is None:
-            sim_last_row_idx_b -= 1
 
         big_eye_b = self._get_big_eye_boy_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
         small_road_b = self._get_small_road_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
         cockroach_b = self._get_cockroach_pig_value(simulated_matrix_b, sim_last_col_idx_b, sim_last_row_idx_b)
 
         # Now, make predictions for each derived road based on what they would show
-        # If Big Eye Boy would be Red for P, and Blue for B, then it predicts P.
-        # If Big Eye Boy would be Red for P, and Red for B, then it's ambiguous for BEB.
+        # If Big Eye Boy would be Red (B) for P, and Blue (P) for B, then it predicts P.
+        # If Big Eye Boy would be Blue (P) for P, and Red (B) for B, then it predicts B.
 
-        if big_eye_p == "B" and big_eye_b == "P": # BEB predicts B for P, P for B -> BEB predicts P
+        if big_eye_p == "B" and big_eye_b == "P": 
             predictions["BigEyeBoy"] = "P"
-        elif big_eye_p == "P" and big_eye_b == "B": # BEB predicts P for P, B for B -> BEB predicts B
+        elif big_eye_p == "P" and big_eye_b == "B": 
             predictions["BigEyeBoy"] = "B"
         else:
-            predictions["BigEyeBoy"] = None # Ambiguous or not enough data
+            predictions["BigEyeBoy"] = None 
 
-        if small_road_p == "B" and small_road_b == "P": # SR predicts B for P, P for B -> SR predicts P
+        if small_road_p == "B" and small_road_b == "P": 
             predictions["SmallRoad"] = "P"
-        elif small_road_p == "P" and small_road_b == "B": # SR predicts P for P, B for B -> SR predicts B
+        elif small_road_p == "P" and small_road_b == "B": 
             predictions["SmallRoad"] = "B"
         else:
             predictions["SmallRoad"] = None
 
-        if cockroach_p == "B" and cockroach_b == "P": # CP predicts B for P, P for B -> CP predicts P
+        if cockroach_p == "B" and cockroach_b == "P": 
             predictions["CockroachPig"] = "P"
-        elif cockroach_p == "P" and cockroach_b == "B": # CP predicts P for P, B for B -> CP predicts B
+        elif cockroach_p == "P" and cockroach_b == "B": 
             predictions["CockroachPig"] = "B"
         else:
             predictions["CockroachPig"] = None
@@ -903,15 +913,15 @@ class OracleBrain:
 
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
         self.module_accuracy_global_log: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], # V8.3.3
-            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] # V8.4.0: New derived road modules
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] 
         }
         self.tie_module_accuracy_global_log: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
         # Per-shoe logs for recent accuracy and current shoe display
         self.individual_module_prediction_log_current_shoe: Dict[str, List[Tuple[MainOutcome, MainOutcome]]] = {
-            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], # V8.3.3
-            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] # V8.4.0: New derived road modules
+            "Rule": [], "Pattern": [], "Trend": [], "2-2 Pattern": [], "Sniper": [], "Fallback": [], "ChopDetector": [], "DragonTail": [], "AdvancedChop": [], "ThreeChop": [], 
+            "BigEyeBoy": [], "SmallRoad": [], "CockroachPig": [] 
         }
         self.tie_module_prediction_log_current_shoe: List[Tuple[Optional[Literal["T"]], bool]] = [] 
 
@@ -923,10 +933,10 @@ class OracleBrain:
         self.sniper_pattern = SniperPattern() 
         self.fallback_module = FallbackModule() 
         self.chop_detector = ChopDetector() 
-        self.dragon_tail_detector = DragonTailDetector() 
+        self.dragon_tail_detector = DragonTailTwoDetector() # Typo in original, should be DragonTailDetector
         self.advanced_chop_predictor = AdvancedChopPredictor() 
-        self.three_chop_predictor = ThreeChopPredictor() # V8.3.3: New dedicated module
-        self.derived_road_analyzer = DerivedRoadAnalyzer() # V8.4.0: New derived road analyzer
+        self.three_chop_predictor = ThreeChopPredictor() 
+        self.derived_road_analyzer = DerivedRoadAnalyzer() 
 
         # Initialize side bet prediction modules
         self.tie_predictor = TiePredictor()
@@ -956,7 +966,7 @@ class OracleBrain:
             "ChopDetector": self.chop_detector.predict(self.history),
             "DragonTail": self.dragon_tail_detector.predict(self.history),
             "AdvancedChop": self.advanced_chop_predictor.predict(self.history),
-            "ThreeChop": self.three_chop_predictor.predict(self.history) # V8.3.3: Include new module
+            "ThreeChop": self.three_chop_predictor.predict(self.history)
         }
         
         # V8.4.0: Get predictions from Derived Road Analyzer
@@ -1202,7 +1212,7 @@ class OracleBrain:
             "DragonTail": self.dragon_tail_detector, 
             "AdvancedChop": self.advanced_chop_predictor,
             "ThreeChop": self.three_chop_predictor,
-            "BigEyeBoy": self.derived_road_analyzer, # Note: derived_road_analyzer is the *source* module
+            "BigEyeBoy": self.derived_road_analyzer, 
             "SmallRoad": self.derived_road_analyzer,
             "CockroachPig": self.derived_road_analyzer
         }
@@ -1435,7 +1445,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V8.4.0", layout="centered") # Updated version to V8.4.0
+st.set_page_config(page_title="🔮 Oracle V8.4.1", layout="centered") # Updated version to V8.4.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1830,7 +1840,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 Oracle V8.4.0</div>', unsafe_allow_html=True) # Updated version to V8.4.0
+st.markdown('<div class="big-title">🔮 Oracle V8.4.1</div>', unsafe_allow_html=True) # Updated version to V8.4.1
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
