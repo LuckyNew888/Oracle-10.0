@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.5.0 - Smart Recommendation Engine - Ultimate UI Harmony)
+# streamlit_app.py (Oracle V10.5.1 - Smart Recommendation Engine - Trend Insight UI)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -418,8 +418,99 @@ class DerivedRoadAnalyzer:
             "SmallRoadMatrix": small_road_matrix,
             "CockroachPigMatrix": cockroach_pig_matrix
         }
+    
+    def _flatten_derived_road_matrix(self, matrix: List[List[Optional[MainOutcome]]], lookback_cols: int = 10) -> List[MainOutcome]:
+        """Flattens the last N columns of a derived road matrix into a single list of non-None outcomes."""
+        flattened_list = []
+        if not matrix:
+            return []
+        
+        # Iterate through columns in reverse to get recent history
+        for col_idx in range(len(matrix) - 1, max(-1, len(matrix) - 1 - lookback_cols), -1):
+            for row_idx in range(len(matrix[col_idx])):
+                if matrix[col_idx][row_idx] is not None:
+                    flattened_list.insert(0, matrix[col_idx][row_idx]) # Insert at beginning to maintain chronological order
+        return flattened_list
 
-# --- Statistical Analyzer ---
+    def analyze_derived_road_trends(self, history: List[RoundResult]) -> Dict[str, str]:
+        """
+        Analyzes the trends in Big Eye Boy, Small Road, and Cockroach Pig
+        and returns textual descriptions.
+        """
+        trends = {
+            "BigEyeBoy": "ไม่มีแนวโน้ม",
+            "SmallRoad": "ไม่มีแนวโน้ม",
+            "CockroachPig": "ไม่มีแนวโน้ม"
+        }
+
+        derived_matrices = self.get_full_derived_road_matrices(history)
+
+        for road_name, matrix in derived_matrices.items():
+            if not matrix:
+                continue
+
+            # Get the actual derived road values as a flat list
+            # We need to get the values that would be displayed, not just the simulated ones
+            if road_name == "BigEyeBoyMatrix":
+                # For derived roads, the values are calculated based on the Big Road
+                # We need to get the actual P/B values from the derived road matrix itself
+                # Let's flatten the matrix to get the sequence for pattern analysis
+                road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10) # Look back last 10 columns
+            elif road_name == "SmallRoadMatrix":
+                road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10)
+            elif road_name == "CockroachPigMatrix":
+                road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10)
+            else:
+                continue
+
+            if len(road_values) < 3: # Need at least 3 values to detect meaningful patterns
+                continue
+
+            # Check for Ping Pong (alternating)
+            is_ping_pong = True
+            for i in range(1, len(road_values)):
+                if road_values[i] == road_values[i-1]:
+                    is_ping_pong = False
+                    break
+            if is_ping_pong and len(road_values) >= 4: # Need at least 4 for a clear ping pong
+                trends[road_name.replace("Matrix", "")] = "ปิงปอง"
+                continue
+
+            # Check for Dragon (streak)
+            is_dragon = True
+            first_val = road_values[0]
+            for i in range(1, len(road_values)):
+                if road_values[i] != first_val:
+                    is_dragon = False
+                    break
+            if is_dragon and len(road_values) >= 4: # Need at least 4 for a clear dragon
+                trends[road_name.replace("Matrix", "")] = "มังกร"
+                continue
+            
+            # Check for Two-in-a-row (สองตัวติด)
+            if len(road_values) >= 4:
+                last_four = "".join(road_values[-4:])
+                if last_four in ["PPBB", "BBPP"]:
+                    trends[road_name.replace("Matrix", "")] = "สองตัวติด"
+                    continue
+
+            # Check for Chop-Two (สองตัวตัด)
+            if len(road_values) >= 3:
+                last_three = "".join(road_values[-3:])
+                if last_three in ["PBB", "BPP"]:
+                    trends[road_name.replace("Matrix", "")] = "สองตัวตัด"
+                    continue
+            
+            # Check for Pair-Alternating (คู่สลับ)
+            if len(road_values) >= 4:
+                last_four = "".join(road_values[-4:])
+                if last_four in ["PBBP", "BPPB"]:
+                    trends[road_name.replace("Matrix", "")] = "คู่สลับ"
+                    continue
+
+        return trends
+
+
 class StatisticalAnalyzer:
     """
     Analyzes sequences of past outcomes to predict the next outcome based on conditional probabilities.
@@ -1201,7 +1292,7 @@ class OracleBrain:
     def predict_next(self) -> Tuple[
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, 
         Optional[Literal["T"]], Optional[int], 
-        bool, str # recommendation_text
+        bool, str, Dict[str, str] # recommendation_text, derived_road_trends
     ]:
         """
         Generates the next predictions for main outcome and side bets,
@@ -1232,11 +1323,13 @@ class OracleBrain:
 
         is_tie_sniper_opportunity = False
         recommendation_text = "กำลังวิเคราะห์ข้อมูล..." 
+        derived_road_trends = self.derived_road_analyzer.analyze_derived_road_trends(self.history)
+
 
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION:
             self.last_prediction = None
             self.last_module = None
-            return None, None, None, None, current_miss_streak, False, None, None, False, "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย" 
+            return None, None, None, None, current_miss_streak, False, None, None, False, "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย", derived_road_trends
         
         choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
 
@@ -1350,13 +1443,13 @@ class OracleBrain:
         return (
             final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
             tie_prediction, tie_confidence, 
-            is_tie_sniper_opportunity, recommendation_text 
+            is_tie_sniper_opportunity, recommendation_text, derived_road_trends
         )
 
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.0", layout="centered") # Updated version to V10.5.0
+st.set_page_config(page_title="🔮 Oracle V10.5.1", layout="centered") # Updated version to V10.5.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1414,7 +1507,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 /* Miss Streak warning text */
 .miss-streak-container {
     background-color: #333333; /* Darker background for the miss streak box */
-    border: none; /* Removed border */
+    border: none !important; /* Removed all borders */
     border-radius: 0px; /* Removed border-radius for sharp edges */
     padding: 2px; /* Same as before */
     margin: 2px auto; /* Same as before */
@@ -1464,7 +1557,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 140px; /* Adjusted minimum height for 6 rows with slightly smaller cells */
+    min-height: 132px; /* Adjusted minimum height for 6 rows with slightly smaller cells */
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); /* Same as before */
 }
 .big-road-column {
@@ -1475,11 +1568,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding-right: 0.1px; /* Same as before */
 }
 .big-road-cell {
-    width: 22px; /* Adjusted to be smaller by 1 level */
-    height: 22px; /* Adjusted to be smaller by 1 level */
+    width: 20px; /* Adjusted to be smaller by 1 level (from 22px) */
+    height: 20px; /* Adjusted to be smaller by 1 level (from 22px) */
     text-align: center;
-    line-height: 22px; /* Adjusted line-height for new size */
-    font-size: 18px; /* Adjusted to be smaller by 1 level */
+    line-height: 20px; /* Adjusted line-height for new size */
+    font-size: 16px; /* Adjusted to be smaller by 1 level (from 18px) */
     margin-bottom: 0.5px; /* Same as before */
     border-radius: 50%; /* Make cells round */
     display: flex;
@@ -1494,72 +1587,60 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 10px; /* Increased by 1 level */
+    font-size: 11px; /* Increased by 1 level (from 10px) */
     position: absolute;
-    bottom: -3px; /* Adjusted position */
-    right: -3px; /* Adjusted position */
+    bottom: -4px; /* Adjusted position */
+    right: -4px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 0px 3px; /* Adjusted padding */
+    padding: 0px 4px; /* Adjusted padding */
     line-height: 1;
-    min-width: 16px; /* Adjusted min-width for single digit */
+    min-width: 18px; /* Adjusted min-width for single digit */
     text-align: center;
     box-shadow: 0 0.25px 0.5px rgba(0,0,0,0.2); /* Same as before */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 9px; /* Increased by 1 level */
+    font-size: 10px; /* Increased by 1 level (from 9px) */
     font-weight: bold;
     color: white;
     line-height: 1;
-    padding: 0.5px 1.5px; /* Adjusted padding */
-    border-radius: 1.5px; /* Adjusted border-radius */
+    padding: 0.6px 1.8px; /* Adjusted padding */
+    border-radius: 1.8px; /* Adjusted border-radius */
     z-index: 10;
     background-color: #4CAF50; /* Green for Natural */
-    top: -3px; /* Adjusted position */
-    right: -3px; /* Adjusted position */
+    top: -4px; /* Adjusted position */
+    right: -4px; /* Adjusted position */
 }
 
-/* Derived Road Styles */
-.derived-road-container {
-    width: 100%;
-    overflow-x: auto;
-    padding: 1px 0; /* Same as before */
-    background: #1A1A1A;
-    border-radius: 3px; /* Same as before */
-    white-space: nowrap;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    min-height: 25px; /* Same as before */
-    box-shadow: inset 0 0.75px 1.5px rgba(0,0,0,0.2); 
-    margin-top: 2px; /* Same as before */
-}
-.derived-road-column {
-    display: inline-flex;
-    flex-direction: column;
-    margin-right: 0.1px; /* Same as before */
-    border-right: 1px solid rgba(255,255,255,0.005); /* Same as before */
-    padding-right: 0.1px; /* Same as before */
-}
-.derived-road-cell {
-    width: 8px; /* Same as before */
-    height: 8px; /* Same as before */
-    text-align: center;
-    line-height: 8px; /* Same as before */
-    font-size: 4px; /* Same as before */
-    margin-bottom: 0.03125px; /* Same as before */
-    border-radius: 50%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
+/* Derived Road Trend Box Styles (NEW) */
+.derived-trend-box {
+    background-color: #333333; /* Default background for no trend */
     color: white;
+    padding: 6px 12px; /* Increased padding for oval shape */
+    border-radius: 25px; /* High border-radius for oval shape */
+    font-size: 12px; /* Adjusted font size */
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 4px; /* Spacing between boxes */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    display: inline-block; /* Make it inline-block to fit content */
+    line-height: 1.2;
 }
-.derived-road-cell.P { background-color: #007BFF; } /* Blue for Player (Chop) */
-.derived-road-cell.B { background-color: #DC3545; } /* Red for Banker (Follow) */
+.derived-trend-box.clear-trend {
+    background-color: #28A745; /* Green for clear trend */
+}
+.derived-trend-box.ping-pong {
+    background-color: #007BFF; /* Blue for Ping Pong */
+}
+.derived-trend-box.dragon {
+    background-color: #DC3545; /* Red for Dragon */
+}
+.derived-trend-box.mixed-trend {
+    background-color: #FFC107; /* Orange for mixed/less clear trend */
+}
 
 
 /* Button styling */
@@ -1667,10 +1748,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 
 /* Removed all hr tags and borders */
-/* hr {
-    border-top: 1px solid rgba(255,255,255,0.08); 
-    margin: 2px 0; 
-} */
+hr {
+    display: none; /* Hide all hr elements */
+}
 
 /* General spacing for headers */
 h3 { 
@@ -1779,6 +1859,12 @@ if 'is_tie_sniper_opportunity' not in st.session_state:
     st.session_state.is_tie_sniper_opportunity = False
 if 'recommendation_text' not in st.session_state: 
     st.session_state.recommendation_text = "กำลังวิเคราะห์ข้อมูล..." # Default message
+if 'derived_road_trends' not in st.session_state:
+    st.session_state.derived_road_trends = {
+        "BigEyeBoy": "ไม่มีแนวโน้ม",
+        "SmallRoad": "ไม่มีแนวโน้ม",
+        "CockroachPig": "ไม่มีแนวโน้ม"
+    }
 
 
 # --- UI Callback Functions ---
@@ -1793,7 +1879,7 @@ def handle_click(main_outcome_str: MainOutcome):
     
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -1804,6 +1890,7 @@ def handle_click(main_outcome_str: MainOutcome):
     st.session_state.tie_confidence = tie_conf
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
     st.session_state.recommendation_text = recommendation_text 
+    st.session_state.derived_road_trends = derived_road_trends
     
     pattern_names = { # Simplified pattern names for display
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -1836,7 +1923,7 @@ def handle_remove():
     st.session_state.oracle.remove_last()
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -1847,6 +1934,7 @@ def handle_remove():
     st.session_state.tie_confidence = tie_conf
     st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
     st.session_state.recommendation_text = recommendation_text
+    st.session_state.derived_road_trends = derived_road_trends
     
     pattern_names = { # Simplified pattern names for display
         "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -1889,11 +1977,16 @@ def handle_start_new_shoe():
 
     st.session_state.is_tie_sniper_opportunity = False
     st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
+    st.session_state.derived_road_trends = {
+        "BigEyeBoy": "ไม่มีแนวโน้ม",
+        "SmallRoad": "ไม่มีแนวโน้ม",
+        "CockroachPig": "ไม่มีแนวโน้ม"
+    }
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.0</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.1</span></div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1942,9 +2035,6 @@ if st.session_state.tie_prediction and st.session_state.tie_confidence is not No
     with col_side_empty:
         pass 
 
-# Removed hr tag below side bet prediction
-# st.markdown("<hr>", unsafe_allow_html=True)
-
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
 st.markdown(f"<div class='miss-streak-container'><p class='miss-streak-text'>❌ แพ้ติดกัน: {miss} ครั้ง</p></div>", unsafe_allow_html=True) # Smaller text
@@ -1954,8 +2044,6 @@ elif miss >= 6:
     st.error("🚨 เกมแตก! (แพ้ 6 ไม้ติด)")
 
 # --- Big Road Display ---
-# Removed hr tag above Big Road
-# st.markdown("<hr>", unsafe_allow_html=True) 
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
 history_results = st.session_state.oracle.history 
@@ -2042,80 +2130,44 @@ with col3:
 st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
 
 
-# --- Derived Roads Display - MOVED TO BELOW REMOVE LAST BUTTON ---
-# Removed hr tag above Derived Roads
-# st.markdown("<hr>", unsafe_allow_html=True)
+# --- Derived Roads Display - NOW AS TEXTUAL TRENDS ---
 st.markdown("<b>📊 เค้าไพ่รอง (Derived Roads):</b>", unsafe_allow_html=True)
 
-derived_road_matrices = st.session_state.oracle.derived_road_analyzer.get_full_derived_road_matrices(st.session_state.oracle.history)
+# Display derived road trends
+col_beb, col_sr, col_cp = st.columns(3)
 
-if derived_road_matrices["BigEyeBoyMatrix"]:
-    st.markdown("<h5>Big Eye Boy (บิ๊กอายบอย)</h5>", unsafe_allow_html=True)
-    beb_html = "<div class='derived-road-container'>"
-    # Only display the last few columns to match Big Road display
-    beb_matrix_display = derived_road_matrices["BigEyeBoyMatrix"][-MAX_DISPLAY_COLUMNS:]
-    for col in beb_matrix_display:
-        beb_html += "<div class='derived-road-column'>"
-        for row_idx in range(max_row): # Iterate up to max_row for consistent height
-            cell_val = col[row_idx] if row_idx < len(col) else None
-            if cell_val:
-                emoji = "🔵" if cell_val == "P" else "🔴"
-                beb_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
-            else:
-                beb_html += f"<div class='derived-road-cell'></div>" # Empty cell for padding
-        beb_html += "</div>"
-    beb_html += "</div>"
-    st.markdown(beb_html, unsafe_allow_html=True)
-else:
-    st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Big Eye Boy")
+with col_beb:
+    st.markdown("<h5>Big Eye Boy</h5>", unsafe_allow_html=True)
+    trend_class = "clear-trend" if st.session_state.derived_road_trends["BigEyeBoy"] not in ["ไม่มีแนวโน้ม", "ผันผวน"] else ""
+    if st.session_state.derived_road_trends["BigEyeBoy"] == "ปิงปอง":
+        trend_class = "ping-pong"
+    elif st.session_state.derived_road_trends["BigEyeBoy"] == "มังกร":
+        trend_class = "dragon"
+    st.markdown(f"<div class='derived-trend-box {trend_class}'>{st.session_state.derived_road_trends['BigEyeBoy']} ⬅️</div>", unsafe_allow_html=True)
 
-if derived_road_matrices["SmallRoadMatrix"]:
-    st.markdown("<h5>Small Road (ซาลาเปา)</h5>", unsafe_allow_html=True)
-    sr_html = "<div class='derived-road-container'>"
-    sr_matrix_display = derived_road_matrices["SmallRoadMatrix"][-MAX_DISPLAY_COLUMNS:]
-    for col in sr_matrix_display:
-        sr_html += "<div class='derived-road-column'>"
-        for row_idx in range(max_row): # Iterate up to max_row for consistent height
-            cell_val = col[row_idx] if row_idx < len(col) else None
-            if cell_val:
-                emoji = "🔵" if cell_val == "P" else "🔴"
-                sr_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
-            else:
-                sr_html += f"<div class='derived-road-cell'></div>"
-        sr_html += "</div>"
-    sr_html += "</div>"
-    st.markdown(sr_html, unsafe_allow_html=True)
-else:
-    st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Small Road")
+with col_sr:
+    st.markdown("<h5>Small Road</h5>", unsafe_allow_html=True)
+    trend_class = "clear-trend" if st.session_state.derived_road_trends["SmallRoad"] not in ["ไม่มีแนวโน้ม", "ผันผวน"] else ""
+    if st.session_state.derived_road_trends["SmallRoad"] == "ปิงปอง":
+        trend_class = "ping-pong"
+    elif st.session_state.derived_road_trends["SmallRoad"] == "มังกร":
+        trend_class = "dragon"
+    st.markdown(f"<div class='derived-trend-box {trend_class}'>{st.session_state.derived_road_trends['SmallRoad']} ⬅️</div>", unsafe_allow_html=True)
 
-if derived_road_matrices["CockroachPigMatrix"]:
-    st.markdown("<h5>Cockroach Pig (ไม้ขีด)</h5>", unsafe_allow_html=True)
-    cp_html = "<div class='derived-road-container'>"
-    cp_matrix_display = derived_road_matrices["CockroachPigMatrix"][-MAX_DISPLAY_COLUMNS:]
-    for col in cp_matrix_display:
-        cp_html += "<div class='derived-road-column'>"
-        for row_idx in range(max_row): # Iterate up to max_row for consistent height
-            cell_val = col[row_idx] if row_idx < len(col) else None
-            if cell_val:
-                emoji = "🔵" if cell_val == "P" else "🔴"
-                cp_html += f"<div class='derived-road-cell {cell_val}'>{emoji}</div>"
-            else:
-                cp_html += f"<div class='derived-road-cell'></div>"
-        cp_html += "</div>"
-    cp_html += "</div>"
-    st.markdown(cp_html, unsafe_allow_html=True)
-else:
-    st.info("ยังไม่มีข้อมูลเค้าไพ่รอง Cockroach Pig")
+with col_cp:
+    st.markdown("<h5>Cockroach Pig</h5>", unsafe_allow_html=True)
+    trend_class = "clear-trend" if st.session_state.derived_road_trends["CockroachPig"] not in ["ไม่มีแนวโน้ม", "ผันผวน"] else ""
+    if st.session_state.derived_road_trends["CockroachPig"] == "ปิงปอง":
+        trend_class = "ping-pong"
+    elif st.session_state.derived_road_trends["CockroachPig"] == "มังกร":
+        trend_class = "dragon"
+    st.markdown(f"<div class='derived-trend-box {trend_class}'>{st.session_state.derived_road_trends['CockroachPig']} ⬅️</div>", unsafe_allow_html=True)
 
 
 # --- Control Button: Start New Shoe (MOVED TO BELOW DERIVED ROADS) ---
-# Removed hr tag above Start New Shoe
-# st.markdown("<hr>", unsafe_allow_html=True)
 st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe, key="start_new_shoe_btn") # Added key for consistency
 
 # --- Data Management ---
-# Removed hr tag above Data Management
-# st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>💾 จัดการข้อมูล All-Time:</b>", unsafe_allow_html=True)
 
 col_dl, col_ul = st.columns(2)
@@ -2145,7 +2197,7 @@ with col_ul:
             # Re-run prediction to update UI with new data
             (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
              tie_pred, tie_conf,
-             is_tie_sniper_opportunity, recommendation_text) = st.session_state.oracle.predict_next()
+             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next()
 
             st.session_state.prediction = prediction
             st.session_state.source = source
@@ -2155,6 +2207,7 @@ with col_ul:
             st.session_state.tie_confidence = tie_conf
             st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
             st.session_state.recommendation_text = recommendation_text
+            st.session_state.derived_road_trends = derived_road_trends
             
             pattern_names = { # Simplified pattern names for display
                 "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
@@ -2180,8 +2233,6 @@ with col_ul:
             st.error(f"เกิดข้อผิดพลาดในการประมวลผลไฟล์: {e}")
 
 # --- Debugging Toggle ---
-# Removed hr tag above Debugging Toggle
-# st.markdown("<hr>", unsafe_allow_html=True)
 st.session_state.show_debug_info = st.checkbox("⚙️ แสดงข้อมูล Debugging") # Updated emoji and text
 
 # --- Conditional Debugging Output ---
@@ -2213,8 +2264,6 @@ if st.session_state.show_debug_info:
 
 
 # --- Accuracy by Module ---
-# Removed hr tag above Accuracy by Module
-# st.markdown("<hr>", unsafe_allow_html=True) 
 st.session_state.show_accuracy_info = st.checkbox("📈 แสดงความแม่นยำรายโมดูล") # Checkbox to toggle visibility
 
 if st.session_state.show_accuracy_info: # Conditional rendering based on checkbox
