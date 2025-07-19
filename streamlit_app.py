@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.7 - Smart Recommendation Engine - Lean Core (Final UI Polish - Compact))
+# streamlit_app.py (Oracle V10.4.8 - Smart Recommendation Engine - Refined UI Harmony)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -208,8 +208,7 @@ class DerivedRoadAnalyzer:
         if current_col:
             matrix.append(current_col)
         
-        # Pad columns to a minimum height for consistent indexing (6 rows standard)
-        # Changed max_rows to 6 as requested (6 rows vertically)
+        # Max rows for Big Road is 6 as per user's request (แนวตั้ง 6 ตัว)
         max_rows = 6 
         padded_matrix = []
         for col in matrix:
@@ -1355,7 +1354,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.7", layout="centered") # Updated version to V10.4.7
+st.set_page_config(page_title="🔮 Oracle V10.4.8", layout="centered") # Updated version to V10.4.8
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1384,25 +1383,25 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 
 .predict-box {
-    padding: 2px; /* Further reduced padding */
+    padding: 2px; /* Same as before */
     background-color: #262730; /* Darker background for the box */
     border-radius: 5px; /* Same as before */
     color: white;
-    margin-bottom: 2px; /* Further reduced margin */
+    margin-bottom: 2px; /* Same as before */
     box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.2); /* Same as before */
     text-align: center; /* Center content inside prediction box */
     border: 1px solid #FFD700; /* Gold border for prediction box */
 }
 .predict-box h2 {
-    margin: 0px 0; /* Further reduced margin */
-    font-size: 9px; /* Reduced to 9px */
+    margin: 0px 0; /* Same as before */
+    font-size: 10px; /* Slightly increased for readability */
     font-weight: bold;
 }
 .predict-box b {
     color: #FFD700; /* Gold color for emphasis */
 }
 .predict-box .st-emotion-cache-1c7y2vl { /* Target Streamlit's caption */
-    font-size: 6px; /* Reduced to 6px */
+    font-size: 7px; /* Slightly increased for readability */
     color: #BBBBBB;
 }
 
@@ -1411,15 +1410,15 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     background-color: #333333; /* Darker background for the miss streak box */
     border: none; /* Removed border */
     border-radius: 0px; /* Removed border-radius for sharp edges */
-    padding: 2px; /* Further reduced padding */
-    margin: 2px auto; /* Further reduced margin, auto for centering */
+    padding: 2px; /* Same as before */
+    margin: 2px auto; /* Same as before */
     max-width: 60%; /* Same as before */
     text-align: center;
     box-shadow: none; /* Removed shadow */
 }
 .miss-streak-text p { /* Custom class for miss streak text */
-    font-size: 8px !important; /* Reduced to 8px */
-    margin-bottom: 0px !important; /* Further reduced margin */
+    font-size: 9px !important; /* Slightly increased for readability */
+    margin-bottom: 0px !important; /* Same as before */
     color: #FFC107; /* Warning color for miss streak */
     font-weight: bold;
 }
@@ -1427,39 +1426,39 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     background-color: #FFC10720; 
     border-left: 2px solid #FFC107; 
     color: #FFC107;
-    padding: 4px; /* Reduced padding */
-    margin-bottom: 4px; /* Reduced margin */
-    font-size: 8px; /* Reduced to 8px */
+    padding: 4px; /* Same as before */
+    margin-bottom: 4px; /* Same as before */
+    font-size: 9px; /* Slightly increased for readability */
 }
 .st-emotion-cache-1s04v0m { /* Error box */
     background-color: #DC354520; 
     border-left: 2px solid #DC3545; 
     color: #DC3545;
-    padding: 4px; /* Reduced padding */
-    margin-bottom: 4px; /* Reduced margin */
-    font-size: 8px; /* Reduced to 8px */
+    padding: 4px; /* Same as before */
+    margin-bottom: 4px; /* Same as before */
+    font-size: 9px; /* Slightly increased for readability */
 }
 .st-emotion-cache-13ln4z2 { /* Info box */
     background-color: #17A2B820; 
     border-left: 2px solid #17A2B8; 
     color: #17A2B8;
-    padding: 4px; /* Reduced padding */
-    margin-bottom: 4px; /* Reduced margin */
-    font-size: 8px; /* Reduced to 8px */
+    padding: 4px; /* Same as before */
+    margin-bottom: 4px; /* Same as before */
+    font-size: 9px; /* Slightly increased for readability */
 }
 
 
 .big-road-container {
     width: 100%;
     overflow-x: auto; /* Allows horizontal scrolling if many columns */
-    padding: 1px 0; /* Further reduced padding */
+    padding: 1px 0; /* Same as before */
     background: #1A1A1A; /* Same as before */
     border-radius: 3px; /* Same as before */
     white-space: nowrap; /* Keeps columns in a single line */
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 70px; /* Adjusted minimum height for 6 rows (10px cell + 0.5px margin * 5) */
+    min-height: 120px; /* Adjusted minimum height for 6 rows with larger cells */
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); /* Same as before */
 }
 .big-road-column {
@@ -1470,11 +1469,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding-right: 0.1px; /* Same as before */
 }
 .big-road-cell {
-    width: 18px; /* Increased for larger emoji */
-    height: 18px; /* Increased for larger emoji */
+    width: 20px; /* Increased for larger emoji, aiming for original visual size */
+    height: 20px; /* Increased for larger emoji, aiming for original visual size */
     text-align: center;
-    line-height: 18px; /* Adjusted line-height for new size */
-    font-size: 14px; /* Increased for larger emoji */
+    line-height: 20px; /* Adjusted line-height for new size */
+    font-size: 16px; /* Increased for larger emoji */
     margin-bottom: 0.5px; /* Same as before */
     border-radius: 50%; /* Make cells round */
     display: flex;
@@ -1489,32 +1488,32 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 6px; /* Adjusted for larger cell */
+    font-size: 7px; /* Adjusted for larger cell */
     position: absolute;
-    bottom: -1px; /* Adjusted position */
-    right: -1px; /* Adjusted position */
+    bottom: -1.5px; /* Adjusted position */
+    right: -1.5px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 0px 1px; /* Adjusted padding */
+    padding: 0px 1.5px; /* Adjusted padding */
     line-height: 1;
-    min-width: 10px; /* Adjusted min-width for single digit */
+    min-width: 12px; /* Adjusted min-width for single digit */
     text-align: center;
     box-shadow: 0 0.25px 0.5px rgba(0,0,0,0.2); /* Same as before */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 5px; /* Adjusted for larger cell */
+    font-size: 6px; /* Adjusted for larger cell */
     font-weight: bold;
     color: white;
     line-height: 1;
-    padding: 0.2px 0.8px; /* Adjusted padding */
-    border-radius: 0.8px; /* Adjusted border-radius */
+    padding: 0.3px 1px; /* Adjusted padding */
+    border-radius: 1px; /* Adjusted border-radius */
     z-index: 10;
     background-color: #4CAF50; /* Green for Natural */
-    top: -1px; /* Adjusted position */
-    right: -1px; /* Adjusted position */
+    top: -1.5px; /* Adjusted position */
+    right: -1.5px; /* Adjusted position */
 }
 
 /* Derived Road Styles */
@@ -1528,9 +1527,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 20px; /* Adjusted height for derived roads based on new cell size */
+    min-height: 20px; /* Same as before */
     box-shadow: inset 0 0.75px 1.5px rgba(0,0,0,0.2); 
-    margin-top: 2px; /* Reduced margin */
+    margin-top: 2px; /* Same as before */
 }
 .derived-road-column {
     display: inline-flex;
@@ -1564,7 +1563,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     font-size: 10px; /* Same as before */
     font-weight: bold;
     padding: 4px 0; /* Same as before */
-    margin-bottom: 2px; /* Reduced margin */
+    margin-bottom: 2px; /* Same as before */
     transition: all 0.2s ease-in-out;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Same as before */
     background-color: #4CAF50; /* Green for general buttons */
@@ -1597,9 +1596,9 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     border-radius: 3px; /* Same as before */
     background-color: #343A40;
     color: white;
-    font-size: 8px; /* Reduced to 8px */
+    font-size: 9px; /* Slightly increased for readability */
     font-weight: bold;
-    margin-bottom: 2px; /* Reduced margin */
+    margin-bottom: 2px; /* Same as before */
     display: flex; 
     align-items: center;
     justify-content: flex-start; /* Align text to start */
@@ -1625,30 +1624,30 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .sniper-message {
     background-color: #4CAF50; 
     color: white;
-    padding: 3px; /* Reduced padding */
+    padding: 4px; /* Increased padding */
     border-radius: 4px; 
     font-weight: bold;
     text-align: center;
-    margin-top: 3px; /* Reduced margin */
-    margin-bottom: 3px; /* Reduced margin */
+    margin-top: 4px; /* Increased margin */
+    margin-bottom: 4px; /* Increased margin */
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     animation: pulse 1.5s infinite; 
-    font-size: 8px; /* Reduced to 8px */
+    font-size: 10px; /* Increased font size */
 }
 
 /* NEW: Side Bet Sniper message styling */
 .side-bet-sniper-message {
     background-color: #007bff; 
     color: white;
-    padding: 1px; /* Reduced padding */
-    border-radius: 2px; 
+    padding: 4px; /* Increased padding significantly */
+    border-radius: 4px; /* Increased border-radius */
     font-weight: bold;
     text-align: center;
-    margin-top: 1px; /* Reduced margin */
-    margin-bottom: 1px; /* Reduced margin */
-    box-shadow: 0 0.75px 1.5px rgba(0, 0, 0, 0.2);
+    margin-top: 4px; /* Increased margin */
+    margin-bottom: 4px; /* Increased margin */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); /* Slightly larger shadow */
     animation: pulse 1.5s infinite; 
-    font-size: 6px; /* Reduced to 6px */
+    font-size: 10px; /* Increased font size significantly */
 }
 
 
@@ -1661,30 +1660,30 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 
 hr {
     border-top: 1px solid rgba(255,255,255,0.08); /* Same as before */
-    margin: 2px 0; /* Further reduced margin */
+    margin: 2px 0; /* Same as before */
 }
 
 /* General spacing for headers */
 h3 { 
-    font-size: 8px !important; /* Adjusted to be consistent */
-    margin-top: 2px !important; /* Reduced margin */
-    margin-bottom: 1px !important; /* Reduced margin */
+    font-size: 9px !important; /* Slightly increased for readability */
+    margin-top: 2px !important; /* Same as before */
+    margin-bottom: 1px !important; /* Same as before */
 }
 h4 {
-    font-size: 8px !important; /* Adjusted to be consistent */
-    margin-top: 2px !important; /* Reduced margin */
-    margin-bottom: 1px !important; /* Reduced margin */
+    font-size: 9px !important; /* Slightly increased for readability */
+    margin-top: 2px !important; /* Same as before */
+    margin-bottom: 1px !important; /* Same as before */
 }
 h5 {
-    font-size: 7px !important; /* Reduced for derived road titles */
-    margin-top: 1px !important; /* Reduced margin */
-    margin-bottom: 0px !important; /* Reduced margin */
+    font-size: 8px !important; /* Slightly increased for readability */
+    margin-top: 1px !important; /* Same as before */
+    margin-bottom: 0px !important; /* Same as before */
 }
 
 /* General paragraph text for captions etc. */
 p {
-    margin-bottom: 0px !important; /* Further reduced default paragraph margin */
-    font-size: 7px; /* Reduced to 7px */
+    margin-bottom: 0px !important; /* Same as before */
+    font-size: 8px; /* Slightly increased for readability */
 }
 
 /* Adjust Streamlit's default elements to reduce spacing */
@@ -1702,7 +1701,7 @@ p {
 .st-emotion-cache-1c7y2vl { /* Caption text */
     margin-top: 0px;
     margin-bottom: 0px;
-    font-size: 6px; /* Same as before */
+    font-size: 7px; /* Slightly increased for readability */
 }
 .st-emotion-cache-1g62nvv { /* General text element */
     margin-bottom: 0px;
@@ -1715,6 +1714,17 @@ p {
     padding-left: 0.01rem; /* Drastically reduced padding */
     padding-right: 0.01rem; /* Drastically reduced padding */
 }
+
+/* Remove default Streamlit padding from main content area (if any) */
+.st-emotion-cache-z5fcl4 { /* This class often controls the main content padding */
+    padding-left: 0rem;
+    padding-right: 0rem;
+}
+.st-emotion-cache-16txto3 { /* Another potential main container class */
+    padding-left: 0rem;
+    padding-right: 0rem;
+}
+
 
 </style>
 """, unsafe_allow_html=True)
@@ -1862,7 +1872,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.4.7</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.4.8</span></div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1969,7 +1979,7 @@ if history_results:
     if current_col:
         columns.append(current_col)
 
-    MAX_DISPLAY_COLUMNS = 16 # Retained 16 columns as requested
+    MAX_DISPLAY_COLUMNS = 14 # Changed to 14 columns as requested (แนวนอน 14 แถว)
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:] 
 
