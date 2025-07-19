@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.5.1 - Smart Recommendation Engine - Trend Insight UI)
+# streamlit_app.py (Oracle V10.5.2 - Smart Recommendation Engine - UI & Trend Fix)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -426,10 +426,13 @@ class DerivedRoadAnalyzer:
             return []
         
         # Iterate through columns in reverse to get recent history
-        for col_idx in range(len(matrix) - 1, max(-1, len(matrix) - 1 - lookback_cols), -1):
+        # Ensure we don't go out of bounds
+        start_col_idx = max(0, len(matrix) - lookback_cols)
+        
+        for col_idx in range(start_col_idx, len(matrix)):
             for row_idx in range(len(matrix[col_idx])):
                 if matrix[col_idx][row_idx] is not None:
-                    flattened_list.insert(0, matrix[col_idx][row_idx]) # Insert at beginning to maintain chronological order
+                    flattened_list.append(matrix[col_idx][row_idx]) # Append to maintain chronological order
         return flattened_list
 
     def analyze_derived_road_trends(self, history: List[RoundResult]) -> Dict[str, str]:
@@ -445,25 +448,16 @@ class DerivedRoadAnalyzer:
 
         derived_matrices = self.get_full_derived_road_matrices(history)
 
-        for road_name, matrix in derived_matrices.items():
-            if not matrix:
+        for road_key, matrix in derived_matrices.items():
+            road_name = road_key.replace("Matrix", "") # e.g., "BigEyeBoy"
+            
+            if not matrix or len(matrix) < 2: # Need at least 2 columns in derived road matrix
                 continue
 
             # Get the actual derived road values as a flat list
-            # We need to get the values that would be displayed, not just the simulated ones
-            if road_name == "BigEyeBoyMatrix":
-                # For derived roads, the values are calculated based on the Big Road
-                # We need to get the actual P/B values from the derived road matrix itself
-                # Let's flatten the matrix to get the sequence for pattern analysis
-                road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10) # Look back last 10 columns
-            elif road_name == "SmallRoadMatrix":
-                road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10)
-            elif road_name == "CockroachPigMatrix":
-                road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10)
-            else:
-                continue
+            road_values = self._flatten_derived_road_matrix(matrix, lookback_cols=10) # Look back last 10 columns
 
-            if len(road_values) < 3: # Need at least 3 values to detect meaningful patterns
+            if len(road_values) < 4: # Need at least 4 values for clear patterns
                 continue
 
             # Check for Ping Pong (alternating)
@@ -472,8 +466,8 @@ class DerivedRoadAnalyzer:
                 if road_values[i] == road_values[i-1]:
                     is_ping_pong = False
                     break
-            if is_ping_pong and len(road_values) >= 4: # Need at least 4 for a clear ping pong
-                trends[road_name.replace("Matrix", "")] = "ปิงปอง"
+            if is_ping_pong and len(road_values) >= 4:
+                trends[road_name] = "ปิงปอง"
                 continue
 
             # Check for Dragon (streak)
@@ -483,29 +477,29 @@ class DerivedRoadAnalyzer:
                 if road_values[i] != first_val:
                     is_dragon = False
                     break
-            if is_dragon and len(road_values) >= 4: # Need at least 4 for a clear dragon
-                trends[road_name.replace("Matrix", "")] = "มังกร"
+            if is_dragon and len(road_values) >= 4:
+                trends[road_name] = "มังกร"
                 continue
             
             # Check for Two-in-a-row (สองตัวติด)
             if len(road_values) >= 4:
                 last_four = "".join(road_values[-4:])
                 if last_four in ["PPBB", "BBPP"]:
-                    trends[road_name.replace("Matrix", "")] = "สองตัวติด"
+                    trends[road_name] = "สองตัวติด"
                     continue
 
             # Check for Chop-Two (สองตัวตัด)
             if len(road_values) >= 3:
                 last_three = "".join(road_values[-3:])
                 if last_three in ["PBB", "BPP"]:
-                    trends[road_name.replace("Matrix", "")] = "สองตัวตัด"
+                    trends[road_name] = "สองตัวตัด"
                     continue
             
             # Check for Pair-Alternating (คู่สลับ)
             if len(road_values) >= 4:
                 last_four = "".join(road_values[-4:])
                 if last_four in ["PBBP", "BPPB"]:
-                    trends[road_name.replace("Matrix", "")] = "คู่สลับ"
+                    trends[road_name] = "คู่สลับ"
                     continue
 
         return trends
@@ -1449,7 +1443,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.1", layout="centered") # Updated version to V10.5.1
+st.set_page_config(page_title="🔮 Oracle V10.5.2", layout="centered") # Updated version to V10.5.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1630,7 +1624,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     line-height: 1.2;
 }
 .derived-trend-box.clear-trend {
-    background-color: #28A745; /* Green for clear trend */
+    background-color: #28A745; /* Green for clear trend (e.g., สองตัวติด, สองตัวตัด, คู่สลับ) */
 }
 .derived-trend-box.ping-pong {
     background-color: #007BFF; /* Blue for Ping Pong */
@@ -1638,8 +1632,8 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .derived-trend-box.dragon {
     background-color: #DC3545; /* Red for Dragon */
 }
-.derived-trend-box.mixed-trend {
-    background-color: #FFC107; /* Orange for mixed/less clear trend */
+.derived-trend-box.no-trend { /* New class for "ไม่มีแนวโน้ม" */
+    background-color: #6C757D; /* Grey for no trend */
 }
 
 
@@ -1986,7 +1980,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.1</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.2</span></div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2127,7 +2121,17 @@ with col3:
     st.button("⚪ T", on_click=handle_click, args=("T",), key="btn_T")
 
 # --- Control Button: Remove Last (MOVED TO BELOW INPUT BUTTONS) ---
-st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove)
+st.button("↩️ ลบรายการล่าสุด", on_click=handle_remove, key="remove_last_btn") # Added key for consistency
+# Set background color for remove_last_btn to green
+st.markdown("""
+<style>
+#remove_last_btn button {
+    background-color: #4CAF50; /* Green */
+    color: white;
+    border: none;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 # --- Derived Roads Display - NOW AS TEXTUAL TRENDS ---
@@ -2138,34 +2142,54 @@ col_beb, col_sr, col_cp = st.columns(3)
 
 with col_beb:
     st.markdown("<h5>Big Eye Boy</h5>", unsafe_allow_html=True)
-    trend_class = "clear-trend" if st.session_state.derived_road_trends["BigEyeBoy"] not in ["ไม่มีแนวโน้ม", "ผันผวน"] else ""
-    if st.session_state.derived_road_trends["BigEyeBoy"] == "ปิงปอง":
+    trend_value = st.session_state.derived_road_trends["BigEyeBoy"]
+    trend_class = "no-trend" # Default to grey
+    if trend_value == "ปิงปอง":
         trend_class = "ping-pong"
-    elif st.session_state.derived_road_trends["BigEyeBoy"] == "มังกร":
+    elif trend_value == "มังกร":
         trend_class = "dragon"
-    st.markdown(f"<div class='derived-trend-box {trend_class}'>{st.session_state.derived_road_trends['BigEyeBoy']} ⬅️</div>", unsafe_allow_html=True)
+    elif trend_value in ["สองตัวติด", "สองตัวตัด", "คู่สลับ"]:
+        trend_class = "clear-trend"
+    st.markdown(f"<div class='derived-trend-box {trend_class}'>{trend_value} ⬅️</div>", unsafe_allow_html=True)
 
 with col_sr:
     st.markdown("<h5>Small Road</h5>", unsafe_allow_html=True)
-    trend_class = "clear-trend" if st.session_state.derived_road_trends["SmallRoad"] not in ["ไม่มีแนวโน้ม", "ผันผวน"] else ""
-    if st.session_state.derived_road_trends["SmallRoad"] == "ปิงปอง":
+    trend_value = st.session_state.derived_road_trends["SmallRoad"]
+    trend_class = "no-trend" # Default to grey
+    if trend_value == "ปิงปอง":
         trend_class = "ping-pong"
-    elif st.session_state.derived_road_trends["SmallRoad"] == "มังกร":
+    elif trend_value == "มังกร":
         trend_class = "dragon"
-    st.markdown(f"<div class='derived-trend-box {trend_class}'>{st.session_state.derived_road_trends['SmallRoad']} ⬅️</div>", unsafe_allow_html=True)
+    elif trend_value in ["สองตัวติด", "สองตัวตัด", "คู่สลับ"]:
+        trend_class = "clear-trend"
+    st.markdown(f"<div class='derived-trend-box {trend_class}'>{trend_value} ⬅️</div>", unsafe_allow_html=True)
 
 with col_cp:
     st.markdown("<h5>Cockroach Pig</h5>", unsafe_allow_html=True)
-    trend_class = "clear-trend" if st.session_state.derived_road_trends["CockroachPig"] not in ["ไม่มีแนวโน้ม", "ผันผวน"] else ""
-    if st.session_state.derived_road_trends["CockroachPig"] == "ปิงปอง":
+    trend_value = st.session_state.derived_road_trends["CockroachPig"]
+    trend_class = "no-trend" # Default to grey
+    if trend_value == "ปิงปอง":
         trend_class = "ping-pong"
-    elif st.session_state.derived_road_trends["CockroachPig"] == "มังกร":
+    elif trend_value == "มังกร":
         trend_class = "dragon"
-    st.markdown(f"<div class='derived-trend-box {trend_class}'>{st.session_state.derived_road_trends['CockroachPig']} ⬅️</div>", unsafe_allow_html=True)
+    elif trend_value in ["สองตัวติด", "สองตัวตัด", "คู่สลับ"]:
+        trend_class = "clear-trend"
+    st.markdown(f"<div class='derived-trend-box {trend_class}'>{trend_value} ⬅️</div>", unsafe_allow_html=True)
 
 
 # --- Control Button: Start New Shoe (MOVED TO BELOW DERIVED ROADS) ---
 st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe, key="start_new_shoe_btn") # Added key for consistency
+# Set background color for start_new_shoe_btn to green
+st.markdown("""
+<style>
+#start_new_shoe_btn button {
+    background-color: #4CAF50; /* Green */
+    color: white;
+    border: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # --- Data Management ---
 st.markdown("<b>💾 จัดการข้อมูล All-Time:</b>", unsafe_allow_html=True)
