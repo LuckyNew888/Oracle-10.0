@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.5.2 - Smart Recommendation Engine - UI & Trend Fix)
+# streamlit_app.py (Oracle V10.5.3 - Smart Recommendation Engine - Complex Pattern Recognition)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -66,6 +66,7 @@ class PatternAnalyzer:
     """
     Predicts based on specific predefined patterns in the recent history.
     V8.2.0: Dynamically adjusts pattern checking priority based on choppiness.
+    V10.5.3: Added more complex mixed patterns.
     """
     def __init__(self):
         self.patterns_and_predictions = { # Moved to init for clarity
@@ -81,12 +82,22 @@ class PatternAnalyzer:
             "PBPBPB": "P", "BPBPBP": "B", 
             "PPPBBB": "B", "BBBPBB": "P", 
             "PPBPP": "P", "BBPBB": "B", 
-            "PBBP": "B", "BPPB": "P" 
+            "PBBP": "B", "BPPB": "P",
+            # V10.5.3: Added complex mixed patterns based on user feedback
+            "PBBPPP": "P", # P then BB then PPP, predicts P (continuation of P streak)
+            "BPPBBB": "B", # B then PP then BBB, predicts B (continuation of B streak)
+            # For PBPBPBPPPBBB, this is too long for a single pattern.
+            # We focus on the immediate transition after a long ping-pong.
+            # If PBPBPB is followed by P, it's a chop. If it's PBPBPB followed by B, it's also a chop.
+            # The statistical analyzer is better for very long sequences.
         }
 
     def predict(self, history: List[RoundResult], choppiness_rate: float) -> Optional[MainOutcome]: # Added choppiness_rate
         filtered_history = _get_main_outcome_history(history)
-        if len(filtered_history) < 4:
+        # Check for sufficient history for the longest patterns first
+        max_pattern_length = max(len(p) for p in self.patterns_and_predictions.keys()) if self.patterns_and_predictions else 0
+        
+        if len(filtered_history) < max_pattern_length:
             return None
 
         joined_filtered = "".join(filtered_history)
@@ -94,14 +105,17 @@ class PatternAnalyzer:
         # V8.2.0: Dynamic pattern window - adjust iteration based on choppiness.
         # If very choppy, prioritize shorter patterns (e.g., 3-length patterns first).
         # If very streaky, prioritize longer patterns (e.g., 6-length patterns first).
+        # V10.5.3: Adjusted range to include longer patterns if present
+        
+        # Get lengths of all patterns to check, sorted dynamically
+        all_pattern_lengths = sorted(list(set(len(p) for p in self.patterns_and_predictions.keys())))
+        
         if choppiness_rate > 0.7: 
-            lengths_to_check = range(3, 7) # Check 3-length first, then 4, 5, 6
-        # If very streaky, prioritize longer patterns (e.g., 6-length patterns first).
+            lengths_to_check = sorted([l for l in all_pattern_lengths if l >=3], reverse=False) # Check shorter first
         elif choppiness_rate < 0.3: 
-            lengths_to_check = range(6, 2, -1) # Check 6-length first, then 5, 4, 3
-        # Moderate choppiness, default to checking longer patterns first.
+            lengths_to_check = sorted([l for l in all_pattern_lengths if l >=3], reverse=True) # Check longer first
         else: 
-            lengths_to_check = range(6, 2, -1) # Default behavior (6 down to 3)
+            lengths_to_check = sorted([l for l in all_pattern_lengths if l >=3], reverse=True) # Default behavior (longer down to shorter)
 
         for length in lengths_to_check: 
             if len(joined_filtered) >= length:
@@ -890,9 +904,12 @@ class AdaptiveScorer:
         common_patterns = {
             "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
             "PBB": "สองตัวตัด", "BPP": "สองตัวตัด", 
-            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ" 
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+            # V10.5.3: Added names for complex mixed patterns
+            "PBBPPP": "สองตัดสาม", # P then BB then PPP
+            "BPPBBB": "สองตัดสาม", # B then PP then BBB
         }
-        for length in range(6, 2, -1): 
+        for length in range(max(len(p) for p in common_patterns.keys()) if common_patterns else 2, 2, -1): 
             if len(joined_filtered) >= length:
                 current_pattern_str = joined_filtered[-length:]
                 if current_pattern_str in common_patterns:
@@ -1443,7 +1460,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.2", layout="centered") # Updated version to V10.5.2
+st.set_page_config(page_title="🔮 Oracle V10.5.3", layout="centered") # Updated version to V10.5.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1896,6 +1913,8 @@ def handle_click(main_outcome_str: MainOutcome):
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+        "PBBPPP": "สองตัดสาม", # New pattern name
+        "BPPBBB": "สองตัดสาม", # New pattern name
         "มังกรตัด": "มังกรตัด", 
         "ปิงปองตัด": "ปิงปองตัด", 
         "ตัดสาม": "ตัดสาม" 
@@ -1940,6 +1959,8 @@ def handle_remove():
         "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
         "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
         "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+        "PBBPPP": "สองตัดสาม", # New pattern name
+        "BPPBBB": "สองตัดสาม", # New pattern name
         "มังกรตัด": "มังกรตัด", 
         "ปิงปองตัด": "ปิงปองตัด", 
         "ตัดสาม": "ตัดสาม" 
@@ -1980,7 +2001,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.2</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.3</span></div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2243,6 +2264,8 @@ with col_ul:
                 "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
                 "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
                 "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+                "PBBPPP": "สองตัดสาม", # New pattern name
+                "BPPBBB": "สองตัดสาม", # New pattern name
                 "มังกรตัด": "มังกรตัด",
                 "ปิงปองตัด": "ปิงปองตัด",
                 "ตัดสาม": "ตัดสาม"
