@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.4.9 - Smart Recommendation Engine - Ultimate UI Harmony)
+# streamlit_app.py (Oracle V10.5.0 - Smart Recommendation Engine - Ultimate UI Harmony)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1270,7 +1270,9 @@ class OracleBrain:
             confidence_main = None
             pattern_code_main = None
         elif final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD: 
-            recommendation_text = f"✅ แนะนำ: {final_prediction_main}"
+            # Apply color to the recommended outcome
+            color_style = "color: #007BFF;" if final_prediction_main == "P" else "color: #DC3545;"
+            recommendation_text = f"✅ แนะนำ: <span style='{color_style}'>{final_prediction_main}</span>"
         else:
             if choppiness_rate > 0.65:
                 recommendation_text = "🚫 งดเดิมพัน: เค้าไพ่ผันผวนสูง"
@@ -1354,7 +1356,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.4.9", layout="centered") # Updated version to V10.4.9
+st.set_page_config(page_title="🔮 Oracle V10.5.0", layout="centered") # Updated version to V10.5.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1462,7 +1464,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     display: flex; /* Use flexbox for columns */
     flex-direction: row; /* Display columns from left to right */
     align-items: flex-start; /* Align columns to the top */
-    min-height: 150px; /* Adjusted minimum height for 6 rows with larger cells */
+    min-height: 140px; /* Adjusted minimum height for 6 rows with slightly smaller cells */
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); /* Same as before */
 }
 .big-road-column {
@@ -1473,11 +1475,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding-right: 0.1px; /* Same as before */
 }
 .big-road-cell {
-    width: 25px; /* Increased for larger emoji, aiming for original visual size */
-    height: 25px; /* Increased for larger emoji, aiming for original visual size */
+    width: 22px; /* Adjusted to be smaller by 1 level */
+    height: 22px; /* Adjusted to be smaller by 1 level */
     text-align: center;
-    line-height: 25px; /* Adjusted line-height for new size */
-    font-size: 20px; /* Increased for larger emoji */
+    line-height: 22px; /* Adjusted line-height for new size */
+    font-size: 18px; /* Adjusted to be smaller by 1 level */
     margin-bottom: 0.5px; /* Same as before */
     border-radius: 50%; /* Make cells round */
     display: flex;
@@ -1492,32 +1494,32 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .big-road-cell.B { background-color: #DC3545; } /* Red for Banker */
 .big-road-cell.T { background-color: #6C757D; } /* Gray for Tie (though not directly used for main cells) */
 .big-road-cell .tie-count {
-    font-size: 8px; /* Adjusted for larger cell */
+    font-size: 10px; /* Increased by 1 level */
     position: absolute;
-    bottom: -2px; /* Adjusted position */
-    right: -2px; /* Adjusted position */
+    bottom: -3px; /* Adjusted position */
+    right: -3px; /* Adjusted position */
     background-color: #FFD700; /* Gold background for prominence */
     color: #333; /* Dark text for contrast */
     border-radius: 50%;
-    padding: 0px 2px; /* Adjusted padding */
+    padding: 0px 3px; /* Adjusted padding */
     line-height: 1;
-    min-width: 14px; /* Adjusted min-width for single digit */
+    min-width: 16px; /* Adjusted min-width for single digit */
     text-align: center;
     box-shadow: 0 0.25px 0.5px rgba(0,0,0,0.2); /* Same as before */
 }
 /* Styling for Natural indicator in Big Road (New for V6.5) */
 .natural-indicator {
     position: absolute;
-    font-size: 7px; /* Adjusted for larger cell */
+    font-size: 9px; /* Increased by 1 level */
     font-weight: bold;
     color: white;
     line-height: 1;
-    padding: 0.4px 1.2px; /* Adjusted padding */
-    border-radius: 1.2px; /* Adjusted border-radius */
+    padding: 0.5px 1.5px; /* Adjusted padding */
+    border-radius: 1.5px; /* Adjusted border-radius */
     z-index: 10;
     background-color: #4CAF50; /* Green for Natural */
-    top: -2px; /* Adjusted position */
-    right: -2px; /* Adjusted position */
+    top: -3px; /* Adjusted position */
+    right: -3px; /* Adjusted position */
 }
 
 /* Derived Road Styles */
@@ -1531,7 +1533,7 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    min-height: 25px; /* Adjusted height for derived roads based on new cell size */
+    min-height: 25px; /* Same as before */
     box-shadow: inset 0 0.75px 1.5px rgba(0,0,0,0.2); 
     margin-top: 2px; /* Same as before */
 }
@@ -1543,11 +1545,11 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
     padding-right: 0.1px; /* Same as before */
 }
 .derived-road-cell {
-    width: 8px; /* Slightly increased */
-    height: 8px; /* Slightly increased */
+    width: 8px; /* Same as before */
+    height: 8px; /* Same as before */
     text-align: center;
-    line-height: 8px; /* Adjusted */
-    font-size: 4px; /* Slightly increased */
+    line-height: 8px; /* Same as before */
+    font-size: 4px; /* Same as before */
     margin-bottom: 0.03125px; /* Same as before */
     border-radius: 50%;
     display: flex;
@@ -1628,15 +1630,15 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .sniper-message {
     background-color: #4CAF50; 
     color: white;
-    padding: 6px; /* Increased padding significantly */
-    border-radius: 5px; /* Slightly larger border-radius */
+    padding: 6px; /* Same as before */
+    border-radius: 5px; /* Same as before */
     font-weight: bold;
     text-align: center;
-    margin-top: 5px; /* Increased margin */
-    margin-bottom: 5px; /* Increased margin */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); /* More prominent shadow */
+    margin-top: 5px; /* Same as before */
+    margin-bottom: 5px; /* Same as before */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); /* Same as before */
     animation: pulse 1.5s infinite; 
-    font-size: 14px; /* Increased font size significantly */
+    font-size: 14px; /* Same as before */
     line-height: 1.2;
 }
 
@@ -1644,15 +1646,15 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 .side-bet-sniper-message {
     background-color: #007bff; 
     color: white;
-    padding: 6px; /* Increased padding significantly */
-    border-radius: 5px; /* Slightly larger border-radius */
+    padding: 6px; /* Same as before */
+    border-radius: 5px; /* Same as before */
     font-weight: bold;
     text-align: center;
-    margin-top: 5px; /* Increased margin */
-    margin-bottom: 5px; /* Increased margin */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); /* Slightly larger shadow */
+    margin-top: 5px; /* Same as before */
+    margin-bottom: 5px; /* Same as before */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); /* Same as before */
     animation: pulse 1.5s infinite; 
-    font-size: 14px; /* Increased font size significantly */
+    font-size: 14px; /* Same as before */
     line-height: 1.2;
 }
 
@@ -1664,24 +1666,25 @@ html, body, [class*="st-emotion"] { /* Target Streamlit's main content div class
 }
 
 
-hr {
-    border-top: 1px solid rgba(255,255,255,0.08); /* Same as before */
-    margin: 2px 0; /* Same as before */
-}
+/* Removed all hr tags and borders */
+/* hr {
+    border-top: 1px solid rgba(255,255,255,0.08); 
+    margin: 2px 0; 
+} */
 
 /* General spacing for headers */
 h3 { 
-    font-size: 10px !important; /* Adjusted for better readability */
+    font-size: 10px !important; /* Same as before */
     margin-top: 2px !important; /* Same as before */
     margin-bottom: 1px !important; /* Same as before */
 }
 h4 {
-    font-size: 10px !important; /* Adjusted for better readability */
+    font-size: 10px !important; /* Same as before */
     margin-top: 2px !important; /* Same as before */
     margin-bottom: 1px !important; /* Same as before */
 }
 h5 {
-    font-size: 9px !important; /* Adjusted for better readability */
+    font-size: 9px !important; /* Same as before */
     margin-top: 1px !important; /* Same as before */
     margin-bottom: 0px !important; /* Same as before */
 }
@@ -1689,7 +1692,7 @@ h5 {
 /* General paragraph text for captions etc. */
 p {
     margin-bottom: 0px !important; /* Same as before */
-    font-size: 9px; /* Adjusted for better readability */
+    font-size: 9px; /* Same as before */
 }
 
 /* Adjust Streamlit's default elements to reduce spacing */
@@ -1707,7 +1710,7 @@ p {
 .st-emotion-cache-1c7y2vl { /* Caption text */
     margin-top: 0px;
     margin-bottom: 0px;
-    font-size: 8px; /* Adjusted for better readability */
+    font-size: 8px; /* Same as before */
 }
 .st-emotion-cache-1g62nvv { /* General text element */
     margin-bottom: 0px;
@@ -1739,6 +1742,10 @@ p {
     padding-right: 0rem;
 }
 
+/* Remove border from miss-streak-container */
+.miss-streak-container {
+    border: none !important;
+}
 
 </style>
 """, unsafe_allow_html=True)
@@ -1886,7 +1893,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.4.9</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.0</span></div>', unsafe_allow_html=True) 
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -1935,7 +1942,8 @@ if st.session_state.tie_prediction and st.session_state.tie_confidence is not No
     with col_side_empty:
         pass 
 
-st.markdown("<hr>", unsafe_allow_html=True)
+# Removed hr tag below side bet prediction
+# st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- Miss Streak Warning ---
 miss = st.session_state.oracle.calculate_miss_streak()
@@ -1946,7 +1954,8 @@ elif miss >= 6:
     st.error("🚨 เกมแตก! (แพ้ 6 ไม้ติด)")
 
 # --- Big Road Display ---
-st.markdown("<hr>", unsafe_allow_html=True) 
+# Removed hr tag above Big Road
+# st.markdown("<hr>", unsafe_allow_html=True) 
 st.markdown("<b>🕒 Big Road:</b>", unsafe_allow_html=True)
 
 history_results = st.session_state.oracle.history 
@@ -2034,7 +2043,8 @@ st.button("↩️ ลบรายการล่าสุด", on_click=handle_r
 
 
 # --- Derived Roads Display - MOVED TO BELOW REMOVE LAST BUTTON ---
-st.markdown("<hr>", unsafe_allow_html=True)
+# Removed hr tag above Derived Roads
+# st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>📊 เค้าไพ่รอง (Derived Roads):</b>", unsafe_allow_html=True)
 
 derived_road_matrices = st.session_state.oracle.derived_road_analyzer.get_full_derived_road_matrices(st.session_state.oracle.history)
@@ -2099,11 +2109,13 @@ else:
 
 
 # --- Control Button: Start New Shoe (MOVED TO BELOW DERIVED ROADS) ---
-st.markdown("<hr>", unsafe_allow_html=True)
+# Removed hr tag above Start New Shoe
+# st.markdown("<hr>", unsafe_allow_html=True)
 st.button("▶️ เริ่มขอนใหม่", on_click=handle_start_new_shoe, key="start_new_shoe_btn") # Added key for consistency
 
 # --- Data Management ---
-st.markdown("<hr>", unsafe_allow_html=True)
+# Removed hr tag above Data Management
+# st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown("<b>💾 จัดการข้อมูล All-Time:</b>", unsafe_allow_html=True)
 
 col_dl, col_ul = st.columns(2)
@@ -2168,7 +2180,8 @@ with col_ul:
             st.error(f"เกิดข้อผิดพลาดในการประมวลผลไฟล์: {e}")
 
 # --- Debugging Toggle ---
-st.markdown("<hr>", unsafe_allow_html=True)
+# Removed hr tag above Debugging Toggle
+# st.markdown("<hr>", unsafe_allow_html=True)
 st.session_state.show_debug_info = st.checkbox("⚙️ แสดงข้อมูล Debugging") # Updated emoji and text
 
 # --- Conditional Debugging Output ---
@@ -2200,7 +2213,8 @@ if st.session_state.show_debug_info:
 
 
 # --- Accuracy by Module ---
-st.markdown("<hr>", unsafe_allow_html=True) # Add a separator for the accuracy section
+# Removed hr tag above Accuracy by Module
+# st.markdown("<hr>", unsafe_allow_html=True) 
 st.session_state.show_accuracy_info = st.checkbox("📈 แสดงความแม่นยำรายโมดูล") # Checkbox to toggle visibility
 
 if st.session_state.show_accuracy_info: # Conditional rendering based on checkbox
