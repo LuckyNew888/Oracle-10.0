@@ -22,7 +22,8 @@ def save_state():
         'source': st.session_state.source,
         'confidence': st.session_state.confidence,
         'pattern_name': st.session_state.pattern_name,
-        'trend_indicator': st.session_state.get('trend_indicator', None) # บันทึก trend_indicator ด้วย
+        'trend_indicator': st.session_state.get('trend_indicator', None), # บันทึก trend_indicator ด้วย
+        'last_p_b_outcome': st.session_state.get('last_p_b_outcome', None) # บันทึกผลลัพธ์ P/B ล่าสุดเพื่อแสดง Tie
     }
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, indent=4)
@@ -50,6 +51,7 @@ def load_state():
             st.session_state.confidence = state.get('confidence', None)
             st.session_state.pattern_name = state.get('pattern_name', None)
             st.session_state.trend_indicator = state.get('trend_indicator', None)
+            st.session_state.last_p_b_outcome = state.get('last_p_b_outcome', None) # โหลด last_p_b_outcome
         return True
     return False
 
@@ -62,6 +64,8 @@ st.markdown("""
 /* Font and general body styles */
 html, body, [class*="css"] {
     font-family: 'Sarabun', sans-serif !important;
+    background-color: #1a1a1a; /* Dark background for the whole app */
+    color: #ecf0f1; /* Light text color */
 }
 /* Main title */
 .big-title {
@@ -69,13 +73,13 @@ html, body, [class*="css"] {
     text-align: center;
     font-weight: bold;
     margin-bottom: 20px; /* More space */
-    color: #2c3e50; /* Darker blue-grey */
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.1); /* Subtle shadow */
+    color: #f39c12; /* Orange color for title */
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5); /* Stronger shadow */
 }
 /* Prediction box */
 .predict-box {
     padding: 15px; /* More padding */
-    background-color: #34495e; /* Darker background */
+    background-color: #2c3e50; /* Darker blue-grey */
     border-radius: 15px; /* More rounded corners */
     color: white;
     font-size: 20px; /* Larger font */
@@ -83,6 +87,7 @@ html, body, [class*="css"] {
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3); /* Stronger shadow */
     text-align: center; /* Center text */
     animation: fadeIn 0.8s ease-out; /* Fade-in animation */
+    border: 2px solid #f39c12; /* Orange border */
 }
 .predict-box b {
     color: #ecf0f1; /* Lighter text for bold parts */
@@ -96,59 +101,70 @@ html, body, [class*="css"] {
 /* Big Road container */
 .big-road-container {
     width: 100%;
-    overflow-x: auto;
+    overflow-x: auto; /* Horizontal scrolling */
     padding: 10px;
-    background: #ecf0f1;
+    background: #000; /* Black background for Big Road */
     border-radius: 10px;
     white-space: nowrap;
     margin-bottom: 20px;
-    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.15); /* Deeper inset shadow */
-    border: 1px solid #bdc3c7; /* Subtle border */
-    max-height: 200px; /* Limit height for scroll */
+    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.5); /* Deeper inset shadow */
+    border: 2px solid #333; /* Darker border */
+    max-height: 250px; /* Limit height for scroll, allows more rows if columns are short */
+    display: flex; /* Use flexbox for columns */
+    align-items: flex-start; /* Align columns to the top */
 }
 /* Big Road column */
 .big-road-column {
-    display: inline-block;
+    display: inline-flex; /* Use inline-flex to make columns flexible */
+    flex-direction: column; /* Stack cells vertically */
     vertical-align: top;
-    margin-right: 8px; /* More space between columns */
-    border-left: 1px solid #bdc3c7;
-    padding-left: 6px;
-}
-.big-road-column:first-child {
-    border-left: none;
-    padding-left: 0;
+    margin-right: 4px; /* Space between columns */
+    padding-left: 0px; /* No left padding */
+    flex-shrink: 0; /* Prevent columns from shrinking */
 }
 /* Big Road cell */
 .big-road-cell {
-    width: 32px; /* Larger cells */
-    height: 32px;
+    width: 36px; /* Larger cells */
+    height: 36px;
     text-align: center;
-    line-height: 32px;
-    font-size: 20px; /* Larger icons */
-    margin-bottom: 4px; /* More space between cells */
-    border-radius: 50%;
+    line-height: 36px;
+    font-size: 22px; /* Larger icons */
+    margin-bottom: 2px; /* Space between cells */
+    border-radius: 50%; /* Circular shape */
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Slightly stronger shadow */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Shadow for depth */
     position: relative; /* For tie overlay */
+    background-color: transparent; /* Default transparent background */
 }
+/* Specific colors for P and B cells */
+.big-road-cell.player {
+    background-color: #3498db; /* Blue for Player */
+}
+.big-road-cell.banker {
+    background-color: #e74c3c; /* Red for Banker */
+}
+
+/* Tie overlay style */
 .tie-overlay {
     position: absolute;
-    bottom: -2px; /* Position at bottom-right */
-    right: -2px;
-    font-size: 10px; /* Smaller font for tie count */
-    color: white;
-    background-color: #2c3e50; /* Darker background for tie count */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); /* Center the tie number */
+    font-size: 16px; /* Font size for tie number */
+    color: black; /* Black text for tie number */
+    background-color: #2ecc71; /* Green background for tie number */
     border-radius: 50%;
-    width: 16px;
-    height: 16px;
-    line-height: 16px;
+    width: 24px; /* Size of the tie circle */
+    height: 24px;
+    line-height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: bold;
-    border: 1px solid white; /* Small white border */
+    border: 1px solid #1a1a1a; /* Dark border for tie circle */
+    z-index: 10; /* Ensure it's on top */
 }
 
 /* Buttons */
@@ -187,20 +203,21 @@ html, body, [class*="css"] {
 /* Trend Indicator Box */
 .trend-box {
     padding: 12px;
-    background-color: #ecf0f1;
+    background-color: #333; /* Darker background */
     border-radius: 10px;
     margin-top: 20px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
     text-align: center;
-    border: 1px solid #bdc3c7;
+    border: 1px solid #555;
+    color: #ecf0f1;
 }
 .trend-box h4 {
-    color: #34495e;
+    color: #f39c12; /* Orange for trend title */
     margin-bottom: 5px;
 }
 .trend-box p {
     font-size: 18px; /* Larger font for trend text */
-    color: #555;
+    color: #ecf0f1;
     font-weight: bold;
 }
 
@@ -223,6 +240,7 @@ if not load_state():
     st.session_state.pattern_name = None
     st.session_state.tie_buffer = 0
     st.session_state.trend_indicator = None # เริ่มต้น trend_indicator
+    st.session_state.last_p_b_outcome = None # เก็บผลลัพธ์ P/B ล่าสุดสำหรับแสดง Tie
 
 # --- Functions ---
 def handle_click(outcome: Outcome):
@@ -232,12 +250,16 @@ def handle_click(outcome: Outcome):
     """
     if outcome == "T":
         st.session_state.tie_buffer += 1
+        # เมื่อกด T, อัปเดต Big Road และ Prediction Box ทันที
+        # Big Road จะใช้ st.session_state.oracle.ties เพื่อแสดง Tie
+        # Prediction Box จะแสดง Tie buffer
     else:
+        # ถ้าเป็น P หรือ B, ให้เพิ่มผลลัพธ์พร้อมกับจำนวน Tie ที่สะสมไว้
         st.session_state.oracle.add_result(outcome, st.session_state.tie_buffer)
-        st.session_state.tie_buffer = 0
-        
-    # พยายามทำนายเสมอหลังจากการป้อนข้อมูลใดๆ (P/B/T)
-    # แต่การทำนายจะแสดงผลเมื่อมีข้อมูล P/B อย่างน้อย 20 มือ
+        st.session_state.tie_buffer = 0 # รีเซ็ต tie_buffer หลังจากเพิ่ม P/B
+        st.session_state.last_p_b_outcome = outcome # บันทึกผลลัพธ์ P/B ล่าสุด
+
+    # ทำการทำนายถัดไป (จะแสดงผลเมื่อมีข้อมูล P/B อย่างน้อย 20 มือ)
     prediction, source, confidence, pattern_code = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -264,9 +286,22 @@ def handle_remove():
     จัดการการคลิกปุ่ม "ย้อนกลับ"
     ลบผลลัพธ์ล่าสุด, อัปเดตการทำนาย, และบันทึกสถานะ
     """
-    st.session_state.oracle.remove_last()
-    st.session_state.tie_buffer = 0 # รีเซ็ต tie buffer เมื่อย้อนกลับ
-    
+    if st.session_state.oracle.history:
+        # ถ้ามีประวัติ P/B ให้ลบออก
+        st.session_state.oracle.remove_last()
+        st.session_state.tie_buffer = 0 # รีเซ็ต tie buffer เมื่อย้อนกลับ
+        
+        # อัปเดต last_p_b_outcome ให้เป็นผลลัพธ์ก่อนหน้า (ถ้ามี)
+        if st.session_state.oracle.history:
+            st.session_state.last_p_b_outcome = st.session_state.oracle.history[-1]
+        else:
+            st.session_state.last_p_b_outcome = None
+    else:
+        # ถ้าไม่มีประวัติ P/B ให้ล้าง tie_buffer
+        st.session_state.tie_buffer = 0
+        st.session_state.last_p_b_outcome = None
+
+
     # คำนวณการทำนายใหม่หลังจากการลบ
     prediction, source, confidence, pattern_code = st.session_state.oracle.predict_next()
     st.session_state.prediction = prediction
@@ -298,6 +333,7 @@ def handle_reset():
     st.session_state.pattern_name = None
     st.session_state.tie_buffer = 0
     st.session_state.trend_indicator = None # รีเซ็ต trend indicator ด้วย
+    st.session_state.last_p_b_outcome = None # รีเซ็ต last_p_b_outcome
     save_state() # บันทึกสถานะหลังจากการกระทำทุกครั้ง
 
 # --- Header ---
@@ -305,7 +341,13 @@ st.markdown('<div class="big-title">🔮 ORACLE 5.0</div>', unsafe_allow_html=Tr
 
 # --- Prediction Box ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
-if st.session_state.prediction:
+if st.session_state.tie_buffer > 0 and st.session_state.last_p_b_outcome:
+    # แสดงผล Tie สะสมทันทีเมื่อมีการกด T และมี P/B ล่าสุด
+    emoji = {"P": "🔵", "B": "🔴"}.get(st.session_state.last_p_b_outcome, "❓")
+    st.markdown(f"<b>📍 ผลลัพธ์ล่าสุด:</b> {emoji} {st.session_state.last_p_b_outcome} <span style='color:#2ecc71; font-weight:bold;'>+ {st.session_state.tie_buffer} Tie</span>", unsafe_allow_html=True)
+    st.caption("กด P หรือ B เพื่อบันทึกมือถัดไป")
+elif st.session_state.prediction:
+    # แสดงผลการทำนายปกติ
     emoji = {"P": "🔵", "B": "🔴"}.get(st.session_state.prediction, "❓")
     st.markdown(f"<b>📍 ทำนาย:</b> {emoji} {st.session_state.prediction}", unsafe_allow_html=True)
     if st.session_state.source:
@@ -315,7 +357,9 @@ if st.session_state.prediction:
     if st.session_state.confidence is not None:
         st.caption(f"🔎 ความมั่นใจ: {st.session_state.confidence}%")
 else:
+    # ข้อความรอข้อมูล
     st.warning("⚠️ รอข้อมูลก่อนเริ่มทำนาย (อย่างน้อย 20 ผลลัพธ์ที่ไม่ใช่เสมอ)")
+    # แสดง Tie สะสมแม้จะไม่มีการทำนาย P/B
     if st.session_state.tie_buffer > 0:
         st.info(f"⚪ Tie สะสม: {st.session_state.tie_buffer} ครั้ง")
 st.markdown("</div>", unsafe_allow_html=True)
@@ -329,13 +373,22 @@ big_road_display_cols = OracleBrain._generate_big_road_columns_for_display(
 
 if big_road_display_cols:
     html = "<div class='big-road-container'>"
-    for col_data in big_road_display_cols:
+    # แสดงเฉพาะ 16 คอลัมน์ล่าสุด (ถ้ามีมากกว่า 16)
+    cols_to_display = big_road_display_cols[-16:] 
+    
+    for col_data in cols_to_display:
         html += "<div class='big-road-column'>"
         for outcome, tie_count in col_data:
-            icon = "🔵" if outcome == "P" else "🔴"
-            # แสดงจำนวน Tie เป็น overlay เล็กๆ ถ้ามากกว่า 0
-            tie_html = f"<div class='tie-overlay'>{tie_count}</div>" if tie_count > 0 else ""
-            html += f"<div class='big-road-cell'>{icon}{tie_html}</div>"
+            # กำหนด class สำหรับสีพื้นหลังของวงกลม
+            cell_class = "player" if outcome == "P" else "banker"
+            
+            # สร้าง HTML สำหรับ Tie Overlay (วงกลมเขียวตัวเลขดำ)
+            tie_html = ""
+            if tie_count > 0:
+                tie_html = f"<div class='tie-overlay'>{tie_count}</div>"
+            
+            # วงกลม P หรือ B
+            html += f"<div class='big-road-cell {cell_class}'>{tie_html}</div>"
         html += "</div>"
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
