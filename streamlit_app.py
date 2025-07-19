@@ -23,7 +23,8 @@ def save_state():
         'confidence': st.session_state.confidence,
         'pattern_name': st.session_state.pattern_name,
         'trend_indicator': st.session_state.get('trend_indicator', None), # บันทึก trend_indicator ด้วย
-        'last_p_b_outcome': st.session_state.get('last_p_b_outcome', None) # บันทึกผลลัพธ์ P/B ล่าสุดเพื่อแสดง Tie
+        'last_p_b_outcome': st.session_state.get('last_p_b_outcome', None), # บันทึกผลลัพธ์ P/B ล่าสุดเพื่อแสดง Tie
+        'miss_streak': st.session_state.get('miss_streak', 0) # บันทึก miss_streak ด้วย
     }
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, indent=4)
@@ -52,6 +53,7 @@ def load_state():
             st.session_state.pattern_name = state.get('pattern_name', None)
             st.session_state.trend_indicator = state.get('trend_indicator', None)
             st.session_state.last_p_b_outcome = state.get('last_p_b_outcome', None) # โหลด last_p_b_outcome
+            st.session_state.miss_streak = state.get('miss_streak', 0) # โหลด miss_streak
         return True
     return False
 
@@ -72,10 +74,19 @@ html, body, [class*="css"] {
     font-size: 28px; /* Increased font size */
     text-align: center;
     font-weight: bold;
-    margin-bottom: 20px; /* More space */
+    margin-bottom: 5px; /* Reduced margin */
     color: #f39c12; /* Orange color for title */
     text-shadow: 2px 2px 4px rgba(0,0,0,0.5); /* Stronger shadow */
+    display: flex;
+    justify-content: center;
+    align-items: baseline; /* Align text at baseline */
 }
+.big-title .version {
+    font-size: 16px; /* Smaller font for version */
+    margin-left: 5px; /* Space between "ORACLE" and "5.0" */
+    color: #ecf0f1; /* Lighter color for version */
+}
+
 /* Prediction box */
 .predict-box {
     padding: 15px; /* More padding */
@@ -88,14 +99,23 @@ html, body, [class*="css"] {
     text-align: center; /* Center text */
     animation: fadeIn 0.8s ease-out; /* Fade-in animation */
     border: 2px solid #f39c12; /* Orange border */
+    max-width: 400px; /* Limit width */
+    margin-left: auto;
+    margin-right: auto;
 }
 .predict-box b {
     color: #ecf0f1; /* Lighter text for bold parts */
+    font-size: 28px; /* Larger font for prediction text */
 }
 .predict-box .st-emotion-cache-1r6slb0 { /* Target Streamlit's caption */
     font-size: 14px;
     color: #bdc3c7; /* Lighter grey for captions */
     margin-top: 5px;
+}
+.predict-box .tie-info {
+    font-size: 20px; /* Larger font for tie info */
+    font-weight: bold;
+    color: #2ecc71; /* Green for tie count */
 }
 
 /* Big Road container */
@@ -124,17 +144,17 @@ html, body, [class*="css"] {
 }
 /* Big Road cell */
 .big-road-cell {
-    width: 36px; /* Larger cells */
-    height: 36px;
+    width: 28px; /* Smaller cells */
+    height: 28px;
     text-align: center;
-    line-height: 36px;
-    font-size: 22px; /* Larger icons */
+    line-height: 28px;
+    font-size: 18px; /* Smaller icons */
     margin-bottom: 2px; /* Space between cells */
     border-radius: 50%; /* Circular shape */
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Shadow for depth */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); /* Shadow for depth */
     position: relative; /* For tie overlay */
     background-color: transparent; /* Default transparent background */
 }
@@ -152,13 +172,13 @@ html, body, [class*="css"] {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%); /* Center the tie number */
-    font-size: 16px; /* Font size for tie number */
+    font-size: 14px; /* Smaller font for tie number */
     color: black; /* Black text for tie number */
     background-color: #2ecc71; /* Green background for tie number */
     border-radius: 50%;
-    width: 24px; /* Size of the tie circle */
-    height: 24px;
-    line-height: 24px;
+    width: 20px; /* Size of the tie circle */
+    height: 20px;
+    line-height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -208,8 +228,11 @@ html, body, [class*="css"] {
     margin-top: 20px;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
     text-align: center;
-    border: 1px solid #555;
+    border: 2px solid #f39c12; /* Orange border */
     color: #ecf0f1;
+    max-width: 400px; /* Limit width */
+    margin-left: auto;
+    margin-right: auto;
 }
 .trend-box h4 {
     color: #f39c12; /* Orange for trend title */
@@ -219,6 +242,22 @@ html, body, [class*="css"] {
     font-size: 18px; /* Larger font for trend text */
     color: #ecf0f1;
     font-weight: bold;
+}
+
+/* Miss Streak Box */
+.miss-streak-box {
+    padding: 10px;
+    background-color: #c0392b; /* Red background */
+    border-radius: 10px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    text-align: center;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    max-width: 400px; /* Limit width */
+    margin-left: auto;
+    margin-right: auto;
 }
 
 /* Fade-in animation for prediction box */
@@ -241,6 +280,7 @@ if not load_state():
     st.session_state.tie_buffer = 0
     st.session_state.trend_indicator = None # เริ่มต้น trend_indicator
     st.session_state.last_p_b_outcome = None # เก็บผลลัพธ์ P/B ล่าสุดสำหรับแสดง Tie
+    st.session_state.miss_streak = 0 # เริ่มต้น miss_streak
 
 # --- Functions ---
 def handle_click(outcome: Outcome):
@@ -250,25 +290,28 @@ def handle_click(outcome: Outcome):
     """
     if outcome == "T":
         st.session_state.tie_buffer += 1
-        # เมื่อกด T, อัปเดต Big Road และ Prediction Box ทันที
-        # Big Road จะใช้ st.session_state.oracle.ties เพื่อแสดง Tie
-        # Prediction Box จะแสดง Tie buffer
+        # เมื่อกด T, เราต้องการให้ Big Road อัปเดตทันที
+        # และ Prediction Box แสดง Tie buffer
+        # ไม่มีการเรียก predict_next() ที่นี่ เพราะ Tie ไม่ใช่ผลลัพธ์ที่ OracleBrain ทำนายโดยตรง
     else:
         # ถ้าเป็น P หรือ B, ให้เพิ่มผลลัพธ์พร้อมกับจำนวน Tie ที่สะสมไว้
         st.session_state.oracle.add_result(outcome, st.session_state.tie_buffer)
         st.session_state.tie_buffer = 0 # รีเซ็ต tie_buffer หลังจากเพิ่ม P/B
         st.session_state.last_p_b_outcome = outcome # บันทึกผลลัพธ์ P/B ล่าสุด
 
-    # ทำการทำนายถัดไป (จะแสดงผลเมื่อมีข้อมูล P/B อย่างน้อย 20 มือ)
-    prediction, source, confidence, pattern_code = st.session_state.oracle.predict_next()
-    st.session_state.prediction = prediction
-    st.session_state.source = source
-    st.session_state.confidence = confidence
+        # ทำการทำนายถัดไป (จะแสดงผลเมื่อมีข้อมูล P/B อย่างน้อย 20 มือ)
+        prediction, source, confidence, pattern_code = st.session_state.oracle.predict_next()
+        st.session_state.prediction = prediction
+        st.session_state.source = source
+        st.session_state.confidence = confidence
+        
+        # คำนวณ Miss Streak หลังจากการทำนาย P/B
+        st.session_state.miss_streak = st.session_state.oracle.calculate_miss_streak()
     
-    # ดึงแนวโน้มแบบง่าย
+    # ดึงแนวโน้มแบบง่าย (ทำเสมอไม่ว่าจะเป็น P/B/T)
     st.session_state.trend_indicator = st.session_state.oracle.get_simplified_trend()
 
-    # แมปโค้ดรูปแบบเป็นชื่อภาษาไทย
+    # แมปโค้ดรูปแบบเป็นชื่อภาษาไทย (ทำเสมอไม่ว่าจะเป็น P/B/T)
     pattern_names = {
         "PBPB": "ปิงปอง",
         "BPBP": "ปิงปอง",
@@ -277,6 +320,7 @@ def handle_click(outcome: Outcome):
         "PPPP": "มังกร P",
         "BBBB": "มังกร B"
     }
+    # ใช้ pattern_code จากการทำนายล่าสุด (ถ้ามี)
     st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
     
     save_state() # บันทึกสถานะหลังจากการกระทำทุกครั้ง
@@ -286,18 +330,28 @@ def handle_remove():
     จัดการการคลิกปุ่ม "ย้อนกลับ"
     ลบผลลัพธ์ล่าสุด, อัปเดตการทำนาย, และบันทึกสถานะ
     """
-    if st.session_state.oracle.history:
-        # ถ้ามีประวัติ P/B ให้ลบออก
+    # ตรวจสอบว่ามี Tie ที่ยังไม่ได้บันทึกเป็น P/B หรือไม่
+    if st.session_state.tie_buffer > 0:
+        st.session_state.tie_buffer -= 1 # ลด Tie buffer
+    elif st.session_state.oracle.history:
+        # ถ้าไม่มี Tie buffer และมีประวัติ P/B ให้ลบออก
         st.session_state.oracle.remove_last()
-        st.session_state.tie_buffer = 0 # รีเซ็ต tie buffer เมื่อย้อนกลับ
+        st.session_state.tie_buffer = 0 # รีเซ็ต tie buffer เมื่อย้อนกลับ P/B
         
         # อัปเดต last_p_b_outcome ให้เป็นผลลัพธ์ก่อนหน้า (ถ้ามี)
         if st.session_state.oracle.history:
             st.session_state.last_p_b_outcome = st.session_state.oracle.history[-1]
+            # ดึง tie_count ของมือที่ถูกย้อนกลับมา
+            if st.session_state.oracle.ties:
+                st.session_state.tie_buffer = st.session_state.oracle.ties[-1] 
+                # หลังจากย้อนกลับ P/B, Tie ที่เคยผูกกับมือนี้จะกลับมาอยู่ใน buffer
+                # เพื่อให้ผู้ใช้สามารถแก้ไข Tie ได้ก่อนจะบันทึกมือ P/B ถัดไป
+                # และต้องลบ Tie ออกจาก ties list ของ OracleBrain ด้วย
+                st.session_state.oracle.ties[-1] = 0 # ตั้งค่า Tie ของมือที่ย้อนกลับเป็น 0 ใน ties list
         else:
             st.session_state.last_p_b_outcome = None
     else:
-        # ถ้าไม่มีประวัติ P/B ให้ล้าง tie_buffer
+        # ถ้าไม่มีประวัติ P/B และไม่มี Tie buffer ก็ไม่ต้องทำอะไร
         st.session_state.tie_buffer = 0
         st.session_state.last_p_b_outcome = None
 
@@ -308,6 +362,9 @@ def handle_remove():
     st.session_state.source = source
     st.session_state.confidence = confidence
     
+    # คำนวณ Miss Streak หลังจากการทำนาย P/B
+    st.session_state.miss_streak = st.session_state.oracle.calculate_miss_streak()
+
     # คำนวณแนวโน้มใหม่
     st.session_state.trend_indicator = st.session_state.oracle.get_simplified_trend()
 
@@ -334,17 +391,18 @@ def handle_reset():
     st.session_state.tie_buffer = 0
     st.session_state.trend_indicator = None # รีเซ็ต trend indicator ด้วย
     st.session_state.last_p_b_outcome = None # รีเซ็ต last_p_b_outcome
+    st.session_state.miss_streak = 0 # รีเซ็ต miss_streak
     save_state() # บันทึกสถานะหลังจากการกระทำทุกครั้ง
 
 # --- Header ---
-st.markdown('<div class="big-title">🔮 ORACLE 5.0</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">🔮 ORACLE <span class="version">5.0</span></div>', unsafe_allow_html=True)
 
 # --- Prediction Box ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
 if st.session_state.tie_buffer > 0 and st.session_state.last_p_b_outcome:
     # แสดงผล Tie สะสมทันทีเมื่อมีการกด T และมี P/B ล่าสุด
     emoji = {"P": "🔵", "B": "🔴"}.get(st.session_state.last_p_b_outcome, "❓")
-    st.markdown(f"<b>📍 ผลลัพธ์ล่าสุด:</b> {emoji} {st.session_state.last_p_b_outcome} <span style='color:#2ecc71; font-weight:bold;'>+ {st.session_state.tie_buffer} Tie</span>", unsafe_allow_html=True)
+    st.markdown(f"<b>📍 ผลลัพธ์ล่าสุด:</b> {emoji} {st.session_state.last_p_b_outcome} <span class='tie-info'>+ {st.session_state.tie_buffer} Tie</span>", unsafe_allow_html=True)
     st.caption("กด P หรือ B เพื่อบันทึกมือถัดไป")
 elif st.session_state.prediction:
     # แสดงผลการทำนายปกติ
@@ -364,6 +422,10 @@ else:
         st.info(f"⚪ Tie สะสม: {st.session_state.tie_buffer} ครั้ง")
 st.markdown("</div>", unsafe_allow_html=True)
 
+# --- Miss Streak Display ---
+if st.session_state.miss_streak > 0:
+    st.markdown(f"<div class='miss-streak-box'>🔥 แพ้ติดกัน: {st.session_state.miss_streak} ครั้ง</div>", unsafe_allow_html=True)
+
 # --- Big Road Display ---
 st.markdown("### 🕒 Big Road")
 # ใช้ static method เพื่อดึงคอลัมน์สำหรับการแสดงผล Big Road
@@ -373,7 +435,7 @@ big_road_display_cols = OracleBrain._generate_big_road_columns_for_display(
 
 if big_road_display_cols:
     html = "<div class='big-road-container'>"
-    # แสดงเฉพาะ 16 คอลัมน์ล่าสุด (ถ้ามีมากกว่า 16)
+    # แสดงเฉพาะ 16 คอลัมน์ล่าสุด
     cols_to_display = big_road_display_cols[-16:] 
     
     for col_data in cols_to_display:
