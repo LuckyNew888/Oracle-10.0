@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.5.5 - Revert to JSON Storage)
+# streamlit_app.py (Oracle V10.5.6 - NameError Fix)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -545,7 +545,7 @@ class StatisticalAnalyzer:
                 if sequence not in self.sequence_outcomes:
                     self.sequence_outcomes[sequence] = {"P": 0, "B": 0}
                 
-                if follow_up_outcome in self.sequence_outcomes[sequence]:
+                if follow_up_outcome in self.sequence_outcomes:
                     self.sequence_outcomes[sequence][follow_up_outcome] += 1
                 
                 # Trim sequence_outcomes to prevent infinite growth (e.g., max 5000 unique sequences)
@@ -880,22 +880,7 @@ class AdaptiveScorer:
                 return "มังกรยาว"
         
         if len(filtered_history) >= 6:
-            last_6 = filtered_history[-6:]
-            if last_6.count("P") == 6:
-                return "มังกรยาว"
-            if last_6.count("B") == 6:
-                return "มังกรยาว"
-
-        # Check for Ping Pong (alternating) patterns
-        if len(filtered_history) >= 4:
-            last_4 = "".join(filtered_history[-4:])
-            if last_4 == "PBPB" or last_4 == "BPBP":
-                return "ปิงปอง"
-        if len(filtered_history) >= 5:
-            last_5 = "".join(filtered_history[-5:])
-            if last_5 == "PBPBP" or last_5 == "BPBPB":
-                return "ปิงปองยาว"
-        if len(filtered_filtered) >= 6:
+            # Corrected: Use filtered_history for length check, and joined_filtered for string operations
             last_6 = "".join(filtered_history[-6:])
             if last_6 == "PBPBPB" or last_6 == "BPBPBP":
                 return "ปิงปองยาว"
@@ -1458,7 +1443,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.5", layout="centered") # Updated version to V10.5.5
+st.set_page_config(page_title="🔮 Oracle V10.5.6", layout="centered") # Updated version to V10.5.6
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1999,7 +1984,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.5</span></div>', unsafe_allow_html=True) # Updated version to V10.5.5
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.6</span></div>', unsafe_allow_html=True) # Updated version to V10.5.6
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
