@@ -1,10 +1,79 @@
-# streamlit_app.py (Oracle V10.5.3 - Smart Recommendation Engine - Complex Pattern Recognition)
+# streamlit_app.py (Oracle V10.5.4 - Firestore Integration)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict # Import asdict for dataclass to dict conversion
 import json 
+
+# Firebase Imports (using CDN for Streamlit)
+# These will be loaded via <script> tags in the HTML if this were a pure HTML app.
+# For Streamlit, we assume the environment provides access or handle it via st.components.v1.html
+# However, for direct Python execution, we need to mock or ensure these are available.
+# In Canvas, __firebase_config and __initial_auth_token are provided as global JS variables.
+# We will access them via st.runtime.scriptrunner.add_script_run_ctx if needed,
+# but for simplicity, we'll assume they are available in the global scope if this were a web app.
+# For a pure Python Streamlit app, this would require a different setup (e.g., pyrebase or firebase-admin)
+# but for Canvas environment, the global variables are the intended way.
+
+# Mock Firebase for local testing if not in Canvas environment
+try:
+    from firebase_admin import credentials, initialize_app
+    from firebase_admin import firestore, auth
+    # Check if app is already initialized
+    if not firestore.client():
+        # Use a mock creds if not running in a real Firebase project or if not provided
+        # For actual deployment, replace with your Firebase project's credentials
+        # For Canvas, __firebase_config will be provided.
+        # This part is mostly for local dev setup if you want to run it outside Canvas.
+        # In Canvas, the global __firebase_config and __initial_auth_token are used.
+        pass
+except ImportError:
+    st.warning("Firebase Admin SDK not found. Online data storage will not work locally. Please install 'firebase-admin' if running outside Canvas.")
+    # Mock Firebase functions for local testing without firebase-admin
+    class MockFirestoreClient:
+        def collection(self, path):
+            st.error("Firestore is not initialized. Cannot access collection.")
+            return self
+        def document(self, path):
+            st.error("Firestore is not initialized. Cannot access document.")
+            return self
+        def get(self):
+            return MockDocumentSnapshot(None)
+        def set(self, data):
+            st.error("Firestore is not initialized. Cannot set data.")
+        def update(self, data):
+            st.error("Firestore is not initialized. Cannot update data.")
+    
+    class MockDocumentSnapshot:
+        def __init__(self, data):
+            self._data = data
+        def to_dict(self):
+            return self._data
+        def exists(self):
+            return self._data is not None
+
+    class MockAuth:
+        def sign_in_anonymously(self):
+            st.info("Mock: Signed in anonymously.")
+            return MockUser("mock_anonymous_user")
+        def sign_in_with_custom_token(self, token):
+            st.info(f"Mock: Signed in with custom token {token[:10]}...")
+            return MockUser("mock_custom_token_user")
+        def current_user(self):
+            if 'mock_user_id' not in st.session_state:
+                st.session_state.mock_user_id = "mock_anon_" + str(random.randint(1000, 9999))
+            return MockUser(st.session_state.mock_user_id)
+    
+    class MockUser:
+        def __init__(self, uid):
+            self.uid = uid
+
+    firestore = type('module', (object,), {'client': MockFirestoreClient})
+    auth = type('module', (object,), {'get_auth': MockAuth})
+    initialize_app = lambda config: None # Mock initialize_app
+    credentials = type('module', (object,), {'Certificate': lambda x: None})
+
 
 # --- Define main outcomes ---
 MainOutcome = Literal["P", "B", "T"]
@@ -954,7 +1023,146 @@ class OracleBrain:
         self.scorer = AdaptiveScorer() 
         self.show_initial_wait_message = True
         
-        # No Firestore loading/saving in this version. Data is volatile.
+        # Firebase related attributes
+        self.db = None
+        self.auth = None
+        self.user_id = None
+        self._init_firebase() # Initialize Firebase on startup
+
+    def _init_firebase(self):
+        """Initializes Firebase app and authentication."""
+        if 'firebase_initialized' not in st.session_state:
+            st.session_state.firebase_initialized = False
+
+        if not st.session_state.firebase_initialized:
+            try:
+                # Access global variables provided by Canvas environment
+                firebase_config_str = st.runtime.scriptrunner.add_script_run_ctx(lambda: '__firebase_config')()
+                initial_auth_token = st.runtime.scriptrunner.add_script_run_ctx(lambda: '__initial_auth_token')()
+                app_id = st.runtime.scriptrunner.add_script_run_ctx(lambda: '__app_id')()
+
+                if firebase_config_str and firebase_config_str != '__firebase_config':
+                    firebase_config = json.loads(firebase_config_str)
+                    app = initialize_app(firebase_config)
+                    self.db = firestore.client(app)
+                    self.auth = auth.get_auth(app)
+
+                    # Sign in user
+                    if initial_auth_token and initial_auth_token != '__initial_auth_token':
+                        self.auth.sign_in_with_custom_token(initial_auth_token)
+                        self.user_id = self.auth.current_user.uid
+                        st.session_state.user_id = self.user_id # Store in session state
+                        st.success(f"Firebase: เข้าสู่ระบบด้วยผู้ใช้ ID: {self.user_id[:8]}...")
+                    else:
+                        self.auth.sign_in_anonymously()
+                        self.user_id = self.auth.current_user.uid
+                        st.session_state.user_id = self.user_id # Store in session state
+                        st.info(f"Firebase: เข้าสู่ระบบแบบไม่ระบุตัวตนด้วย ID: {self.user_id[:8]}...")
+                    
+                    st.session_state.firebase_initialized = True
+                    st.session_state.db = self.db # Store db client in session state
+                    st.session_state.auth = self.auth # Store auth client in session state
+                    
+                    # Load data immediately after successful Firebase init
+                    self._load_history_from_firestore()
+
+                else:
+                    st.warning("Firebase config not found. Online data storage is disabled.")
+            except Exception as e:
+                st.error(f"Firebase initialization error: {e}")
+                st.warning("Online data storage is disabled due to Firebase error.")
+        else:
+            # If already initialized in session state, retrieve clients
+            self.db = st.session_state.db
+            self.auth = st.session_state.auth
+            self.user_id = st.session_state.user_id
+
+
+    def _get_user_id(self) -> Optional[str]:
+        """Gets the current user ID."""
+        if self.auth and self.auth.current_user:
+            return self.auth.current_user.uid
+        return None
+
+    def _get_user_data_path(self) -> Optional[str]:
+        """Constructs the Firestore path for user-specific data."""
+        app_id = st.runtime.scriptrunner.add_script_run_ctx(lambda: '__app_id')()
+        user_id = self._get_user_id()
+        if app_id and user_id:
+            return f"artifacts/{app_id}/users/{user_id}/baccarat_history/current_shoe_data"
+        return None
+
+    def _save_history_to_firestore(self):
+        """Saves current history and statistical analyzer data to Firestore."""
+        if not self.db or not self._get_user_data_path():
+            st.error("ไม่สามารถบันทึกข้อมูลได้: Firebase ไม่พร้อมใช้งานหรือไม่มี User ID")
+            return
+
+        data_path = self._get_user_data_path()
+        doc_ref = self.db.document(data_path)
+
+        try:
+            # Convert list of RoundResult dataclasses to list of dictionaries
+            history_dicts = [asdict(r) for r in self.history]
+            
+            data_to_save = {
+                "history": history_dicts,
+                "statistical_analyzer_sequence_outcomes": self.statistical_analyzer.sequence_outcomes,
+                "timestamp": firestore.SERVER_TIMESTAMP # Add a server timestamp
+            }
+            
+            with st.spinner("กำลังบันทึกข้อมูลออนไลน์..."):
+                doc_ref.set(data_to_save)
+            st.toast("✅ บันทึกข้อมูลออนไลน์เรียบร้อยแล้ว!")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการบันทึกข้อมูลออนไลน์: {e}")
+
+    def _load_history_from_firestore(self):
+        """Loads history and statistical analyzer data from Firestore."""
+        if not self.db or not self._get_user_data_path():
+            st.error("ไม่สามารถโหลดข้อมูลได้: Firebase ไม่พร้อมใช้งานหรือไม่มี User ID")
+            return
+
+        data_path = self._get_user_data_path()
+        doc_ref = self.db.document(data_path)
+
+        try:
+            with st.spinner("กำลังโหลดข้อมูลออนไลน์..."):
+                doc_snapshot = doc_ref.get()
+            
+            if doc_snapshot.exists:
+                loaded_data = doc_snapshot.to_dict()
+                
+                # Convert list of dictionaries back to list of RoundResult dataclasses
+                if "history" in loaded_data and isinstance(loaded_data["history"], list):
+                    self.history = [RoundResult(**d) for d in loaded_data["history"] if isinstance(d, dict)]
+                else:
+                    self.history = [] # Reset if data is invalid
+
+                if "statistical_analyzer_sequence_outcomes" in loaded_data and isinstance(loaded_data["statistical_analyzer_sequence_outcomes"], dict):
+                    self.statistical_analyzer.sequence_outcomes = loaded_data["statistical_analyzer_sequence_outcomes"]
+                else:
+                    self.statistical_analyzer.sequence_outcomes = {} # Reset if data is invalid
+
+                # Rebuild prediction_log and result_log from loaded history
+                self.prediction_log = [None] * len(self.history) # Placeholder, actual predictions are dynamic
+                self.result_log = [r.main_outcome for r in self.history]
+
+                # Re-initialize accuracy logs (they will be rebuilt on next add_result)
+                for module_name in self.module_accuracy_global_log:
+                    self.module_accuracy_global_log[module_name].clear()
+                self.tie_module_accuracy_global_log.clear()
+                for module_name in self.individual_module_prediction_log_current_shoe:
+                    self.individual_module_prediction_log_current_shoe[module_name].clear()
+                self.tie_module_prediction_log_current_shoe.clear()
+
+                st.toast("✅ โหลดข้อมูลออนไลน์เรียบร้อยแล้ว!")
+                # Force UI refresh after loading
+                st.query_params["_t"] = f"{time.time()}"
+            else:
+                st.info("ไม่พบข้อมูลออนไลน์สำหรับผู้ใช้นี้ เริ่มต้นใหม่.")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการโหลดข้อมูลออนไลน์: {e}")
 
     def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False):
         """
@@ -1004,6 +1212,7 @@ class OracleBrain:
         self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history))
 
         self._trim_global_logs() 
+        self._save_history_to_firestore() # Save to Firestore after adding result
 
     def remove_last(self):
         if self.history: self.history.pop()
@@ -1025,6 +1234,8 @@ class OracleBrain:
         # Re-initialize StatisticalAnalyzer to clear its history (simpler than reverse-updating)
         self.statistical_analyzer = StatisticalAnalyzer()
         self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history)) # Rebuild from current history
+        
+        self._save_history_to_firestore() # Save to Firestore after removing result
 
     def reset_all_data(self):
         """
@@ -1049,6 +1260,8 @@ class OracleBrain:
         
         # Reset StatisticalAnalyzer
         self.statistical_analyzer = StatisticalAnalyzer()
+        
+        self._save_history_to_firestore() # Save to Firestore after resetting all data
 
     def start_new_shoe(self):
         """
@@ -1069,11 +1282,14 @@ class OracleBrain:
         
         # Reset StatisticalAnalyzer for new shoe
         self.statistical_analyzer = StatisticalAnalyzer()
+        
+        self._save_history_to_firestore() # Save to Firestore after starting new shoe
 
 
     def export_all_time_data(self) -> Dict[str, Any]:
         """
         Exports the global accuracy logs and statistical analyzer data for persistence.
+        (This method is now primarily for local backup, as Firestore handles online persistence)
         """
         export_data = {
             "module_accuracy_global_log": {},
@@ -1092,6 +1308,7 @@ class OracleBrain:
     def import_all_time_data(self, imported_data: Dict[str, Any]):
         """
         Imports global accuracy logs and statistical analyzer data from a dictionary.
+        (This method is now primarily for local file import, not Firestore)
         """
         if not isinstance(imported_data, dict):
             raise ValueError("Imported data must be a dictionary.")
@@ -1460,7 +1677,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.3", layout="centered") # Updated version to V10.5.3
+st.set_page_config(page_title="🔮 Oracle V10.5.4", layout="centered") # Updated version to V10.5.4
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -2001,7 +2218,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.3</span></div>', unsafe_allow_html=True) 
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.4</span></div>', unsafe_allow_html=True) # Updated version to V10.5.4
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2213,71 +2430,25 @@ st.markdown("""
 
 
 # --- Data Management ---
-st.markdown("<b>💾 จัดการข้อมูล All-Time:</b>", unsafe_allow_html=True)
+st.markdown("<b>💾 จัดการข้อมูลออนไลน์:</b>", unsafe_allow_html=True)
 
-col_dl, col_ul = st.columns(2)
+col_load, col_reset_all = st.columns(2)
 
-with col_dl:
-    # Prepare data for download
-    data_to_export = st.session_state.oracle.export_all_time_data()
-    json_data = json.dumps(data_to_export, indent=4)
-    
-    st.download_button(
-        label="⬇️ ดาวน์โหลดข้อมูล All-Time",
-        data=json_data,
-        file_name="oracle_all_time_data.json",
-        mime="application/json",
-        key="download_all_time_data_btn",
-        help="ดาวน์โหลดข้อมูลความแม่นยำ All-Time เพื่อสำรองไว้"
-    )
+with col_load:
+    st.button("⬆️ โหลดข้อมูลออนไลน์", on_click=st.session_state.oracle._load_history_from_firestore, key="load_online_data_btn", help="โหลดข้อมูลประวัติการเล่นและความแม่นยำจากคลาวด์")
 
-with col_ul:
-    uploaded_file = st.file_uploader("⬆️ อัปโหลดข้อมูล All-Time", type="json", key="upload_all_time_data_uploader", help="อัปโหลดไฟล์ JSON ที่มีข้อมูลความแม่นยำ All-Time")
-    if uploaded_file is not None:
-        try:
-            bytes_data = uploaded_file.getvalue()
-            decoded_data = bytes_data.decode("utf-8")
-            loaded_data = json.loads(decoded_data)
-            st.session_state.oracle.import_all_time_data(loaded_data)
-            # Re-run prediction to update UI with new data
-            (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-             tie_pred, tie_conf,
-             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next()
+with col_reset_all:
+    st.button("🗑️ รีเซ็ตข้อมูลทั้งหมด", on_click=st.session_state.oracle.reset_all_data, key="reset_all_data_btn", help="ล้างข้อมูลประวัติทั้งหมด รวมถึงข้อมูลความแม่นยำ All-Time (ไม่สามารถกู้คืนได้หากไม่สำรองไว้)")
+    st.markdown("""
+    <style>
+    #reset_all_data_btn button {
+        background-color: #DC3545; /* Red for destructive action */
+        color: white;
+        border: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-            st.session_state.prediction = prediction
-            st.session_state.source = source
-            st.session_state.confidence = confidence
-            st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main
-            st.session_state.tie_prediction = tie_pred
-            st.session_state.tie_confidence = tie_conf
-            st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-            st.session_state.recommendation_text = recommendation_text
-            st.session_state.derived_road_trends = derived_road_trends
-            
-            pattern_names = { # Simplified pattern names for display
-                "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-                "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-                "PPPP": "มังกร", "BBBB": "มังกร", 
-                "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-                "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-                "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-                "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-                "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-                "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-                "PBBPPP": "สองตัดสาม", # New pattern name
-                "BPPBBB": "สองตัดสาม", # New pattern name
-                "มังกรตัด": "มังกรตัด",
-                "ปิงปองตัด": "ปิงปองตัด",
-                "ตัดสาม": "ตัดสาม"
-            }
-            st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
-
-            st.query_params["_t"] = f"{time.time()}" # Force UI refresh
-            
-        except json.JSONDecodeError:
-            st.error("ไฟล์ที่อัปโหลดไม่ใช่ไฟล์ JSON ที่ถูกต้อง")
-        except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการประมวลผลไฟล์: {e}")
 
 # --- Debugging Toggle ---
 st.session_state.show_debug_info = st.checkbox("⚙️ แสดงข้อมูล Debugging") # Updated emoji and text
@@ -2293,6 +2464,7 @@ if st.session_state.show_debug_info:
     st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
+    st.write(f"Firebase User ID: {st.session_state.oracle.user_id}")
     st.write("---") 
 
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
