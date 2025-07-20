@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.5.6 - NameError Fix)
+# streamlit_app.py (Oracle V10.5.8 - Recovery Mode)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -545,7 +545,7 @@ class StatisticalAnalyzer:
                 if sequence not in self.sequence_outcomes:
                     self.sequence_outcomes[sequence] = {"P": 0, "B": 0}
                 
-                if follow_up_outcome in self.sequence_outcomes:
+                if follow_up_outcome in self.sequence_outcomes[sequence]: # Corrected to check in self.sequence_outcomes[sequence]
                     self.sequence_outcomes[sequence][follow_up_outcome] += 1
                 
                 # Trim sequence_outcomes to prevent infinite growth (e.g., max 5000 unique sequences)
@@ -1283,7 +1283,7 @@ class OracleBrain:
         return streak
 
 
-    def predict_next(self) -> Tuple[
+    def predict_next(self, strict_mode: bool = False) -> Tuple[ # Added strict_mode parameter
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, 
         Optional[Literal["T"]], Optional[int], 
         bool, str, Dict[str, str] # recommendation_text, derived_road_trends
@@ -1305,6 +1305,56 @@ class OracleBrain:
         
         RECOMMEND_BET_CONFIDENCE_THRESHOLD = 65 
         MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 
+
+        # --- High Priority: Game Break (6 consecutive misses) ---
+        if current_miss_streak >= 6:
+            self.last_prediction = None
+            self.last_module = None
+            st.session_state.in_recovery_mode = False # Exit recovery if game breaks completely
+            st.session_state.consecutive_recovery_wins = 0
+            return None, None, None, None, current_miss_streak, False, None, None, False, \
+                   "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่", \
+                   self.derived_road_analyzer.analyze_derived_road_trends(self.history)
+
+        # --- Strict Mode & Recovery Logic (NEW) ---
+        STRICT_MODE_MISS_THRESHOLD = 3 
+        RECOVERY_WINS_REQUIRED = 2 # Number of consecutive correct internal predictions needed to exit recovery
+
+        if strict_mode:
+            # If currently in a miss streak that triggers strict mode, enter/stay in recovery
+            if current_miss_streak >= STRICT_MODE_MISS_THRESHOLD:
+                st.session_state.in_recovery_mode = True
+                # If we just hit the miss threshold again, reset recovery wins counter
+                if st.session_state.consecutive_recovery_wins > 0 and current_miss_streak == STRICT_MODE_MISS_THRESHOLD:
+                    st.session_state.consecutive_recovery_wins = 0
+                elif current_miss_streak > STRICT_MODE_MISS_THRESHOLD: # If miss streak continues past threshold
+                    st.session_state.consecutive_recovery_wins = 0 # Ensure wins are reset if we miss again
+
+            # If we are in recovery mode (either just entered or already in it)
+            if st.session_state.in_recovery_mode:
+                # If miss_streak is 0, it means the last round was a WIN (internally)
+                if current_miss_streak == 0:
+                    st.session_state.consecutive_recovery_wins += 1
+                    if st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED:
+                        st.session_state.in_recovery_mode = False # Exit recovery
+                        st.session_state.consecutive_recovery_wins = 0
+                        # FALL THROUGH to normal prediction logic below (system will now provide a bet)
+                    else:
+                        # Still in recovery, not enough consecutive wins yet
+                        return None, None, None, None, current_miss_streak, False, None, None, False, \
+                               f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED} ตา)", \
+                               self.derived_road_analyzer.analyze_derived_road_trends(self.history)
+                else:
+                    # Still in a miss streak (current_miss_streak > 0) while in recovery mode
+                    st.session_state.consecutive_recovery_wins = 0 # Reset consecutive wins if we miss again during recovery
+                    return None, None, None, None, current_miss_streak, False, None, None, False, \
+                           f"🚨 โหมดเข้มงวด: แพ้ {current_miss_streak} ไม้ติด! งดเดิมพันเพื่อควบคุมความเสี่ยง", \
+                           self.derived_road_analyzer.analyze_derived_road_trends(self.history)
+        else: # If strict_mode is OFF, ensure recovery mode is also off
+            st.session_state.in_recovery_mode = False
+            st.session_state.consecutive_recovery_wins = 0
+
+        # --- Normal Prediction Logic (only runs if not in Game Break or Strict/Recovery Mode) ---
 
         final_prediction_main = None
         source_module_name_main = None
@@ -1349,14 +1399,9 @@ class OracleBrain:
             if final_prediction_main is not None and confidence_main is not None:
                 confidence_main = max(RECOMMEND_BET_CONFIDENCE_THRESHOLD, int(confidence_main * 0.85)) 
 
-        # Logic to determine recommendation text
-        if current_miss_streak >= 6:
-            recommendation_text = "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่"
-            final_prediction_main = None 
-            source_module_name_main = None
-            confidence_main = None
-            pattern_code_main = None
-        elif final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD: 
+        # Logic to determine recommendation text (for normal mode)
+        # This part should only run if not already handled by strict/recovery mode or game break
+        if final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD: 
             # Apply color to the recommended outcome
             color_style = "color: #007BFF;" if final_prediction_main == "P" else "color: #DC3545;"
             recommendation_text = f"✅ แนะนำ: <span style='{color_style}'>{final_prediction_main}</span>"
@@ -1443,7 +1488,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.6", layout="centered") # Updated version to V10.5.6
+st.set_page_config(page_title="🔮 Oracle V10.5.8", layout="centered") # Updated version to V10.5.8
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1843,6 +1888,12 @@ if 'show_debug_info' not in st.session_state:
     st.session_state.show_debug_info = False
 if 'show_accuracy_info' not in st.session_state: # New state for accuracy toggle
     st.session_state.show_accuracy_info = False
+if 'strict_betting_mode' not in st.session_state: # NEW: Strict betting mode toggle
+    st.session_state.strict_betting_mode = False
+if 'in_recovery_mode' not in st.session_state: # NEW: Recovery mode state
+    st.session_state.in_recovery_mode = False
+if 'consecutive_recovery_wins' not in st.session_state: # NEW: Counter for consecutive wins in recovery
+    st.session_state.consecutive_recovery_wins = 0
 
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
@@ -1871,9 +1922,12 @@ def handle_click(main_outcome_str: MainOutcome):
 
     st.session_state.oracle.add_result(main_outcome_str, is_any_natural)
     
+    # Pass the strict_mode state to predict_next
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next(
+         strict_mode=st.session_state.strict_betting_mode
+     ) 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -1917,9 +1971,12 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
+    # Pass the strict_mode state to predict_next
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next(
+         strict_mode=st.session_state.strict_betting_mode
+     ) 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -1980,11 +2037,14 @@ def handle_start_new_shoe():
         "SmallRoad": "ไม่มีแนวโน้ม",
         "CockroachPig": "ไม่มีแนวโน้ม"
     }
+    # Reset recovery mode states when starting a new shoe
+    st.session_state.in_recovery_mode = False
+    st.session_state.consecutive_recovery_wins = 0
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.6</span></div>', unsafe_allow_html=True) # Updated version to V10.5.6
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.8</span></div>', unsafe_allow_html=True) # Updated version to V10.5.8
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2225,7 +2285,9 @@ with col_ul:
             # Re-run prediction to update UI with new data
             (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
              tie_pred, tie_conf,
-             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next()
+             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next(
+                 strict_mode=st.session_state.strict_betting_mode
+             )
 
             st.session_state.prediction = prediction
             st.session_state.source = source
@@ -2276,6 +2338,8 @@ if st.session_state.show_debug_info:
     st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
+    st.write(f"โหมดฟื้นฟู (Recovery Mode): {st.session_state.in_recovery_mode}") # NEW debug info
+    st.write(f"ชนะติดกันในโหมดฟื้นฟู (Consecutive Recovery Wins): {st.session_state.consecutive_recovery_wins}") # NEW debug info
     st.write("---") 
 
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
@@ -2330,3 +2394,6 @@ if st.session_state.show_accuracy_info: # Conditional rendering based on checkbo
     else:
         st.info("ยังไม่มีข้อมูลความแม่นยำ")
 
+# --- NEW: Strict Betting Mode Toggle ---
+st.markdown("<b>🔒 การตั้งค่าความเสี่ยง:</b>", unsafe_allow_html=True)
+st.session_state.strict_betting_mode = st.checkbox("🚨 เปิดโหมดเดิมพันเข้มงวด", value=st.session_state.strict_betting_mode, help="เมื่อเปิดใช้งาน ระบบจะแนะนำ 'งดเดิมพัน' ทันทีหากแพ้ติดกันตั้งแต่ 3 ไม้ขึ้นไป และจะเข้าสู่โหมดฟื้นฟูเพื่อรอความมั่นใจก่อนกลับมาเดิมพัน")
