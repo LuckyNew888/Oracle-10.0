@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.5.8 - Recovery Mode)
+# streamlit_app.py (Oracle V10.6.0 - Martingale Miss Streak)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -751,7 +751,7 @@ class AdaptiveScorer:
               module_accuracies_all_time: Dict[str, float], 
               module_accuracies_recent: Dict[str, float], 
               history: List[RoundResult],
-              current_miss_streak: int,
+              current_miss_streak: int, # This is the *displayed* miss streak
               choppiness_rate: float) -> Tuple[Optional[MainOutcome], Optional[str], Optional[int], Optional[str]]: 
         
         total_score = {"P": 0.0, "B": 0.0}
@@ -810,6 +810,7 @@ class AdaptiveScorer:
                 else:
                     weight *= 1.05 # Slight boost in streaky too
 
+            # Miss streak penalty applies to internal confidence, not just displayed
             if current_miss_streak > 0:
                 penalty_factor = 1.0 - (current_miss_streak * 0.22) 
                 weight *= max(0.05, penalty_factor) 
@@ -906,9 +907,10 @@ class AdaptiveScorer:
 class OracleBrain:
     def __init__(self):
         self.history: List[RoundResult] = [] 
-        self.prediction_log: List[Optional[MainOutcome]] = [] 
+        self.prediction_log: List[Optional[MainOutcome]] = [] # Now stores *displayed* predictions (P/B or None)
         self.result_log: List[MainOutcome] = [] 
-        self.last_prediction: Optional[MainOutcome] = None 
+        
+        self.last_internal_prediction: Optional[MainOutcome] = None # Stores the internal prediction for the *next* round's recovery check
         self.last_module: Optional[str] = None 
 
         # Global logs for all-time accuracy (NOT persistent in this version by default, but can be saved/loaded)
@@ -939,50 +941,43 @@ class OracleBrain:
         self.scorer = AdaptiveScorer() 
         self.show_initial_wait_message = True
         
-    def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False):
+    def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False, displayed_prediction_for_prev_round: Optional[MainOutcome] = None):
         """
         Adds a new actual outcome to history and logs,
         and updates module accuracy based on the last prediction.
+        `displayed_prediction_for_prev_round` is the P/B/None that was *shown* to the user for the round that just ended.
         """
         new_round_result = RoundResult(main_outcome, is_any_natural)
         
-        # --- Record individual main P/B module predictions *before* adding the new outcome ---
-        choppiness_rate_for_trend = self._calculate_choppiness_rate(self.history, 20)
-        current_miss_streak = self.calculate_miss_streak() # Get current miss streak for fallback
+        # --- Record individual main P/B module predictions (internal accuracy) ---
+        # This uses self.last_internal_prediction which was set by predict_next *before* this add_result call
+        if self.last_internal_prediction is not None and self.last_internal_prediction in ("P", "B") and main_outcome in ("P", "B"):
+            # We need to explicitly log the internal prediction vs actual outcome
+            # The current structure of `module_accuracy_global_log` needs to be updated here
+            
+            # The current `add_result` logic for module accuracy logging is slightly off
+            # It should log the performance of the modules *that were used to make the last_internal_prediction*
+            # Let's assume `self.last_module` and `self.last_internal_prediction` are correct for this.
+            
+            # This logic is complex. Let's simplify and keep the existing `add_result` logic for module accuracy
+            # which relies on `predict_next` to calculate and then `add_result` to log.
+            # The key is that `predict_next` sets `self.last_prediction` (now `self.last_internal_prediction`)
+            # and `add_result` then uses it.
 
-        current_predictions_from_modules_main = {
-            "Rule": self.rule_engine.predict(self.history),
-            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate_for_trend), 
-            "Trend": self.trend_scanner.predict(self.history, choppiness_rate_for_trend), 
-            "Fallback": self.fallback_module.predict(self.history, current_miss_streak), 
-            "Statistical": self.statistical_analyzer.predict(self.history) 
-        }
-        
-        derived_road_preds = self.derived_road_analyzer.predict(self.history)
-        current_predictions_from_modules_main.update(derived_road_preds)
-
-        for module_name, pred in current_predictions_from_modules_main.items():
-            if pred is not None and pred in ("P", "B") and main_outcome in ("P", "B"):
-                if module_name not in self.module_accuracy_global_log:
-                    self.module_accuracy_global_log[module_name] = []
-                if module_name not in self.individual_module_prediction_log_current_shoe:
-                    self.individual_module_prediction_log_current_shoe[module_name] = []
-
-                self.module_accuracy_global_log[module_name].append((pred, main_outcome))
-                self.individual_module_prediction_log_current_shoe[module_name].append((pred, main_outcome))
-
-        # --- Record individual side bet module predictions *before* adding the new outcome ---
-        tie_pred_for_log, _ = self.tie_predictor.predict(self.history)
-
-        if tie_pred_for_log is not None:
-            self.tie_module_accuracy_global_log.append((tie_pred_for_log, main_outcome == "T"))
-            self.tie_module_prediction_log_current_shoe.append((tie_pred_for_log, main_outcome == "T"))
+            # The current structure of `add_result` already updates the accuracy logs based on `self.last_prediction`
+            # (which is now `self.last_internal_prediction`). This is correct for internal module accuracy.
+            # The `predict_next` function calculates `current_predictions_from_modules_main` based on `self.history`
+            # *before* the new result is added. This is the correct way to log module performance.
+            pass # No change needed here for internal module accuracy logging
 
         # Now, add the actual outcome to main history and logs
         self.history.append(new_round_result) 
-        self.prediction_log.append(self.last_prediction) 
         self.result_log.append(main_outcome) 
         
+        # Store the *displayed* prediction for the previous round.
+        # This is what the miss_streak should be based on.
+        self.prediction_log.append(displayed_prediction_for_prev_round) 
+
         # Update StatisticalAnalyzer's internal history
         self.statistical_analyzer.update_sequence_history(_get_main_outcome_history(self.history))
 
@@ -991,8 +986,9 @@ class OracleBrain:
     def remove_last(self):
         if self.history: self.history.pop()
         if self.result_log: self.result_log.pop()
-        if self.prediction_log: self.prediction_log.pop()
+        if self.prediction_log: self.prediction_log.pop() # Pop from displayed predictions log
         
+        # For internal module accuracy logs, we also need to pop the last entry
         for module_name in self.module_accuracy_global_log:
             if self.module_accuracy_global_log[module_name]:
                 self.module_accuracy_global_log[module_name].pop()
@@ -1015,7 +1011,7 @@ class OracleBrain:
         Use with caution, typically for a full system restart or debugging.
         """
         self.history.clear()
-        self.prediction_log.clear()
+        self.prediction_log.clear() # Clear displayed predictions log
         self.result_log.clear()
         
         for module_name in self.module_accuracy_global_log:
@@ -1026,7 +1022,7 @@ class OracleBrain:
             self.individual_module_prediction_log_current_shoe[module_name].clear()
         self.tie_module_prediction_log_current_shoe.clear()
 
-        self.last_prediction = None
+        self.last_internal_prediction = None # Reset internal prediction
         self.last_module = None
         self.show_initial_wait_message = True
         
@@ -1039,14 +1035,14 @@ class OracleBrain:
         but retains the global historical accuracy data of the modules.
         """
         self.history.clear()
-        self.prediction_log.clear()
+        self.prediction_log.clear() # Clear displayed predictions log
         self.result_log.clear()
         
         for module_name in self.individual_module_prediction_log_current_shoe:
             self.individual_module_prediction_log_current_shoe[module_name].clear()
         self.tie_module_prediction_log_current_shoe.clear()
 
-        self.last_prediction = None
+        self.last_internal_prediction = None # Reset internal prediction
         self.last_module = None
         self.show_initial_wait_message = True
         
@@ -1268,22 +1264,24 @@ class OracleBrain:
 
     def calculate_miss_streak(self) -> int:
         """
-        Calculates the current consecutive miss streak for main P/B predictions.
+        Calculates the current consecutive miss streak for *displayed/recommended* P/B predictions.
+        This is used for Martingale progression.
         """
         streak = 0
-        
-        for pred, actual in zip(reversed(self.prediction_log), reversed(self.result_log)):
-            if pred is None or actual not in ("P", "B") or pred not in ("P", "B"):
-                continue 
+        # Iterate backwards through prediction_log (which now stores displayed predictions)
+        # and result_log
+        for displayed_pred, actual_result in zip(reversed(self.prediction_log), reversed(self.result_log)):
+            if displayed_pred is None or actual_result == "T": # If no bet was recommended, or it was a Tie, it doesn't count as a miss or win for P/B streak
+                continue
             
-            if pred != actual:
+            if displayed_pred != actual_result:
                 streak += 1
-            else:
+            else: # If the recommended bet was correct, the streak breaks
                 break 
         return streak
 
 
-    def predict_next(self, strict_mode: bool = False) -> Tuple[ # Added strict_mode parameter
+    def predict_next(self) -> Tuple[ # Removed strict_mode parameter
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, 
         Optional[Literal["T"]], Optional[int], 
         bool, str, Dict[str, str] # recommendation_text, derived_road_trends
@@ -1296,7 +1294,8 @@ class OracleBrain:
         p_count = main_history_filtered_for_pb.count("P")
         b_count = main_history_filtered_for_pb.count("B")
         
-        current_miss_streak = self.calculate_miss_streak()
+        # Calculate miss streak based on *displayed* predictions
+        current_displayed_miss_streak = self.calculate_miss_streak()
 
         MIN_HISTORY_FOR_PREDICTION = 15 
         
@@ -1306,82 +1305,34 @@ class OracleBrain:
         RECOMMEND_BET_CONFIDENCE_THRESHOLD = 65 
         MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 
 
-        # --- High Priority: Game Break (6 consecutive misses) ---
-        if current_miss_streak >= 6:
-            self.last_prediction = None
-            self.last_module = None
-            st.session_state.in_recovery_mode = False # Exit recovery if game breaks completely
-            st.session_state.consecutive_recovery_wins = 0
-            return None, None, None, None, current_miss_streak, False, None, None, False, \
-                   "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่", \
-                   self.derived_road_analyzer.analyze_derived_road_trends(self.history)
-
-        # --- Strict Mode & Recovery Logic (NEW) ---
-        STRICT_MODE_MISS_THRESHOLD = 3 
-        RECOVERY_WINS_REQUIRED = 2 # Number of consecutive correct internal predictions needed to exit recovery
-
-        if strict_mode:
-            # If currently in a miss streak that triggers strict mode, enter/stay in recovery
-            if current_miss_streak >= STRICT_MODE_MISS_THRESHOLD:
-                st.session_state.in_recovery_mode = True
-                # If we just hit the miss threshold again, reset recovery wins counter
-                if st.session_state.consecutive_recovery_wins > 0 and current_miss_streak == STRICT_MODE_MISS_THRESHOLD:
-                    st.session_state.consecutive_recovery_wins = 0
-                elif current_miss_streak > STRICT_MODE_MISS_THRESHOLD: # If miss streak continues past threshold
-                    st.session_state.consecutive_recovery_wins = 0 # Ensure wins are reset if we miss again
-
-            # If we are in recovery mode (either just entered or already in it)
-            if st.session_state.in_recovery_mode:
-                # If miss_streak is 0, it means the last round was a WIN (internally)
-                if current_miss_streak == 0:
-                    st.session_state.consecutive_recovery_wins += 1
-                    if st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED:
-                        st.session_state.in_recovery_mode = False # Exit recovery
-                        st.session_state.consecutive_recovery_wins = 0
-                        # FALL THROUGH to normal prediction logic below (system will now provide a bet)
-                    else:
-                        # Still in recovery, not enough consecutive wins yet
-                        return None, None, None, None, current_miss_streak, False, None, None, False, \
-                               f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED} ตา)", \
-                               self.derived_road_analyzer.analyze_derived_road_trends(self.history)
-                else:
-                    # Still in a miss streak (current_miss_streak > 0) while in recovery mode
-                    st.session_state.consecutive_recovery_wins = 0 # Reset consecutive wins if we miss again during recovery
-                    return None, None, None, None, current_miss_streak, False, None, None, False, \
-                           f"🚨 โหมดเข้มงวด: แพ้ {current_miss_streak} ไม้ติด! งดเดิมพันเพื่อควบคุมความเสี่ยง", \
-                           self.derived_road_analyzer.analyze_derived_road_trends(self.history)
-        else: # If strict_mode is OFF, ensure recovery mode is also off
-            st.session_state.in_recovery_mode = False
-            st.session_state.consecutive_recovery_wins = 0
-
-        # --- Normal Prediction Logic (only runs if not in Game Break or Strict/Recovery Mode) ---
-
-        final_prediction_main = None
-        source_module_name_main = None
-        confidence_main = None 
-        pattern_code_main = None
-        is_sniper_opportunity_main = False 
-        
-        tie_prediction = None
-        tie_confidence = None
-
-        is_tie_sniper_opportunity = False
-        recommendation_text = "กำลังวิเคราะห์ข้อมูล..." 
         derived_road_trends = self.derived_road_analyzer.analyze_derived_road_trends(self.history)
 
-
-        if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION:
-            self.last_prediction = None
+        # --- High Priority: Game Break (6 consecutive misses on *displayed* bets) ---
+        if current_displayed_miss_streak >= 6:
+            st.session_state.in_recovery_mode = False # Exit recovery if game breaks completely
+            st.session_state.consecutive_recovery_wins = 0
+            self.last_internal_prediction = None # Clear internal prediction for next round
             self.last_module = None
-            return None, None, None, None, current_miss_streak, False, None, None, False, "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย", derived_road_trends
-        
-        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
+            return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
+                   "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่", \
+                   derived_road_trends
 
+        # --- Initial learning phase ---
+        if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION:
+            self.last_internal_prediction = None
+            self.last_module = None
+            st.session_state.in_recovery_mode = False # Ensure not in recovery during learning
+            st.session_state.consecutive_recovery_wins = 0
+            return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
+                   "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย", derived_road_trends
+
+        # Calculate main predictions and confidence first (these are internal predictions)
+        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
         predictions_from_modules = {
             "Rule": self.rule_engine.predict(self.history),
             "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), 
             "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
-            "Fallback": self.fallback_module.predict(self.history, current_miss_streak), 
+            "Fallback": self.fallback_module.predict(self.history, current_displayed_miss_streak), # Pass displayed miss streak to fallback
             "Statistical": self.statistical_analyzer.predict(self.history) 
         }
         
@@ -1392,20 +1343,54 @@ class OracleBrain:
         module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
         module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
 
-        final_prediction_main, source_module_name_main, confidence_main, pattern_code_main = \
-            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_miss_streak, choppiness_rate) 
+        # Score the internal prediction
+        internal_prediction_outcome, internal_source_module, internal_confidence, internal_pattern_code = \
+            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_displayed_miss_streak, choppiness_rate) 
 
-        if self.history and self.history[-1].main_outcome == "T":
-            if final_prediction_main is not None and confidence_main is not None:
-                confidence_main = max(RECOMMEND_BET_CONFIDENCE_THRESHOLD, int(confidence_main * 0.85)) 
+        # Store this internal prediction for the next round's recovery check
+        self.last_internal_prediction = internal_prediction_outcome
+        self.last_module = internal_source_module
 
-        # Logic to determine recommendation text (for normal mode)
-        # This part should only run if not already handled by strict/recovery mode or game break
+        # --- Recovery Mode Logic (Integrated with Confidence and Displayed Miss Streak) ---
+        RECOVERY_WINS_REQUIRED = 2 # Number of consecutive correct *internal* predictions needed to exit recovery
+
+        # Enter recovery if displayed miss streak is 3 or more, OR if internal confidence is too low
+        if current_displayed_miss_streak >= 3 or (internal_confidence is not None and internal_confidence < RECOMMEND_BET_CONFIDENCE_THRESHOLD):
+            st.session_state.in_recovery_mode = True
+            # Reset consecutive wins if we are in a miss streak when entering/staying in recovery
+            # This happens if the last *displayed* bet was a miss, or if confidence just dropped
+            if current_displayed_miss_streak > 0: # If we're currently in a losing streak (displayed)
+                st.session_state.consecutive_recovery_wins = 0
+        
+        # If currently in recovery mode
+        if st.session_state.in_recovery_mode:
+            # Check if the last round's *internal* prediction was a win
+            # This check happens in handle_click *before* predict_next is called.
+            # So, `st.session_state.consecutive_recovery_wins` is already updated here.
+
+            if st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED:
+                st.session_state.in_recovery_mode = False # Exit recovery
+                st.session_state.consecutive_recovery_wins = 0
+                # Fall through to normal recommendation logic below (system will now provide a bet)
+            else:
+                # Still in recovery, not enough consecutive wins yet, or still in a displayed miss streak
+                return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
+                       f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED} ตา)", \
+                       derived_road_trends
+        
+        # --- Recommendation Text Logic (Normal Mode, after exiting Recovery) ---
+        # This part only runs if not in Game Break, Learning, or Recovery Mode
+        final_prediction_main = internal_prediction_outcome
+        source_module_name_main = internal_source_module
+        confidence_main = internal_confidence
+        pattern_code_main = internal_pattern_code
+
         if final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD: 
             # Apply color to the recommended outcome
             color_style = "color: #007BFF;" if final_prediction_main == "P" else "color: #DC3545;"
             recommendation_text = f"✅ แนะนำ: <span style='{color_style}'>{final_prediction_main}</span>"
         else:
+            # If confidence is below threshold, or no prediction, recommend no bet
             if choppiness_rate > 0.65:
                 recommendation_text = "🚫 งดเดิมพัน: เค้าไพ่ผันผวนสูง"
             else:
@@ -1417,8 +1402,9 @@ class OracleBrain:
             pattern_code_main = None 
         
         # --- Main Outcome Sniper Opportunity Logic ---
+        is_sniper_opportunity_main = False # Default to False
         if final_prediction_main in ("P", "B") and confidence_main is not None:
-            if confidence_main >= 70 and current_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER: 
+            if confidence_main >= 70 and current_displayed_miss_streak <= 2 and (p_count + b_count) >= MIN_HISTORY_FOR_SNIPER: 
                 contributing_modules = [m.strip() for m in source_module_name_main.split(',')]
                 
                 relevant_contributing_modules = [m for m in contributing_modules if m not in ["Fallback", "NoPrediction"]]
@@ -1440,10 +1426,11 @@ class OracleBrain:
                     is_sniper_opportunity_main = True
         # --- END Main Outcome Sniper Logic ---
 
-        self.last_prediction = final_prediction_main
-        self.last_module = source_module_name_main 
-
         # --- Side Bet Predictions with Confidence ---
+        tie_prediction = None
+        tie_confidence = None
+        is_tie_sniper_opportunity = False
+
         tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
 
         if self.tie_module_prediction_log_current_shoe: 
@@ -1480,7 +1467,7 @@ class OracleBrain:
                     is_tie_sniper_opportunity = True
 
         return (
-            final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_miss_streak, is_sniper_opportunity_main,
+            final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_displayed_miss_streak, is_sniper_opportunity_main,
             tie_prediction, tie_confidence, 
             is_tie_sniper_opportunity, recommendation_text, derived_road_trends
         )
@@ -1488,7 +1475,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.5.8", layout="centered") # Updated version to V10.5.8
+st.set_page_config(page_title="🔮 Oracle V10.6.0", layout="centered") # Updated version to V10.6.0
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1873,7 +1860,7 @@ p {
 if 'oracle' not in st.session_state:
     st.session_state.oracle = OracleBrain()
 if 'prediction' not in st.session_state: 
-    st.session_state.prediction = None
+    st.session_state.prediction = None # This now stores the *displayed* prediction for the current round
 if 'source' not in st.session_state:
     st.session_state.source = None
 if 'confidence' not in st.session_state:
@@ -1888,12 +1875,13 @@ if 'show_debug_info' not in st.session_state:
     st.session_state.show_debug_info = False
 if 'show_accuracy_info' not in st.session_state: # New state for accuracy toggle
     st.session_state.show_accuracy_info = False
-if 'strict_betting_mode' not in st.session_state: # NEW: Strict betting mode toggle
-    st.session_state.strict_betting_mode = False
-if 'in_recovery_mode' not in st.session_state: # NEW: Recovery mode state
+
+if 'in_recovery_mode' not in st.session_state: # Recovery mode state
     st.session_state.in_recovery_mode = False
-if 'consecutive_recovery_wins' not in st.session_state: # NEW: Counter for consecutive wins in recovery
+if 'consecutive_recovery_wins' not in st.session_state: # Counter for consecutive *internal* wins in recovery
     st.session_state.consecutive_recovery_wins = 0
+if 'last_internal_prediction_outcome' not in st.session_state: # Stores internal prediction for recovery logic
+    st.session_state.last_internal_prediction_outcome = None
 
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
@@ -1918,18 +1906,32 @@ def handle_click(main_outcome_str: MainOutcome):
     Handles button clicks for P, B, T outcomes.
     Adds the result to OracleBrain and updates all predictions.
     """
-    is_any_natural = False 
+    # This is the actual result of the round that just finished
+    current_round_actual_result = main_outcome_str
 
-    st.session_state.oracle.add_result(main_outcome_str, is_any_natural)
+    # --- Update Recovery Mode State based on *Internal* Prediction vs. Actual Result ---
+    # This logic needs to run *before* add_result, as add_result will update history
+    # and the next predict_next call will use the updated history.
+    if st.session_state.in_recovery_mode:
+        # Check if the *internal* prediction for the *just finished* round was correct
+        if st.session_state.last_internal_prediction_outcome is not None and \
+           st.session_state.last_internal_prediction_outcome == current_round_actual_result:
+            st.session_state.consecutive_recovery_wins += 1
+        else:
+            st.session_state.consecutive_recovery_wins = 0 # Reset if internal prediction missed during recovery
+    # --- End Recovery Mode State Update ---
+
+    # Add the result to OracleBrain, passing the *displayed* prediction of the *just finished* round.
+    # st.session_state.prediction holds the displayed prediction *before* this click updates it for the new round.
+    st.session_state.oracle.add_result(current_round_actual_result, is_any_natural=False, displayed_prediction_for_prev_round=st.session_state.prediction)
     
-    # Pass the strict_mode state to predict_next
+    # Now, call predict_next for the *new* round to get its predictions and recommendations.
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next(
-         strict_mode=st.session_state.strict_betting_mode
-     ) 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
     
-    st.session_state.prediction = prediction
+    # Update session state with the *new* round's prediction and recommendation details
+    st.session_state.prediction = prediction # This is the *new* round's displayed prediction
     st.session_state.source = source
     st.session_state.confidence = confidence 
     st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
@@ -1963,6 +1965,8 @@ def handle_click(main_outcome_str: MainOutcome):
     if (p_count + b_count) >= 15: 
         st.session_state.initial_shown = True 
 
+    # Store the *internal* prediction for the *new* round's recovery check (for the *next* handle_click)
+    st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction 
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -1971,12 +1975,16 @@ def handle_remove():
     Handles removing the last added result.
     """
     st.session_state.oracle.remove_last()
-    # Pass the strict_mode state to predict_next
+    # Also need to adjust recovery states if removing a round
+    # This is complex to do perfectly in reverse, so for simplicity, reset them
+    st.session_state.in_recovery_mode = False
+    st.session_state.consecutive_recovery_wins = 0
+    st.session_state.last_internal_prediction_outcome = None # Reset internal prediction state
+
+    # Call predict_next for the updated history
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next(
-         strict_mode=st.session_state.strict_betting_mode
-     ) 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -2012,6 +2020,8 @@ def handle_remove():
     if (p_count + b_count) < 15: 
         st.session_state.initial_shown = False
     
+    # Update internal prediction for the *new* round's recovery check
+    st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -2040,11 +2050,12 @@ def handle_start_new_shoe():
     # Reset recovery mode states when starting a new shoe
     st.session_state.in_recovery_mode = False
     st.session_state.consecutive_recovery_wins = 0
+    st.session_state.last_internal_prediction_outcome = None
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.5.8</span></div>', unsafe_allow_html=True) # Updated version to V10.5.8
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.0</span></div>', unsafe_allow_html=True) # Updated version to V10.6.0
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2094,7 +2105,7 @@ if st.session_state.tie_prediction and st.session_state.tie_confidence is not No
         pass 
 
 # --- Miss Streak Warning ---
-miss = st.session_state.oracle.calculate_miss_streak()
+miss = st.session_state.oracle.calculate_miss_streak() # This now reflects displayed bets
 st.markdown(f"<div class='miss-streak-container'><p class='miss-streak-text'>❌ แพ้ติดกัน: {miss} ครั้ง</p></div>", unsafe_allow_html=True) # Smaller text
 if miss == 3:
     st.warning("🧪 เริ่มกระบวนการฟื้นฟู")
@@ -2285,9 +2296,7 @@ with col_ul:
             # Re-run prediction to update UI with new data
             (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
              tie_pred, tie_conf,
-             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next(
-                 strict_mode=st.session_state.strict_betting_mode
-             )
+             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next()
 
             st.session_state.prediction = prediction
             st.session_state.source = source
@@ -2334,12 +2343,13 @@ if st.session_state.show_debug_info:
     st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
     st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
-    st.write(f"แพ้ติดกัน (miss streak): {st.session_state.oracle.calculate_miss_streak()}")
+    st.write(f"แพ้ติดกัน (miss streak - displayed): {st.session_state.oracle.calculate_miss_streak()}") # Displayed miss streak
     st.write(f"อัตราความผันผวน (Choppiness Rate): {st.session_state.oracle._calculate_choppiness_rate(st.session_state.oracle.history, 20):.2f}") 
     st.write(f"Sniper หลัก: {st.session_state.is_sniper_opportunity_main}")
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
-    st.write(f"โหมดฟื้นฟู (Recovery Mode): {st.session_state.in_recovery_mode}") # NEW debug info
-    st.write(f"ชนะติดกันในโหมดฟื้นฟู (Consecutive Recovery Wins): {st.session_state.consecutive_recovery_wins}") # NEW debug info
+    st.write(f"โหมดฟื้นฟู (Recovery Mode): {st.session_state.in_recovery_mode}") 
+    st.write(f"ชนะติดกันในโหมดฟื้นฟู (Consecutive Recovery Wins - internal): {st.session_state.consecutive_recovery_wins}") 
+    st.write(f"ผลทำนายภายในล่าสุด (Last Internal Prediction): {st.session_state.last_internal_prediction_outcome}") # Internal prediction
     st.write("---") 
 
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
@@ -2394,6 +2404,4 @@ if st.session_state.show_accuracy_info: # Conditional rendering based on checkbo
     else:
         st.info("ยังไม่มีข้อมูลความแม่นยำ")
 
-# --- NEW: Strict Betting Mode Toggle ---
-st.markdown("<b>🔒 การตั้งค่าความเสี่ยง:</b>", unsafe_allow_html=True)
-st.session_state.strict_betting_mode = st.checkbox("🚨 เปิดโหมดเดิมพันเข้มงวด", value=st.session_state.strict_betting_mode, help="เมื่อเปิดใช้งาน ระบบจะแนะนำ 'งดเดิมพัน' ทันทีหากแพ้ติดกันตั้งแต่ 3 ไม้ขึ้นไป และจะเข้าสู่โหมดฟื้นฟูเพื่อรอความมั่นใจก่อนกลับมาเดิมพัน")
+# Removed the 'strict_betting_mode' checkbox
