@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.1 - Enhanced Recovery)
+# streamlit_app.py (Oracle V10.6.2 - Enhanced Recovery Debug)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1460,7 +1460,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.1", layout="centered") # Updated version to V10.6.1
+st.set_page_config(page_title="🔮 Oracle V10.6.2", layout="centered") # Updated version to V10.6.2
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1894,18 +1894,30 @@ def handle_click(main_outcome_str: MainOutcome):
     # This is the actual result of the round that just finished
     current_round_actual_result = main_outcome_str
 
-    # --- Update Recovery Mode State based on *Internal* Prediction vs. Actual Result ---
-    # This logic needs to run *before* add_result, as add_result will update history
-    # and the next predict_next call will use the updated history.
+    # Store the internal prediction from the *previous* round for recovery check
+    # This value was set at the END of the *previous* handle_click call.
+    prev_round_internal_prediction = st.session_state.last_internal_prediction_outcome
+
+    if st.session_state.show_debug_info: # Only show if debug is on
+        st.write(f"--- Debugging handle_click for recovery ---")
+        st.write(f"  Actual Result (Current Round): {current_round_actual_result}")
+        st.write(f"  Recovery Mode (before update): {st.session_state.in_recovery_mode}")
+        st.write(f"  Internal Prediction (for previous round, used for check): {prev_round_internal_prediction}")
+        st.write(f"  Consecutive Recovery Wins (before update): {st.session_state.consecutive_recovery_wins}")
+
     if st.session_state.in_recovery_mode:
         # Check if the *internal* prediction for the *just finished* round was correct
-        if st.session_state.last_internal_prediction_outcome is not None and \
-           st.session_state.last_internal_prediction_outcome == current_round_actual_result:
+        if prev_round_internal_prediction is not None and \
+           prev_round_internal_prediction in ("P", "B") and \
+           prev_round_internal_prediction == current_round_actual_result:
             st.session_state.consecutive_recovery_wins += 1
+            if st.session_state.show_debug_info:
+                st.write(f"  Internal prediction CORRECT. consecutive_recovery_wins incremented to: {st.session_state.consecutive_recovery_wins}")
         else:
-            st.session_state.consecutive_recovery_wins = 0 # Reset if internal prediction missed during recovery
-    # --- End Recovery Mode State Update ---
-
+            st.session_state.consecutive_recovery_wins = 0 # Reset if internal prediction missed or was None
+            if st.session_state.show_debug_info:
+                st.write(f"  Internal prediction INCORRECT or NONE. consecutive_recovery_wins reset to: {st.session_state.consecutive_recovery_wins}")
+    
     # Add the result to OracleBrain, passing the *displayed* prediction of the *just finished* round.
     # st.session_state.prediction holds the displayed prediction *before* this click updates it for the new round.
     st.session_state.oracle.add_result(current_round_actual_result, is_any_natural=False, displayed_prediction_for_prev_round=st.session_state.prediction)
@@ -2040,7 +2052,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.1</span></div>', unsafe_allow_html=True) # Updated version to V10.6.1
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.2</span></div>', unsafe_allow_html=True) # Updated version to V10.6.2
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2325,7 +2337,7 @@ st.session_state.show_debug_info = st.checkbox("⚙️ แสดงข้อม�
 if st.session_state.show_debug_info:
     st.markdown("<h3>⚙️ ข้อมูล Debugging (สำหรับนักพัฒนา)</h3>", unsafe_allow_html=True)
     st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
-    st.write(f"ผลทำนายหลัก (prediction): {st.session_state.prediction}")
+    st.write(f"ผลทำนายหลัก (prediction - displayed): {st.session_state.prediction}") # This is the displayed prediction for the *current* round
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
     st.write(f"ความมั่นใจ (confidence): {st.session_state.confidence}")
     st.write(f"แพ้ติดกัน (miss streak - displayed): {st.session_state.oracle.calculate_miss_streak()}") # Displayed miss streak
@@ -2334,7 +2346,7 @@ if st.session_state.show_debug_info:
     st.write(f"ทำนายเสมอ: {st.session_state.tie_prediction}, ความมั่นใจเสมอ: {st.session_state.tie_confidence}, Sniper เสมอ: {st.session_state.is_tie_sniper_opportunity}") 
     st.write(f"โหมดฟื้นฟู (Recovery Mode): {st.session_state.in_recovery_mode}") 
     st.write(f"ชนะติดกันในโหมดฟื้นฟู (Consecutive Recovery Wins - internal): {st.session_state.consecutive_recovery_wins}") 
-    st.write(f"ผลทำนายภายในล่าสุด (Last Internal Prediction): {st.session_state.last_internal_prediction_outcome}") # Internal prediction
+    st.write(f"ผลทำนายภายในล่าสุด (Last Internal Prediction - for NEXT round's check): {st.session_state.last_internal_prediction_outcome}") # Internal prediction for the *next* round
     st.write("---") 
 
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
