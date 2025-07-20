@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.0 - Martingale Miss Streak)
+# streamlit_app.py (Oracle V10.6.1 - Enhanced Recovery)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -950,25 +950,11 @@ class OracleBrain:
         new_round_result = RoundResult(main_outcome, is_any_natural)
         
         # --- Record individual main P/B module predictions (internal accuracy) ---
-        # This uses self.last_internal_prediction which was set by predict_next *before* this add_result call
-        if self.last_internal_prediction is not None and self.last_internal_prediction in ("P", "B") and main_outcome in ("P", "B"):
-            # We need to explicitly log the internal prediction vs actual outcome
-            # The current structure of `module_accuracy_global_log` needs to be updated here
-            
-            # The current `add_result` logic for module accuracy logging is slightly off
-            # It should log the performance of the modules *that were used to make the last_internal_prediction*
-            # Let's assume `self.last_module` and `self.last_internal_prediction` are correct for this.
-            
-            # This logic is complex. Let's simplify and keep the existing `add_result` logic for module accuracy
-            # which relies on `predict_next` to calculate and then `add_result` to log.
-            # The key is that `predict_next` sets `self.last_prediction` (now `self.last_internal_prediction`)
-            # and `add_result` then uses it.
-
-            # The current structure of `add_result` already updates the accuracy logs based on `self.last_prediction`
-            # (which is now `self.last_internal_prediction`). This is correct for internal module accuracy.
-            # The `predict_next` function calculates `current_predictions_from_modules_main` based on `self.history`
-            # *before* the new result is added. This is the correct way to log module performance.
-            pass # No change needed here for internal module accuracy logging
+        # The current structure of `add_result` already updates the accuracy logs based on `self.last_internal_prediction`.
+        # This is correct for internal module accuracy.
+        # The `predict_next` function calculates `current_predictions_from_modules_main` based on `self.history`
+        # *before* the new result is added. This is the correct way to log module performance.
+        pass # No change needed here for internal module accuracy logging
 
         # Now, add the actual outcome to main history and logs
         self.history.append(new_round_result) 
@@ -1347,39 +1333,37 @@ class OracleBrain:
         internal_prediction_outcome, internal_source_module, internal_confidence, internal_pattern_code = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_displayed_miss_streak, choppiness_rate) 
 
-        # Store this internal prediction for the next round's recovery check
+        # Store this internal prediction for the next round's recovery check in handle_click
         self.last_internal_prediction = internal_prediction_outcome
         self.last_module = internal_source_module
 
-        # --- Recovery Mode Logic (Integrated with Confidence and Displayed Miss Streak) ---
-        RECOVERY_WINS_REQUIRED = 2 # Number of consecutive correct *internal* predictions needed to exit recovery
+        # --- Recovery Mode Logic (Trigger & Exit based ONLY on miss_streak) ---
+        RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK = 1 # New requirement: 1 correct internal prediction to exit miss streak recovery
 
-        # Enter recovery if displayed miss streak is 3 or more, OR if internal confidence is too low
-        if current_displayed_miss_streak >= 3 or (internal_confidence is not None and internal_confidence < RECOMMEND_BET_CONFIDENCE_THRESHOLD):
+        # Condition to ENTER recovery mode (ONLY miss streak >= 3)
+        if current_displayed_miss_streak >= 3:
             st.session_state.in_recovery_mode = True
-            # Reset consecutive wins if we are in a miss streak when entering/staying in recovery
-            # This happens if the last *displayed* bet was a miss, or if confidence just dropped
-            if current_displayed_miss_streak > 0: # If we're currently in a losing streak (displayed)
-                st.session_state.consecutive_recovery_wins = 0
-        
-        # If currently in recovery mode
-        if st.session_state.in_recovery_mode:
-            # Check if the last round's *internal* prediction was a win
-            # This check happens in handle_click *before* predict_next is called.
-            # So, `st.session_state.consecutive_recovery_wins` is already updated here.
+            # When entering recovery due to miss streak, reset consecutive internal wins
+            # This ensures we start counting wins *after* the miss streak is acknowledged.
+            st.session_state.consecutive_recovery_wins = 0 
 
-            if st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED:
+        # If currently in recovery mode (triggered by miss streak)
+        if st.session_state.in_recovery_mode:
+            # Check if we should EXIT recovery mode
+            # Exit if the *displayed* miss streak is 0 AND we have enough consecutive *internal* wins
+            if current_displayed_miss_streak == 0 and st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK:
                 st.session_state.in_recovery_mode = False # Exit recovery
-                st.session_state.consecutive_recovery_wins = 0
-                # Fall through to normal recommendation logic below (system will now provide a bet)
+                st.session_state.consecutive_recovery_wins = 0 # Reset wins counter
+                # FALL THROUGH to normal recommendation logic below
             else:
-                # Still in recovery, not enough consecutive wins yet, or still in a displayed miss streak
+                # Still in recovery, not met exit conditions yet
                 return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
-                       f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED} ตา)", \
+                       f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK} ตา)", \
                        derived_road_trends
         
-        # --- Recommendation Text Logic (Normal Mode, after exiting Recovery) ---
-        # This part only runs if not in Game Break, Learning, or Recovery Mode
+        # --- Normal Recommendation Logic (after exiting Recovery or if never in Recovery) ---
+        # This part will now handle both "confident prediction" and "low confidence no bet"
+        
         final_prediction_main = internal_prediction_outcome
         source_module_name_main = internal_source_module
         confidence_main = internal_confidence
@@ -1391,12 +1375,13 @@ class OracleBrain:
             recommendation_text = f"✅ แนะนำ: <span style='{color_style}'>{final_prediction_main}</span>"
         else:
             # If confidence is below threshold, or no prediction, recommend no bet
+            # This is the "low confidence no bet" scenario, which does NOT trigger recovery mode.
             if choppiness_rate > 0.65:
                 recommendation_text = "🚫 งดเดิมพัน: เค้าไพ่ผันผวนสูง"
             else:
                 recommendation_text = "🚫 งดเดิมพัน: ยังไม่พบแพทเทิร์นชัดเจน"
             
-            final_prediction_main = None
+            final_prediction_main = None # Ensure no prediction is returned
             source_module_name_main = None
             confidence_main = None
             pattern_code_main = None 
@@ -1475,7 +1460,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.0", layout="centered") # Updated version to V10.6.0
+st.set_page_config(page_title="🔮 Oracle V10.6.1", layout="centered") # Updated version to V10.6.1
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -2055,7 +2040,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.0</span></div>', unsafe_allow_html=True) # Updated version to V10.6.0
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.1</span></div>', unsafe_allow_html=True) # Updated version to V10.6.1
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2403,5 +2388,3 @@ if st.session_state.show_accuracy_info: # Conditional rendering based on checkbo
                 st.markdown(f"<p class='accuracy-item'>✅ {name}: {acc:.1f}%</p>", unsafe_allow_html=True)
     else:
         st.info("ยังไม่มีข้อมูลความแม่นยำ")
-
-# Removed the 'strict_betting_mode' checkbox
