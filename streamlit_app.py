@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.2 - Enhanced Recovery Debug)
+# streamlit_app.py (Oracle V10.6.3 - Fix Recovery Wins)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1333,12 +1333,14 @@ class OracleBrain:
         internal_prediction_outcome, internal_source_module, internal_confidence, internal_pattern_code = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_displayed_miss_streak, choppiness_rate) 
 
-        # Store this internal prediction for the next round's recovery check in handle_click
+        # --- IMPORTANT FIX HERE: Always store this internal prediction ---
+        # This ensures that `st.session_state.last_internal_prediction_outcome` has a value
+        # for the next `handle_click` call, even if the displayed recommendation is "No Bet".
         self.last_internal_prediction = internal_prediction_outcome
         self.last_module = internal_source_module
 
         # --- Recovery Mode Logic (Trigger & Exit based ONLY on miss_streak) ---
-        RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK = 1 # New requirement: 1 correct internal prediction to exit miss streak recovery
+        RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK = 1 
 
         # Condition to ENTER recovery mode (ONLY miss streak >= 3)
         if current_displayed_miss_streak >= 3:
@@ -1354,9 +1356,11 @@ class OracleBrain:
             if current_displayed_miss_streak == 0 and st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK:
                 st.session_state.in_recovery_mode = False # Exit recovery
                 st.session_state.consecutive_recovery_wins = 0 # Reset wins counter
-                # FALL THROUGH to normal recommendation logic below
+                # FALL THROUGH to normal recommendation logic below (now it will recommend if confident)
             else:
-                # Still in recovery, not met exit conditions yet
+                # Still in recovery, not met exit conditions yet.
+                # In this state, we explicitly return None for the *displayed* prediction,
+                # but the *internal* prediction (`self.last_internal_prediction`) is already set above.
                 return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
                        f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK} ตา)", \
                        derived_road_trends
@@ -1364,7 +1368,7 @@ class OracleBrain:
         # --- Normal Recommendation Logic (after exiting Recovery or if never in Recovery) ---
         # This part will now handle both "confident prediction" and "low confidence no bet"
         
-        final_prediction_main = internal_prediction_outcome
+        final_prediction_main = internal_prediction_outcome # Use the internally scored prediction
         source_module_name_main = internal_source_module
         confidence_main = internal_confidence
         pattern_code_main = internal_pattern_code
@@ -1375,13 +1379,12 @@ class OracleBrain:
             recommendation_text = f"✅ แนะนำ: <span style='{color_style}'>{final_prediction_main}</span>"
         else:
             # If confidence is below threshold, or no prediction, recommend no bet
-            # This is the "low confidence no bet" scenario, which does NOT trigger recovery mode.
             if choppiness_rate > 0.65:
                 recommendation_text = "🚫 งดเดิมพัน: เค้าไพ่ผันผวนสูง"
             else:
                 recommendation_text = "🚫 งดเดิมพัน: ยังไม่พบแพทเทิร์นชัดเจน"
             
-            final_prediction_main = None # Ensure no prediction is returned
+            final_prediction_main = None # Ensure no prediction is returned for display
             source_module_name_main = None
             confidence_main = None
             pattern_code_main = None 
@@ -1460,7 +1463,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.2", layout="centered") # Updated version to V10.6.2
+st.set_page_config(page_title="🔮 Oracle V10.6.3", layout="centered") # Updated version to V10.6.3
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -2052,7 +2055,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.2</span></div>', unsafe_allow_html=True) # Updated version to V10.6.2
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.3</span></div>', unsafe_allow_html=True) # Updated version to V10.6.3
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
