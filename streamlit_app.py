@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.3 - Fix Recovery Wins)
+# streamlit_app.py (Oracle V10.6.6 - New Recovery System)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1291,12 +1291,17 @@ class OracleBrain:
         RECOMMEND_BET_CONFIDENCE_THRESHOLD = 65 
         MIN_DISPLAY_CONFIDENCE_SIDE_BET = 55 
 
+        # New constants for recovery logic
+        RECOVERY_INTERNAL_WINS_TO_RE_ENABLE_BETTING = 1 # ทำนายภายในต้องถูก 1 ตา
+        RECOVERY_NO_BET_ROUNDS = 2 # งดเดิมพัน 2 ตา
+
         derived_road_trends = self.derived_road_analyzer.analyze_derived_road_trends(self.history)
 
         # --- High Priority: Game Break (6 consecutive misses on *displayed* bets) ---
         if current_displayed_miss_streak >= 6:
             st.session_state.in_recovery_mode = False # Exit recovery if game breaks completely
             st.session_state.consecutive_recovery_wins = 0
+            st.session_state.rounds_in_recovery_no_bet = 0 # Reset no-bet counter
             self.last_internal_prediction = None # Clear internal prediction for next round
             self.last_module = None
             return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
@@ -1309,6 +1314,7 @@ class OracleBrain:
             self.last_module = None
             st.session_state.in_recovery_mode = False # Ensure not in recovery during learning
             st.session_state.consecutive_recovery_wins = 0
+            st.session_state.rounds_in_recovery_no_bet = 0 # Reset no-bet counter
             return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
                    "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย", derived_road_trends
 
@@ -1333,39 +1339,45 @@ class OracleBrain:
         internal_prediction_outcome, internal_source_module, internal_confidence, internal_pattern_code = \
             self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_displayed_miss_streak, choppiness_rate) 
 
-        # --- IMPORTANT FIX HERE: Always store this internal prediction ---
+        # --- IMPORTANT: Always store this internal prediction ---
         # This ensures that `st.session_state.last_internal_prediction_outcome` has a value
         # for the next `handle_click` call, even if the displayed recommendation is "No Bet".
         self.last_internal_prediction = internal_prediction_outcome
         self.last_module = internal_source_module
 
-        # --- Recovery Mode Logic (Trigger & Exit based ONLY on miss_streak) ---
-        RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK = 1 
+        # --- Recovery Mode Logic ---
 
-        # Condition to ENTER recovery mode (ONLY miss streak >= 3)
-        if current_displayed_miss_streak >= 3:
+        # Determine if we should ENTER recovery mode
+        if current_displayed_miss_streak >= 3 and not st.session_state.in_recovery_mode:
             st.session_state.in_recovery_mode = True
-            # When entering recovery due to miss streak, reset consecutive internal wins
-            # This ensures we start counting wins *after* the miss streak is acknowledged.
-            st.session_state.consecutive_recovery_wins = 0 
+            st.session_state.consecutive_recovery_wins = 0 # Reset when *entering* recovery
+            st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Initialize no-bet counter when entering recovery
+            st.session_state.recommendation_text = f"🧪 เริ่มกระบวนการฟื้นฟู: งดเดิมพัน ({st.session_state.rounds_in_recovery_no_bet}/{RECOVERY_NO_BET_ROUNDS} ตา)"
+            return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
+                   st.session_state.recommendation_text, derived_road_trends
 
         # If currently in recovery mode (triggered by miss streak)
         if st.session_state.in_recovery_mode:
-            # Check if we should EXIT recovery mode
-            # Exit if the *displayed* miss streak is 0 AND we have enough consecutive *internal* wins
-            if current_displayed_miss_streak == 0 and st.session_state.consecutive_recovery_wins >= RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK:
-                st.session_state.in_recovery_mode = False # Exit recovery
-                st.session_state.consecutive_recovery_wins = 0 # Reset wins counter
-                # FALL THROUGH to normal recommendation logic below (now it will recommend if confident)
-            else:
-                # Still in recovery, not met exit conditions yet.
-                # In this state, we explicitly return None for the *displayed* prediction,
-                # but the *internal* prediction (`self.last_internal_prediction`) is already set above.
+            # Phase 1: Enforce "no bet" for the initial X rounds
+            if st.session_state.rounds_in_recovery_no_bet < RECOVERY_NO_BET_ROUNDS:
+                st.session_state.recommendation_text = f"🧪 อยู่ในช่วงฟื้นฟู: งดเดิมพัน ({st.session_state.rounds_in_recovery_no_bet}/{RECOVERY_NO_BET_ROUNDS} ตา)"
                 return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
-                       f"🧪 อยู่ในช่วงฟื้นฟู: รอความมั่นใจกลับมา ({st.session_state.consecutive_recovery_wins}/{RECOVERY_WINS_REQUIRED_FOR_MISS_STREAK} ตา)", \
-                       derived_road_trends
-        
-        # --- Normal Recommendation Logic (after exiting Recovery or if never in Recovery) ---
+                       st.session_state.recommendation_text, derived_road_trends
+            
+            # Phase 2: After initial no-bet rounds, check for internal wins to re-enable betting
+            if st.session_state.consecutive_recovery_wins >= RECOVERY_INTERNAL_WINS_TO_RE_ENABLE_BETTING:
+                # We are now confident enough to start recommending bets again.
+                # The system will FALL THROUGH to the normal recommendation logic below.
+                # miss_streak will reset when a *recommended* bet wins.
+                pass # Continue to normal recommendation logic
+            else:
+                # Still in recovery, not met internal win conditions yet.
+                # Explicitly recommend no bet.
+                st.session_state.recommendation_text = f"🧪 อยู่ในช่วงฟื้นฟู: ทำนายภายในต้องถูก 1 ตา"
+                return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
+                       st.session_state.recommendation_text, derived_road_trends
+
+        # --- Normal Recommendation Logic (after exiting Recovery Phase 2 or if never in Recovery) ---
         # This part will now handle both "confident prediction" and "low confidence no bet"
         
         final_prediction_main = internal_prediction_outcome # Use the internally scored prediction
@@ -1373,12 +1385,21 @@ class OracleBrain:
         confidence_main = internal_confidence
         pattern_code_main = internal_pattern_code
 
-        if final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD: 
-            # Apply color to the recommended outcome
+        # Determine the recommendation text and final_prediction_main for display
+        if final_prediction_main is not None and confidence_main is not None and confidence_main >= RECOMMEND_BET_CONFIDENCE_THRESHOLD:
             color_style = "color: #007BFF;" if final_prediction_main == "P" else "color: #DC3545;"
             recommendation_text = f"✅ แนะนำ: <span style='{color_style}'>{final_prediction_main}</span>"
+            
+            # If miss_streak is 0 here, it means a previous recommended bet won.
+            # This is the point where we fully exit recovery mode.
+            if current_displayed_miss_streak == 0 and st.session_state.in_recovery_mode: # Only exit if *in* recovery
+                st.session_state.in_recovery_mode = False
+                st.session_state.consecutive_recovery_wins = 0 # Reset wins counter
+                st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Reset no-bet counter on full exit
+                # No need to change recommendation_text here, it's already set to "✅ แนะนำ".
         else:
             # If confidence is below threshold, or no prediction, recommend no bet
+            # This applies both outside recovery and *within* recovery (if internal wins threshold not met)
             if choppiness_rate > 0.65:
                 recommendation_text = "🚫 งดเดิมพัน: เค้าไพ่ผันผวนสูง"
             else:
@@ -1387,8 +1408,8 @@ class OracleBrain:
             final_prediction_main = None # Ensure no prediction is returned for display
             source_module_name_main = None
             confidence_main = None
-            pattern_code_main = None 
-        
+            pattern_code_main = None
+
         # --- Main Outcome Sniper Opportunity Logic ---
         is_sniper_opportunity_main = False # Default to False
         if final_prediction_main in ("P", "B") and confidence_main is not None:
@@ -1463,7 +1484,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.3", layout="centered") # Updated version to V10.6.3
+st.set_page_config(page_title="🔮 Oracle V10.6.6", layout="centered") # Updated version to V10.6.6
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1863,6 +1884,8 @@ if 'show_debug_info' not in st.session_state:
     st.session_state.show_debug_info = False
 if 'show_accuracy_info' not in st.session_state: # New state for accuracy toggle
     st.session_state.show_accuracy_info = False
+if 'debug_messages' not in st.session_state: # New state for storing debug messages
+    st.session_state.debug_messages = []
 
 if 'in_recovery_mode' not in st.session_state: # Recovery mode state
     st.session_state.in_recovery_mode = False
@@ -1870,6 +1893,8 @@ if 'consecutive_recovery_wins' not in st.session_state: # Counter for consecutiv
     st.session_state.consecutive_recovery_wins = 0
 if 'last_internal_prediction_outcome' not in st.session_state: # Stores internal prediction for recovery logic
     st.session_state.last_internal_prediction_outcome = None
+if 'rounds_in_recovery_no_bet' not in st.session_state: # NEW: Counter for rounds in recovery where no bet is forced
+    st.session_state.rounds_in_recovery_no_bet = 0
 
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
@@ -1894,6 +1919,9 @@ def handle_click(main_outcome_str: MainOutcome):
     Handles button clicks for P, B, T outcomes.
     Adds the result to OracleBrain and updates all predictions.
     """
+    # Clear previous debug messages
+    st.session_state.debug_messages = []
+
     # This is the actual result of the round that just finished
     current_round_actual_result = main_outcome_str
 
@@ -1901,25 +1929,30 @@ def handle_click(main_outcome_str: MainOutcome):
     # This value was set at the END of the *previous* handle_click call.
     prev_round_internal_prediction = st.session_state.last_internal_prediction_outcome
 
-    if st.session_state.show_debug_info: # Only show if debug is on
-        st.write(f"--- Debugging handle_click for recovery ---")
-        st.write(f"  Actual Result (Current Round): {current_round_actual_result}")
-        st.write(f"  Recovery Mode (before update): {st.session_state.in_recovery_mode}")
-        st.write(f"  Internal Prediction (for previous round, used for check): {prev_round_internal_prediction}")
-        st.write(f"  Consecutive Recovery Wins (before update): {st.session_state.consecutive_recovery_wins}")
+    # Log debug info to session state
+    st.session_state.debug_messages.append(f"--- Debugging handle_click for recovery ---")
+    st.session_state.debug_messages.append(f"  Actual Result (Current Round): {current_round_actual_result}")
+    st.session_state.debug_messages.append(f"  Recovery Mode (before update): {st.session_state.in_recovery_mode}")
+    st.session_state.debug_messages.append(f"  Internal Prediction (for previous round, used for check): {prev_round_internal_prediction}")
+    st.session_state.debug_messages.append(f"  Consecutive Recovery Wins (before update): {st.session_state.consecutive_recovery_wins}")
+    st.session_state.debug_messages.append(f"  Rounds in recovery (no bet phase) before update: {st.session_state.rounds_in_recovery_no_bet}")
+
 
     if st.session_state.in_recovery_mode:
+        # Increment rounds_in_recovery_no_bet if we are still in the initial no-bet phase
+        if st.session_state.rounds_in_recovery_no_bet < 2: # Check against the constant if needed
+            st.session_state.rounds_in_recovery_no_bet += 1
+            st.session_state.debug_messages.append(f"  Rounds in recovery (no bet phase) incremented to: {st.session_state.rounds_in_recovery_no_bet}")
+
         # Check if the *internal* prediction for the *just finished* round was correct
         if prev_round_internal_prediction is not None and \
            prev_round_internal_prediction in ("P", "B") and \
            prev_round_internal_prediction == current_round_actual_result:
             st.session_state.consecutive_recovery_wins += 1
-            if st.session_state.show_debug_info:
-                st.write(f"  Internal prediction CORRECT. consecutive_recovery_wins incremented to: {st.session_state.consecutive_recovery_wins}")
+            st.session_state.debug_messages.append(f"  Internal prediction CORRECT. consecutive_recovery_wins incremented to: {st.session_state.consecutive_recovery_wins}")
         else:
             st.session_state.consecutive_recovery_wins = 0 # Reset if internal prediction missed or was None
-            if st.session_state.show_debug_info:
-                st.write(f"  Internal prediction INCORRECT or NONE. consecutive_recovery_wins reset to: {st.session_state.consecutive_recovery_wins}")
+            st.session_state.debug_messages.append(f"  Internal prediction INCORRECT or NONE. consecutive_recovery_wins reset to: {st.session_state.consecutive_recovery_wins}")
     
     # Add the result to OracleBrain, passing the *displayed* prediction of the *just finished* round.
     # st.session_state.prediction holds the displayed prediction *before* this click updates it for the new round.
@@ -1980,6 +2013,8 @@ def handle_remove():
     st.session_state.in_recovery_mode = False
     st.session_state.consecutive_recovery_wins = 0
     st.session_state.last_internal_prediction_outcome = None # Reset internal prediction state
+    st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Reset no-bet counter on remove
+    st.session_state.debug_messages = [] # Clear debug messages on remove
 
     # Call predict_next for the updated history
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
@@ -2051,11 +2086,13 @@ def handle_start_new_shoe():
     st.session_state.in_recovery_mode = False
     st.session_state.consecutive_recovery_wins = 0
     st.session_state.last_internal_prediction_outcome = None
+    st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Reset no-bet counter on new shoe
+    st.session_state.debug_messages = [] # Clear debug messages on new shoe
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.3</span></div>', unsafe_allow_html=True) # Updated version to V10.6.3
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.6</span></div>', unsafe_allow_html=True) # Updated version to V10.6.6
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2339,6 +2376,11 @@ st.session_state.show_debug_info = st.checkbox("⚙️ แสดงข้อม�
 # --- Conditional Debugging Output ---
 if st.session_state.show_debug_info:
     st.markdown("<h3>⚙️ ข้อมูล Debugging (สำหรับนักพัฒนา)</h3>", unsafe_allow_html=True)
+    # Display messages from handle_click
+    for msg in st.session_state.debug_messages:
+        st.write(msg)
+    
+    st.write("---") 
     st.write(f"ความยาวประวัติ P/B: {len(_get_main_outcome_history(st.session_state.oracle.history))}") 
     st.write(f"ผลทำนายหลัก (prediction - displayed): {st.session_state.prediction}") # This is the displayed prediction for the *current* round
     st.write(f"โมดูลที่ใช้ (source): {st.session_state.source}")
@@ -2350,6 +2392,7 @@ if st.session_state.show_debug_info:
     st.write(f"โหมดฟื้นฟู (Recovery Mode): {st.session_state.in_recovery_mode}") 
     st.write(f"ชนะติดกันในโหมดฟื้นฟู (Consecutive Recovery Wins - internal): {st.session_state.consecutive_recovery_wins}") 
     st.write(f"ผลทำนายภายในล่าสุด (Last Internal Prediction - for NEXT round's check): {st.session_state.last_internal_prediction_outcome}") # Internal prediction for the *next* round
+    st.write(f"จำนวนตางดเดิมพันในโหมดฟื้นฟู (Rounds in Recovery No Bet): {st.session_state.rounds_in_recovery_no_bet}") # NEW: Display new counter
     st.write("---") 
 
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
