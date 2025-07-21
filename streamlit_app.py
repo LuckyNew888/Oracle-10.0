@@ -265,6 +265,8 @@ def remove_last_from_history():
     """Removes the last result from the session history and resets money management state."""
     if st.session_state.history:
         st.session_state.history.pop()
+        # Also notify the engine to remove its last history item
+        st.session_state.oracle_engine.remove_last()
     # Reset money management states on history removal (optional, but good for consistency)
     reset_money_management_state_on_undo()
 
@@ -301,7 +303,7 @@ def reset_money_management_state_on_undo():
 def record_bet_result(predicted_side, actual_result):
     """
     Records the bet result, updates balance, and adjusts money management system state.
-    Also updates the history with structured data for Big Road.
+    Also updates the history with structured data for Big Road and notifies the engine.
     """
     bet_amt_for_log = st.session_state.bet_amount_calculated # Use the calculated bet amount for the log
     win_loss = 0.0
@@ -397,15 +399,41 @@ def record_bet_result(predicted_side, actual_result):
                 found_pb_for_tie = True
                 break
         if not found_pb_for_tie: # If history is empty or only ties, add a new tie entry
+            # If a tie is the very first result, or follows only ties, we still record it
             st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
     else: # For P or B results, add a new entry
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
+
+    # --- Notify OracleEngine to update its learning based on the last prediction and actual result ---
+    # Only update learning if a prediction was made (i.e., not '?' or 'Avoid')
+    if predicted_side in ['P', 'B', 'T']:
+        # Retrieve active patterns/momentum from the last prediction_data (if available)
+        # This requires storing prediction_data in session_state or passing it more directly.
+        # For simplicity, we'll re-detect patterns/momentum for learning based on the state *before* this result.
+        # A more robust solution would pass the 'active_patterns' and 'active_momentum' from predict_next.
+        # For now, let's assume predict_next's last output is available for learning.
+        # Or, we can re-run detection on history *before* the current result.
+
+        # To correctly update learning, we need the state of patterns/momentum *before* the current actual result.
+        # This implies running detect_patterns/momentum on history[:-1]
+        temp_engine = OracleEngine() # Create a temporary engine instance to get patterns/momentum before current result
+        temp_engine.history = st.session_state.history[:-1] # History up to *before* the current result
+
+        patterns_before = temp_engine.detect_patterns(temp_engine.history)
+        momentum_before = temp_engine.detect_momentum(temp_engine.history)
+
+        st.session_state.oracle_engine._update_learning(
+            predicted_outcome=predicted_side,
+            actual_outcome=actual_result,
+            patterns_detected=patterns_before,
+            momentum_detected=momentum_before
+        )
 
 
 # Load and update Engine
 engine = st.session_state.oracle_engine
 # The engine's history will be updated from st.session_state.history
-# by passing the main_outcome for pattern detection
+# by assigning it directly before prediction.
 engine.history = st.session_state.history # Ensure engine has the latest history
 
 
@@ -540,7 +568,7 @@ if len(engine.history) >= 20:
 
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
         next_pred_side = prediction_data['prediction']
-        conf = engine.confidence_score()
+        conf = engine.confidence_score(engine.history) # Pass history to confidence_score
 
         emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
 
@@ -550,6 +578,14 @@ if len(engine.history) >= 20:
 
         with st.expander("🧬 Developer View"):
             st.write(prediction_data['developer_view'])
+            st.write("--- Pattern Success Rates ---")
+            st.write(engine.pattern_stats)
+            st.write("--- Momentum Success Rates ---")
+            st.write(engine.momentum_stats)
+            st.write("--- Failed Pattern Instances ---")
+            st.write(engine.failed_pattern_instances)
+            st.write("--- Backtest Results ---")
+            st.write(engine.backtest_accuracy()) # Display full backtest results
     else:
         st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
