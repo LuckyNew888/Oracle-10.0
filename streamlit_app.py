@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.9 - Fix NameError on Upload)
+# streamlit_app.py (Oracle V10.6.11 - Debug Accuracy on Upload)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1077,30 +1077,44 @@ class OracleBrain:
         """
         Imports global accuracy logs and statistical analyzer data from a dictionary.
         """
+        st.session_state.debug_messages.append("DEBUG: Starting import_all_time_data...")
         if not isinstance(imported_data, dict):
+            st.session_state.debug_messages.append("DEBUG: Imported data is not a dictionary.")
             raise ValueError("Imported data must be a dictionary.")
         
         if "module_accuracy_global_log" in imported_data and isinstance(imported_data["module_accuracy_global_log"], dict):
+            st.session_state.debug_messages.append("DEBUG: Found module_accuracy_global_log in imported data.")
             for module_name, log_list in imported_data["module_accuracy_global_log"].items():
                 if module_name in self.module_accuracy_global_log and isinstance(log_list, list):
                     # Convert lists back to tuples
-                    self.module_accuracy_global_log[module_name] = [tuple(item) for item in log_list if isinstance(item, list) and len(item) == 2]
+                    converted_log_list = [tuple(item) for item in log_list if isinstance(item, list) and len(item) == 2]
+                    self.module_accuracy_global_log[module_name] = converted_log_list
+                    st.session_state.debug_messages.append(f"DEBUG: Imported {len(converted_log_list)} entries for module {module_name}.")
                 else:
                     st.warning(f"Skipping import for unknown or invalid module: {module_name}")
+                    st.session_state.debug_messages.append(f"DEBUG: Skipping import for unknown or invalid module: {module_name}")
+        else:
+            st.session_state.debug_messages.append("DEBUG: module_accuracy_global_log not found or invalid in imported data.")
         
         if "tie_module_accuracy_global_log" in imported_data and isinstance(imported_data["tie_module_accuracy_global_log"], list):
-            self.tie_module_accuracy_global_log = [tuple(item) for item in imported_data["tie_module_accuracy_global_log"] if isinstance(item, list) and len(item) == 2]
+            converted_tie_log = [tuple(item) for item in imported_data["tie_module_accuracy_global_log"] if isinstance(item, list) and len(item) == 2]
+            self.tie_module_accuracy_global_log = converted_tie_log
+            st.session_state.debug_messages.append(f"DEBUG: Imported {len(converted_tie_log)} entries for tie module.")
         else:
             st.warning("Skipping import for invalid tie module accuracy log.")
+            st.session_state.debug_messages.append("DEBUG: tie_module_accuracy_global_log not found or invalid in imported data.")
 
         # Import statistical analyzer data
         if "statistical_analyzer_sequence_outcomes" in imported_data and isinstance(imported_data["statistical_analyzer_sequence_outcomes"], dict):
             self.statistical_analyzer.sequence_outcomes = imported_data["statistical_analyzer_sequence_outcomes"]
             st.success("ข้อมูลสถิติ All-Time ถูกอัปโหลดเรียบร้อยแล้ว!")
+            st.session_state.debug_messages.append("DEBUG: Statistical analyzer data imported.")
         else:
             st.warning("Skipping import for invalid statistical analyzer data.")
+            st.session_state.debug_messages.append("DEBUG: statistical_analyzer_sequence_outcomes not found or invalid in imported data.")
 
         st.success("ข้อมูล All-Time ถูกอัปโหลดเรียบร้อยแล้ว!")
+        st.session_state.debug_messages.append("DEBUG: Finished import_all_time_data.")
 
 
     def _trim_global_logs(self, max_length=1000): 
@@ -1126,6 +1140,13 @@ class OracleBrain:
                 if predicted_val == actual_val:
                     wins += 1
         
+        # Add debug prints for accuracy calculation
+        if lookback is None: # Only for All-Time accuracy calculation
+            st.session_state.debug_messages.append(f"DEBUG: Calculating All-Time accuracy for a module.")
+            st.session_state.debug_messages.append(f"  Log data length: {len(log_data)}")
+            st.session_state.debug_messages.append(f"  Relevant predictions (first 5): {relevant_preds[:5]}")
+            st.session_state.debug_messages.append(f"  Wins: {wins}, Total Predictions: {total_predictions}")
+
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
     def _calculate_side_bet_module_accuracy_from_log(self, log_data: List[Tuple[Optional[Any], bool]], lookback: Optional[int] = None) -> float:
@@ -1142,6 +1163,13 @@ class OracleBrain:
                 if predicted_val == "T" and actual_flag: 
                     wins += 1
         
+        # Add debug prints for accuracy calculation
+        if lookback is None: # Only for All-Time accuracy calculation
+            st.session_state.debug_messages.append(f"DEBUG: Calculating All-Time accuracy for Tie module.")
+            st.session_state.debug_messages.append(f"  Log data length: {len(log_data)}")
+            st.session_state.debug_messages.append(f"  Relevant predictions (first 5): {relevant_log[:5]}")
+            st.session_state.debug_messages.append(f"  Wins: {wins}, Total Predictions: {total_predictions}")
+
         return (wins / total_predictions) * 100 if total_predictions > 0 else 0.0
 
 
@@ -1510,7 +1538,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.9", layout="centered") # Updated version to V10.6.9
+st.set_page_config(page_title="🔮 Oracle V10.6.11", layout="centered") # Updated version to V10.6.11
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -2186,7 +2214,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.9</span></div>', unsafe_allow_html=True) # Updated version to V10.6.9
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.11</span></div>', unsafe_allow_html=True) # Updated version to V10.6.11
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2425,64 +2453,43 @@ with col_ul:
             loaded_data = json.loads(decoded_data)
             st.session_state.oracle.import_all_time_data(loaded_data)
             
-            # Re-run prediction to update UI with new data ONLY IF SUFFICIENT HISTORY
-            if len(_get_main_outcome_history(st.session_state.oracle.history)) >= 15:
-                (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-                 tie_pred, tie_conf,
-                 is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
-                 raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next()
+            # Force a re-run of the prediction logic to update the UI with potentially new accuracies
+            # The `predict_next` function will handle the "Initial learning phase" message if history is short.
+            (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+             tie_pred, tie_conf,
+             is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+             raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next()
 
-                st.session_state.prediction = prediction
-                st.session_state.source = source
-                st.session_state.confidence = confidence
-                st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main
-                st.session_state.tie_prediction = tie_pred
-                st.session_state.tie_confidence = tie_conf
-                st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-                st.session_state.recommendation_text = recommendation_text
-                st.session_state.derived_road_trends = derived_road_trends
-                
-                pattern_names = { # Simplified pattern names for display
-                    "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-                    "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-                    "PPPP": "มังกร", "BBBB": "มังกร", 
-                    "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-                    "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-                    "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-                    "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-                    "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-                    "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-                    "PBBPPP": "สองตัดสาม", # New pattern name
-                    "BPPBBB": "สองตัดสาม", # New pattern name
-                    "มังกรตัด": "มังกรตัด",
-                    "ปิงปองตัด": "ปิงปองตัด",
-                    "ตัดสาม": "ตัดสาม"
-                }
-                st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
+            st.session_state.prediction = prediction
+            st.session_state.source = source
+            st.session_state.confidence = confidence
+            st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main
+            st.session_state.tie_prediction = tie_pred
+            st.session_state.tie_confidence = tie_conf
+            st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+            st.session_state.recommendation_text = recommendation_text
+            st.session_state.derived_road_trends = derived_road_trends
+            
+            pattern_names = { # Simplified pattern names for display
+                "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+                "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+                "PPPP": "มังกร", "BBBB": "มังกร", 
+                "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+                "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+                "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+                "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+                "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+                "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+                "PBBPPP": "สองตัดสาม", # New pattern name
+                "BPPBBB": "สองตัดสาม", # New pattern name
+                "มังกรตัด": "มังกรตัด",
+                "ปิงปองตัด": "ปิงปองตัด",
+                "ตัดสาม": "ตัดสาม"
+            }
+            st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
 
-                st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
-                st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
-                st.session_state.initial_shown = True # Ensure initial message is hidden if history is sufficient
-            else:
-                # If not enough history after upload, reset prediction states and set learning message
-                st.session_state.prediction = None
-                st.session_state.source = None
-                st.session_state.confidence = None
-                st.session_state.pattern_name = None
-                st.session_state.is_sniper_opportunity_main = False
-                st.session_state.tie_prediction = None
-                st.session_state.tie_confidence = None
-                st.session_state.is_tie_sniper_opportunity = False
-                st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
-                st.session_state.derived_road_trends = {
-                    "BigEyeBoy": "ไม่มีแนวโน้ม",
-                    "SmallRoad": "ไม่มีแนวโน้ม",
-                    "CockroachPig": "ไม่มีแนวโน้ม"
-                }
-                st.session_state.last_internal_prediction_outcome = None
-                st.session_state.last_raw_module_predictions = {}
-                st.session_state.last_raw_tie_prediction = None
-                st.session_state.initial_shown = False # Ensure initial message is shown if history becomes too short
+            st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+            st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
             
             st.query_params["_t"] = f"{time.time()}" # Force UI refresh
             
