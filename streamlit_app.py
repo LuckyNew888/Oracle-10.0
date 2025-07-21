@@ -1,50 +1,54 @@
 # streamlit_app.py
-
 import streamlit as st
-from oracle_engine import OracleBaccarat
+from oracle_engine import OracleEngine
 
-st.set_page_config(page_title="🔮 Oracle Baccarat", layout="centered")
+st.set_page_config(page_title="🔮 Oracle Baccarat Oracle AI", layout="centered")
 
-st.title("🔮 Oracle Baccarat Analyzer")
-st.markdown("AI วิเคราะห์เค้าไพ่บาคาร่าแบบเรียลไทม์")
+st.title("🔮 Oracle Baccarat AI (SYNAPSE VISION)")
 
-# โหลด AI
-oracle = st.session_state.get("oracle", OracleBaccarat())
+# โหลด engine จาก session state หรือสร้างใหม่
+engine = st.session_state.get("engine", OracleEngine())
+st.session_state["engine"] = engine
 
-# เซฟเข้า session
-st.session_state["oracle"] = oracle
+# --- ทำนายตาถัดไป (แสดงบนสุด) ---
+next_pred = engine.predict_next()
+emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie'}
+conf = engine.confidence_score()
 
-# ปุ่มกดผล
+st.markdown(f"### 🔮 ทำนายตาถัดไป: {emoji_map.get(next_pred, '?')}  (Confidence: {conf}%)")
+
+# --- ประวัติผลย้อนหลัง ---
+st.markdown("### 📜 ประวัติผลย้อนหลัง")
+history_emojis = engine.get_history_emojis()
+if history_emojis:
+    st.markdown(" ".join(history_emojis))
+else:
+    st.info("ยังไม่มีข้อมูล")
+
+# --- ปุ่มกดผล (P,B,T) และ ลบ / รีเซ็ต ---
 col1, col2, col3 = st.columns(3)
 with col1:
-    if st.button("🔵 Player", use_container_width=True):
-        oracle.update_history('P')
+    if st.button("🔵 Player (P)", use_container_width=True):
+        engine.update_history('P')
 with col2:
-    if st.button("🔴 Banker", use_container_width=True):
-        oracle.update_history('B')
+    if st.button("🔴 Banker (B)", use_container_width=True):
+        engine.update_history('B')
 with col3:
-    if st.button("🟢 Tie", use_container_width=True):
-        oracle.update_history('T')
+    if st.button("🟢 Tie (T)", use_container_width=True):
+        engine.update_history('T')
 
-# ปุ่มจัดการประวัติ
 col4, col5 = st.columns(2)
 with col4:
     if st.button("↩️ ลบล่าสุด", use_container_width=True):
-        oracle.remove_last()
+        engine.remove_last()
 with col5:
     if st.button("🧹 รีเซ็ต", use_container_width=True):
-        oracle.reset_history()
+        engine.reset_history()
 
-# แสดงประวัติเป็น emoji
-st.markdown("### ✅ ประวัติ:")
-st.markdown("".join(oracle.get_history_emojis()) or "ยังไม่มีข้อมูล")
+# แสดงคะแนนความมั่นใจ + การแจ้งเตือน Trap Zone
+if engine.in_trap_zone():
+    st.warning("⚠️ โซนอันตราย (Trap Zone) - ระวังการเปลี่ยนแปลงเร็ว")
 
-# วิเคราะห์ผลทันที
-prediction = oracle.get_prediction()
-predict_emoji = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '❓': '❓ ยังไม่แน่ใจ'}
-st.markdown("### 🔍 ทำนายตาถัดไป:")
-st.subheader(predict_emoji.get(prediction, "❓ ยังไม่แน่ใจ"))
-
-# ส่วนท้าย
 st.markdown("---")
-st.caption("ระบบวิเคราะห์เค้าไพ่ 🔮 Oracle AI | เวอร์ชันทดลองใช้")
+st.caption("ระบบวิเคราะห์ SYNAPSE VISION Baccarat - Oracle AI โดยคุณ")
+
