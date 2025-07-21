@@ -16,24 +16,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown('<div class="title-center">🔮 Oracle Baccarat AI</div>', unsafe_allow_html=True)
 
-# เริ่มต้น session history และ rerun flag
+# เริ่มต้น session history
 if "history" not in st.session_state:
     st.session_state.history = []
-if "needs_rerun" not in st.session_state:
-    st.session_state.needs_rerun = False
 
-def update_history(result):
+# Define callback functions
+def add_to_history(result):
     st.session_state.history.append(result)
-    st.session_state.needs_rerun = True
 
-def remove_last():
+def remove_last_from_history():
     if st.session_state.history:
         st.session_state.history.pop()
-    st.session_state.needs_rerun = True
 
-def reset_history():
+def reset_all_history():
     st.session_state.history = []
-    st.session_state.needs_rerun = True
 
 # สร้าง engine ใหม่จาก history
 engine = OracleEngine()
@@ -60,34 +56,24 @@ if history_emojis:
 else:
     st.info("ยังไม่มีข้อมูล")
 
-# ปุ่มกดพร้อม key
+# ปุ่มกดพร้อม key และ callback
 col1, col2, col3 = st.columns(3)
 with col1:
-    if st.button("🔵 Player (P)", key="btnP", use_container_width=True):
-        update_history('P')
+    st.button("🔵 Player (P)", key="btnP", use_container_width=True, on_click=add_to_history, args=('P',))
 with col2:
-    if st.button("🔴 Banker (B)", key="btnB", use_container_width=True):
-        update_history('B')
+    st.button("🔴 Banker (B)", key="btnB", use_container_width=True, on_click=add_to_history, args=('B',))
 with col3:
-    if st.button("🟢 Tie (T)", key="btnT", use_container_width=True):
-        update_history('T')
+    st.button("🟢 Tie (T)", key="btnT", use_container_width=True, on_click=add_to_history, args=('T',))
 
 col4, col5 = st.columns(2)
 with col4:
-    if st.button("↩️ ลบล่าสุด", key="btnDel", use_container_width=True):
-        remove_last()
+    st.button("↩️ ลบล่าสุด", key="btnDel", use_container_width=True, on_click=remove_last_from_history)
 with col5:
-    if st.button("🧹 รีเซ็ต", key="btnReset", use_container_width=True):
-        reset_history()
+    st.button("🧹 รีเซ็ต", key="btnReset", use_container_width=True, on_click=reset_all_history)
 
 # แจ้งเตือน Trap Zone ถ้ามีประวัติมากพอ
 if len(engine.history) >= 20 and engine.in_trap_zone():
     st.warning("⚠️ โซนอันตราย (Trap Zone) - ระวังการเปลี่ยนแปลงเร็ว")
-
-# เรียก rerun ภายนอก callback
-if st.session_state.needs_rerun:
-    st.session_state.needs_rerun = False
-    st.experimental_rerun()
 
 st.markdown("---")
 st.caption("ระบบวิเคราะห์ Oracle Baccarat AI โดยคุณ")
