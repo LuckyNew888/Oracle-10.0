@@ -407,19 +407,14 @@ def record_bet_result(predicted_side, actual_result):
     # --- Notify OracleEngine to update its learning based on the last prediction and actual result ---
     # To correctly update learning, we need the state of patterns/momentum *before* the current actual result.
     # This implies running detect_patterns/momentum on history *before* the current result.
-    # Create a temporary engine instance to get patterns/momentum before current result
-    temp_engine_for_learning = OracleEngine()
-    # Set its history to be the state *before* the current result was added
-    temp_engine_for_learning.history = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
+    
+    # Get the history slice *before* the current result was added
+    history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
 
-    # Copy current learning stats to temp_engine_for_learning so it can update them
-    # Use .copy() to create a shallow copy of the dictionaries to avoid AttributeError
-    temp_engine_for_learning.pattern_stats = st.session_state.oracle_engine.pattern_stats.copy()
-    temp_engine_for_learning.momentum_stats = st.session_state.oracle_engine.momentum_stats.copy()
-    temp_engine_for_learning.failed_pattern_instances = st.session_state.oracle_engine.failed_pattern_instances.copy()
-
-    patterns_before = temp_engine_for_learning.detect_patterns(temp_engine_for_learning.history)
-    momentum_before = temp_engine_for_learning.detect_momentum(temp_engine_for_learning.history)
+    # Use the main engine instance to detect patterns/momentum on the sliced history
+    # This ensures we are always working with the fully initialized engine from session_state
+    patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result)
+    momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result)
 
     # Only update learning if a prediction was made (i.e., not '?' or 'Avoid')
     if predicted_side in ['P', 'B', 'T']:
