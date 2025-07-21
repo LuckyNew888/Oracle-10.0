@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.6 - New Recovery System)
+# streamlit_app.py (Oracle V10.6.7 - Fix Module Accuracy Display)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -331,12 +331,12 @@ class DerivedRoadAnalyzer:
         """
         Simulates predictions for the next P or B to determine derived road values.
         """
-        predictions: Dict[str, Optional[MainOutcome]] = {}
+        predictions: Dict[str, Optional[MainOutcome]] = {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None} # Initialize all to None
         
         history_pb = _get_main_outcome_history(history)
         
         if not history_pb: 
-            return {"BigEyeBoy": None, "SmallRoad": None, "CockroachPig": None}
+            return predictions # Return initialized None predictions
 
         matrix = self._build_big_road_matrix(history_pb)
         
@@ -941,20 +941,37 @@ class OracleBrain:
         self.scorer = AdaptiveScorer() 
         self.show_initial_wait_message = True
         
-    def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False, displayed_prediction_for_prev_round: Optional[MainOutcome] = None):
+    def add_result(self, main_outcome: MainOutcome, is_any_natural: bool = False, displayed_prediction_for_prev_round: Optional[MainOutcome] = None, 
+                   internal_module_predictions: Dict[str, Optional[MainOutcome]] = None, internal_tie_prediction: Optional[Literal["T"]] = None): # Added new parameters
         """
         Adds a new actual outcome to history and logs,
         and updates module accuracy based on the last prediction.
         `displayed_prediction_for_prev_round` is the P/B/None that was *shown* to the user for the round that just ended.
+        `internal_module_predictions` are the raw predictions from each module for the round that just ended.
+        `internal_tie_prediction` is the raw tie prediction for the round that just ended.
         """
         new_round_result = RoundResult(main_outcome, is_any_natural)
         
         # --- Record individual main P/B module predictions (internal accuracy) ---
-        # The current structure of `add_result` already updates the accuracy logs based on `self.last_internal_prediction`.
-        # This is correct for internal module accuracy.
-        # The `predict_next` function calculates `current_predictions_from_modules_main` based on `self.history`
-        # *before* the new result is added. This is the correct way to log module performance.
-        pass # No change needed here for internal module accuracy logging
+        if internal_module_predictions:
+            for module_name, pred_val in internal_module_predictions.items():
+                if module_name in self.module_accuracy_global_log:
+                    # Only log P/B predictions for P/B outcomes
+                    if pred_val in ("P", "B") and main_outcome in ("P", "B"):
+                        self.module_accuracy_global_log[module_name].append((pred_val, main_outcome))
+                        self.individual_module_prediction_log_current_shoe[module_name].append((pred_val, main_outcome))
+                elif module_name in ["BigEyeBoy", "SmallRoad", "CockroachPig"] and pred_val in ("P", "B") and main_outcome in ("P", "B"):
+                    # Derived roads are also main outcomes
+                    self.module_accuracy_global_log[module_name].append((pred_val, main_outcome))
+                    self.individual_module_prediction_log_current_shoe[module_name].append((pred_val, main_outcome))
+
+
+        # Record Tie module prediction
+        if internal_tie_prediction is not None:
+            is_actual_tie = (main_outcome == "T")
+            self.tie_module_accuracy_global_log.append((internal_tie_prediction, is_actual_tie))
+            self.tie_module_prediction_log_current_shoe.append((internal_tie_prediction, is_actual_tie))
+
 
         # Now, add the actual outcome to main history and logs
         self.history.append(new_round_result) 
@@ -1000,6 +1017,7 @@ class OracleBrain:
         self.prediction_log.clear() # Clear displayed predictions log
         self.result_log.clear()
         
+        # Clear all accuracy logs
         for module_name in self.module_accuracy_global_log:
             self.module_accuracy_global_log[module_name].clear()
         self.tie_module_accuracy_global_log.clear()
@@ -1024,6 +1042,7 @@ class OracleBrain:
         self.prediction_log.clear() # Clear displayed predictions log
         self.result_log.clear()
         
+        # Clear only current shoe accuracy logs
         for module_name in self.individual_module_prediction_log_current_shoe:
             self.individual_module_prediction_log_current_shoe[module_name].clear()
         self.tie_module_prediction_log_current_shoe.clear()
@@ -1270,11 +1289,12 @@ class OracleBrain:
     def predict_next(self) -> Tuple[ # Removed strict_mode parameter
         Optional[MainOutcome], Optional[str], Optional[int], Optional[str], int, bool, 
         Optional[Literal["T"]], Optional[int], 
-        bool, str, Dict[str, str] # recommendation_text, derived_road_trends
+        bool, str, Dict[str, str], Dict[str, Optional[MainOutcome]], Optional[Literal["T"]] # Added raw internal predictions
     ]:
         """
         Generates the next predictions for main outcome and side bets,
         along with main outcome's source, confidence, miss streak, and Sniper opportunity flag.
+        Returns raw internal predictions for logging.
         """
         main_history_filtered_for_pb = _get_main_outcome_history(self.history)
         p_count = main_history_filtered_for_pb.count("P")
@@ -1297,6 +1317,22 @@ class OracleBrain:
 
         derived_road_trends = self.derived_road_analyzer.analyze_derived_road_trends(self.history)
 
+        # Calculate raw internal predictions for all modules first
+        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
+        raw_predictions_from_modules = { # Renamed to raw_predictions_from_modules
+            "Rule": self.rule_engine.predict(self.history),
+            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), 
+            "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
+            "Fallback": self.fallback_module.predict(self.history, current_displayed_miss_streak), # Pass displayed miss streak to fallback
+            "Statistical": self.statistical_analyzer.predict(self.history) 
+        }
+        
+        derived_road_preds = self.derived_road_analyzer.predict(self.history)
+        raw_predictions_from_modules.update(derived_road_preds)
+
+        # Calculate raw tie prediction
+        raw_tie_pred, raw_tie_conf = self.tie_predictor.predict(self.history)
+
         # --- High Priority: Game Break (6 consecutive misses on *displayed* bets) ---
         if current_displayed_miss_streak >= 6:
             st.session_state.in_recovery_mode = False # Exit recovery if game breaks completely
@@ -1306,7 +1342,7 @@ class OracleBrain:
             self.last_module = None
             return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
                    "🚨 เกมแตก! (แพ้ 6 ไม้ติด) - แนะนำให้ 'เริ่มขอนใหม่' หรือ 'รีเซ็ตข้อมูลทั้งหมด' เพื่อเริ่มเกมใหม่", \
-                   derived_road_trends
+                   derived_road_trends, raw_predictions_from_modules, raw_tie_pred # Return raw predictions
 
         # --- Initial learning phase ---
         if (p_count + b_count) < MIN_HISTORY_FOR_PREDICTION:
@@ -1316,28 +1352,11 @@ class OracleBrain:
             st.session_state.consecutive_recovery_wins = 0
             st.session_state.rounds_in_recovery_no_bet = 0 # Reset no-bet counter
             return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
-                   "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย", derived_road_trends
-
-        # Calculate main predictions and confidence first (these are internal predictions)
-        choppiness_rate = self._calculate_choppiness_rate(self.history, 20) 
-        predictions_from_modules = {
-            "Rule": self.rule_engine.predict(self.history),
-            "Pattern": self.pattern_analyzer.predict(self.history, choppiness_rate), 
-            "Trend": self.trend_scanner.predict(self.history, choppiness_rate), 
-            "Fallback": self.fallback_module.predict(self.history, current_displayed_miss_streak), # Pass displayed miss streak to fallback
-            "Statistical": self.statistical_analyzer.predict(self.history) 
-        }
-        
-        derived_road_preds = self.derived_road_analyzer.predict(self.history)
-        predictions_from_modules.update(derived_road_preds)
-
-        module_accuracies_all_time = self.get_module_accuracy_all_time()
-        module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
-        module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
+                   "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย", derived_road_trends, raw_predictions_from_modules, raw_tie_pred # Return raw predictions
 
         # Score the internal prediction
         internal_prediction_outcome, internal_source_module, internal_confidence, internal_pattern_code = \
-            self.scorer.score(predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_displayed_miss_streak, choppiness_rate) 
+            self.scorer.score(raw_predictions_from_modules, module_accuracies_all_time, module_accuracies_recent_10, self.history, current_displayed_miss_streak, choppiness_rate) 
 
         # --- IMPORTANT: Always store this internal prediction ---
         # This ensures that `st.session_state.last_internal_prediction_outcome` has a value
@@ -1354,7 +1373,7 @@ class OracleBrain:
             st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Initialize no-bet counter when entering recovery
             st.session_state.recommendation_text = f"🧪 เริ่มกระบวนการฟื้นฟู: งดเดิมพัน ({st.session_state.rounds_in_recovery_no_bet}/{RECOVERY_NO_BET_ROUNDS} ตา)"
             return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
-                   st.session_state.recommendation_text, derived_road_trends
+                   st.session_state.recommendation_text, derived_road_trends, raw_predictions_from_modules, raw_tie_pred # Return raw predictions
 
         # If currently in recovery mode (triggered by miss streak)
         if st.session_state.in_recovery_mode:
@@ -1362,7 +1381,7 @@ class OracleBrain:
             if st.session_state.rounds_in_recovery_no_bet < RECOVERY_NO_BET_ROUNDS:
                 st.session_state.recommendation_text = f"🧪 อยู่ในช่วงฟื้นฟู: งดเดิมพัน ({st.session_state.rounds_in_recovery_no_bet}/{RECOVERY_NO_BET_ROUNDS} ตา)"
                 return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
-                       st.session_state.recommendation_text, derived_road_trends
+                       st.session_state.recommendation_text, derived_road_trends, raw_predictions_from_modules, raw_tie_pred # Return raw predictions
             
             # Phase 2: After initial no-bet rounds, check for internal wins to re-enable betting
             if st.session_state.consecutive_recovery_wins >= RECOVERY_INTERNAL_WINS_TO_RE_ENABLE_BETTING:
@@ -1375,7 +1394,7 @@ class OracleBrain:
                 # Explicitly recommend no bet.
                 st.session_state.recommendation_text = f"🧪 อยู่ในช่วงฟื้นฟู: ทำนายภายในต้องถูก 1 ตา"
                 return None, None, None, None, current_displayed_miss_streak, False, None, None, False, \
-                       st.session_state.recommendation_text, derived_road_trends
+                       st.session_state.recommendation_text, derived_road_trends, raw_predictions_from_modules, raw_tie_pred # Return raw predictions
 
         # --- Normal Recommendation Logic (after exiting Recovery Phase 2 or if never in Recovery) ---
         # This part will now handle both "confident prediction" and "low confidence no bet"
@@ -1440,7 +1459,8 @@ class OracleBrain:
         tie_confidence = None
         is_tie_sniper_opportunity = False
 
-        tie_pred_raw, tie_conf_raw = self.tie_predictor.predict(self.history)
+        # Use raw_tie_pred, raw_tie_conf from earlier calculation
+        tie_pred_raw, tie_conf_raw = raw_tie_pred, raw_tie_conf
 
         if self.tie_module_prediction_log_current_shoe: 
             last_logged_tie_pred, last_actual_is_tie = self.tie_module_prediction_log_current_shoe[-1]
@@ -1478,13 +1498,13 @@ class OracleBrain:
         return (
             final_prediction_main, source_module_name_main, confidence_main, pattern_code_main, current_displayed_miss_streak, is_sniper_opportunity_main,
             tie_prediction, tie_confidence, 
-            is_tie_sniper_opportunity, recommendation_text, derived_road_trends
+            is_tie_sniper_opportunity, recommendation_text, derived_road_trends, raw_predictions_from_modules, raw_tie_pred
         )
 
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.6", layout="centered") # Updated version to V10.6.6
+st.set_page_config(page_title="🔮 Oracle V10.6.7", layout="centered") # Updated version to V10.6.7
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1895,6 +1915,11 @@ if 'last_internal_prediction_outcome' not in st.session_state: # Stores internal
     st.session_state.last_internal_prediction_outcome = None
 if 'rounds_in_recovery_no_bet' not in st.session_state: # NEW: Counter for rounds in recovery where no bet is forced
     st.session_state.rounds_in_recovery_no_bet = 0
+if 'last_raw_module_predictions' not in st.session_state: # NEW: Store raw module predictions for logging
+    st.session_state.last_raw_module_predictions = {}
+if 'last_raw_tie_prediction' not in st.session_state: # NEW: Store raw tie prediction for logging
+    st.session_state.last_raw_tie_prediction = None
+
 
 if 'tie_prediction' not in st.session_state:
     st.session_state.tie_prediction = None
@@ -1955,13 +1980,20 @@ def handle_click(main_outcome_str: MainOutcome):
             st.session_state.debug_messages.append(f"  Internal prediction INCORRECT or NONE. consecutive_recovery_wins reset to: {st.session_state.consecutive_recovery_wins}")
     
     # Add the result to OracleBrain, passing the *displayed* prediction of the *just finished* round.
-    # st.session_state.prediction holds the displayed prediction *before* this click updates it for the new round.
-    st.session_state.oracle.add_result(current_round_actual_result, is_any_natural=False, displayed_prediction_for_prev_round=st.session_state.prediction)
+    # Also pass the raw internal predictions for logging module accuracies.
+    st.session_state.oracle.add_result(
+        current_round_actual_result, 
+        is_any_natural=False, 
+        displayed_prediction_for_prev_round=st.session_state.prediction,
+        internal_module_predictions=st.session_state.last_raw_module_predictions, # Pass raw predictions from previous round
+        internal_tie_prediction=st.session_state.last_raw_tie_prediction # Pass raw tie prediction from previous round
+    )
     
     # Now, call predict_next for the *new* round to get its predictions and recommendations.
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+     raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next() 
     
     # Update session state with the *new* round's prediction and recommendation details
     st.session_state.prediction = prediction # This is the *new* round's displayed prediction
@@ -2000,6 +2032,9 @@ def handle_click(main_outcome_str: MainOutcome):
 
     # Store the *internal* prediction for the *new* round's recovery check (for the *next* handle_click)
     st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction 
+    st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+    st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -2015,11 +2050,14 @@ def handle_remove():
     st.session_state.last_internal_prediction_outcome = None # Reset internal prediction state
     st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Reset no-bet counter on remove
     st.session_state.debug_messages = [] # Clear debug messages on remove
+    st.session_state.last_raw_module_predictions = {} # Reset raw predictions
+    st.session_state.last_raw_tie_prediction = None # Reset raw tie prediction
 
     # Call predict_next for the updated history
     (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
      tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next() 
+     is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+     raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next() 
     
     st.session_state.prediction = prediction
     st.session_state.source = source
@@ -2057,6 +2095,8 @@ def handle_remove():
     
     # Update internal prediction for the *new* round's recovery check
     st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction
+    st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+    st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -2088,11 +2128,13 @@ def handle_start_new_shoe():
     st.session_state.last_internal_prediction_outcome = None
     st.session_state.rounds_in_recovery_no_bet = 0 # NEW: Reset no-bet counter on new shoe
     st.session_state.debug_messages = [] # Clear debug messages on new shoe
+    st.session_state.last_raw_module_predictions = {} # Reset raw predictions
+    st.session_state.last_raw_tie_prediction = None # Reset raw tie prediction
 
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.6</span></div>', unsafe_allow_html=True) # Updated version to V10.6.6
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.7</span></div>', unsafe_allow_html=True) # Updated version to V10.6.7
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2333,7 +2375,8 @@ with col_ul:
             # Re-run prediction to update UI with new data
             (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
              tie_pred, tie_conf,
-             is_tie_sniper_opportunity, recommendation_text, derived_road_trends) = st.session_state.oracle.predict_next()
+             is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+             raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next()
 
             st.session_state.prediction = prediction
             st.session_state.source = source
@@ -2363,6 +2406,8 @@ with col_ul:
             }
             st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
 
+            st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+            st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
             st.query_params["_t"] = f"{time.time()}" # Force UI refresh
             
         except json.JSONDecodeError:
@@ -2396,9 +2441,9 @@ if st.session_state.show_debug_info:
     st.write("---") 
 
     st.markdown("<h4>⚙️ การทำนายจากเค้าไพ่รอง (Derived Road Predictions)</h4>", unsafe_allow_html=True)
-    derived_preds_debug = st.session_state.oracle.derived_road_analyzer.predict(st.session_state.oracle.history)
-    for road_name, pred_val in derived_preds_debug.items():
-        st.write(f"  - {road_name}: {pred_val if pred_val else 'None'}") 
+    # Display the raw predictions that were used for logging
+    st.write(f"  - Raw Module Predictions (for current round): {st.session_state.last_raw_module_predictions}")
+    st.write(f"  - Raw Tie Prediction (for current round): {st.session_state.last_raw_tie_prediction}")
     st.write("---")
 
     st.markdown("<h4>⚙️ การทำนายจากสถิติ (Statistical Predictions)</h4>", unsafe_allow_html=True)
