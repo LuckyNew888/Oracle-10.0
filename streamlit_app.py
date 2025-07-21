@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.8 - Fix NameError in predict_next)
+# streamlit_app.py (Oracle V10.6.9 - Fix NameError on Upload)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1510,7 +1510,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.8", layout="centered") # Updated version to V10.6.8
+st.set_page_config(page_title="🔮 Oracle V10.6.9", layout="centered") # Updated version to V10.6.9
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -1996,50 +1996,72 @@ def handle_click(main_outcome_str: MainOutcome):
     )
     
     # Now, call predict_next for the *new* round to get its predictions and recommendations.
-    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
-     raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next() 
-    
-    # Update session state with the *new* round's prediction and recommendation details
-    st.session_state.prediction = prediction # This is the *new* round's displayed prediction
-    st.session_state.source = source
-    st.session_state.confidence = confidence 
-    st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
-    
-    st.session_state.tie_prediction = tie_pred
-    st.session_state.tie_confidence = tie_conf
-    st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.recommendation_text = recommendation_text 
-    st.session_state.derived_road_trends = derived_road_trends
-    
-    pattern_names = { # Simplified pattern names for display
-        "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-        "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร", 
-        "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-        "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPPP": "สองตัดสาม", # New pattern name
-        "BPPBBB": "สองตัดสาม", # New pattern name
-        "มังกรตัด": "มังกรตัด", 
-        "ปิงปองตัด": "ปิงปองตัด", 
-        "ตัดสาม": "ตัดสาม" 
-    }
-    st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
-    
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) >= 15: 
-        st.session_state.initial_shown = True 
+    # Check if history is sufficient before calling predict_next
+    if len(_get_main_outcome_history(st.session_state.oracle.history)) >= 15: # Minimum history for prediction
+        (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+         tie_pred, tie_conf, 
+         is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+         raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next() 
+        
+        # Update session state with the *new* round's prediction and recommendation details
+        st.session_state.prediction = prediction # This is the *new* round's displayed prediction
+        st.session_state.source = source
+        st.session_state.confidence = confidence 
+        st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
+        
+        st.session_state.tie_prediction = tie_pred
+        st.session_state.tie_confidence = tie_conf
+        st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+        st.session_state.recommendation_text = recommendation_text 
+        st.session_state.derived_road_trends = derived_road_trends
+        
+        pattern_names = { # Simplified pattern names for display
+            "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+            "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+            "PPPP": "มังกร", "BBBB": "มังกร", 
+            "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+            "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+            "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+            "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PBBPPP": "สองตัดสาม", # New pattern name
+            "BPPBBB": "สองตัดสาม", # New pattern name
+            "มังกรตัด": "มังกรตัด", 
+            "ปิงปองตัด": "ปิงปองตัด", 
+            "ตัดสาม": "ตัดสาม" 
+        }
+        st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
+        
+        p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
+        b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
+        if (p_count + b_count) >= 15: 
+            st.session_state.initial_shown = True 
 
-    # Store the *internal* prediction for the *new* round's recovery check (for the *next* handle_click)
-    st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction 
-    st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
-    st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+        # Store the *internal* prediction for the *new* round's recovery check (for the *next* handle_click)
+        st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction 
+        st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+        st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+    else:
+        # If not enough history, reset prediction states and set learning message
+        st.session_state.prediction = None
+        st.session_state.source = None
+        st.session_state.confidence = None
+        st.session_state.pattern_name = None
+        st.session_state.is_sniper_opportunity_main = False
+        st.session_state.tie_prediction = None
+        st.session_state.tie_confidence = None
+        st.session_state.is_tie_sniper_opportunity = False
+        st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
+        st.session_state.derived_road_trends = {
+            "BigEyeBoy": "ไม่มีแนวโน้ม",
+            "SmallRoad": "ไม่มีแนวโน้ม",
+            "CockroachPig": "ไม่มีแนวโน้ม"
+        }
+        st.session_state.last_internal_prediction_outcome = None
+        st.session_state.last_raw_module_predictions = {}
+        st.session_state.last_raw_tie_prediction = None
+        st.session_state.initial_shown = False # Ensure initial message is shown if history becomes too short
 
     st.query_params["_t"] = f"{time.time()}"
 
@@ -2060,49 +2082,73 @@ def handle_remove():
     st.session_state.last_raw_tie_prediction = None # Reset raw tie prediction
 
     # Call predict_next for the updated history
-    (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-     tie_pred, tie_conf, 
-     is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
-     raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next() 
-    
-    st.session_state.prediction = prediction
-    st.session_state.source = source
-    st.session_state.confidence = confidence
-    st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
+    if len(_get_main_outcome_history(st.session_state.oracle.history)) >= 15: # Minimum history for prediction
+        (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+         tie_pred, tie_conf, 
+         is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+         raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next() 
+        
+        st.session_state.prediction = prediction
+        st.session_state.source = source
+        st.session_state.confidence = confidence
+        st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main 
 
-    st.session_state.tie_prediction = tie_pred
-    st.session_state.tie_confidence = tie_conf
-    st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-    st.session_state.recommendation_text = recommendation_text
-    st.session_state.derived_road_trends = derived_road_trends
-    
-    pattern_names = { # Simplified pattern names for display
-        "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-        "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-        "PPPP": "มังกร", "BBBB": "มังกร", 
-        "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-        "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-        "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-        "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-        "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-        "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-        "PBBPPP": "สองตัดสาม", # New pattern name
-        "BPPBBB": "สองตัดสาม", # New pattern name
-        "มังกรตัด": "มังกรตัด", 
-        "ปิงปองตัด": "ปิงปองตัด", 
-        "ตัดสาม": "ตัดสาม" 
-    }
-    st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
-    
-    p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
-    b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
-    if (p_count + b_count) < 15: 
-        st.session_state.initial_shown = False
-    
-    # Update internal prediction for the *new* round's recovery check
-    st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction
-    st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
-    st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+        st.session_state.tie_prediction = tie_pred
+        st.session_state.tie_confidence = tie_conf
+        st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+        st.session_state.recommendation_text = recommendation_text
+        st.session_state.derived_road_trends = derived_road_trends
+        
+        pattern_names = { # Simplified pattern names for display
+            "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+            "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+            "PPPP": "มังกร", "BBBB": "มังกร", 
+            "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+            "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+            "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+            "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+            "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+            "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+            "PBBPPP": "สองตัดสาม", # New pattern name
+            "BPPBBB": "สองตัดสาม", # New pattern name
+            "มังกรตัด": "มังกรตัด", 
+            "ปิงปองตัด": "ปิงปองตัด", 
+            "ตัดสาม": "ตัดสาม" 
+        }
+        st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
+        
+        p_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "P")
+        b_count = sum(1 for r in st.session_state.oracle.history if r.main_outcome == "B")
+        if (p_count + b_count) >= 15: 
+            st.session_state.initial_shown = True 
+        else:
+            st.session_state.initial_shown = False
+        
+        # Update internal prediction for the *new* round's recovery check
+        st.session_state.last_internal_prediction_outcome = st.session_state.oracle.last_internal_prediction
+        st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+        st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+    else:
+        # If not enough history, reset prediction states and set learning message
+        st.session_state.prediction = None
+        st.session_state.source = None
+        st.session_state.confidence = None
+        st.session_state.pattern_name = None
+        st.session_state.is_sniper_opportunity_main = False
+        st.session_state.tie_prediction = None
+        st.session_state.tie_confidence = None
+        st.session_state.is_tie_sniper_opportunity = False
+        st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
+        st.session_state.derived_road_trends = {
+            "BigEyeBoy": "ไม่มีแนวโน้ม",
+            "SmallRoad": "ไม่มีแนวโน้ม",
+            "CockroachPig": "ไม่มีแนวโน้ม"
+        }
+        st.session_state.last_internal_prediction_outcome = None
+        st.session_state.last_raw_module_predictions = {}
+        st.session_state.last_raw_tie_prediction = None
+        st.session_state.initial_shown = False # Ensure initial message is shown if history becomes too short
+
     st.query_params["_t"] = f"{time.time()}"
 
 
@@ -2140,7 +2186,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.8</span></div>', unsafe_allow_html=True) # Updated version to V10.6.8
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.9</span></div>', unsafe_allow_html=True) # Updated version to V10.6.9
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
@@ -2378,42 +2424,66 @@ with col_ul:
             decoded_data = bytes_data.decode("utf-8")
             loaded_data = json.loads(decoded_data)
             st.session_state.oracle.import_all_time_data(loaded_data)
-            # Re-run prediction to update UI with new data
-            (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
-             tie_pred, tie_conf,
-             is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
-             raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next()
-
-            st.session_state.prediction = prediction
-            st.session_state.source = source
-            st.session_state.confidence = confidence
-            st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main
-            st.session_state.tie_prediction = tie_pred
-            st.session_state.tie_confidence = tie_conf
-            st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
-            st.session_state.recommendation_text = recommendation_text
-            st.session_state.derived_road_trends = derived_road_trends
             
-            pattern_names = { # Simplified pattern names for display
-                "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
-                "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
-                "PPPP": "มังกร", "BBBB": "มังกร", 
-                "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
-                "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
-                "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
-                "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
-                "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
-                "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
-                "PBBPPP": "สองตัดสาม", # New pattern name
-                "BPPBBB": "สองตัดสาม", # New pattern name
-                "มังกรตัด": "มังกรตัด",
-                "ปิงปองตัด": "ปิงปองตัด",
-                "ตัดสาม": "ตัดสาม"
-            }
-            st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
+            # Re-run prediction to update UI with new data ONLY IF SUFFICIENT HISTORY
+            if len(_get_main_outcome_history(st.session_state.oracle.history)) >= 15:
+                (prediction, source, confidence, pattern_code, _, is_sniper_opportunity_main,
+                 tie_pred, tie_conf,
+                 is_tie_sniper_opportunity, recommendation_text, derived_road_trends,
+                 raw_module_preds_for_next_round, raw_tie_pred_for_next_round) = st.session_state.oracle.predict_next()
 
-            st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
-            st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+                st.session_state.prediction = prediction
+                st.session_state.source = source
+                st.session_state.confidence = confidence
+                st.session_state.is_sniper_opportunity_main = is_sniper_opportunity_main
+                st.session_state.tie_prediction = tie_pred
+                st.session_state.tie_confidence = tie_conf
+                st.session_state.is_tie_sniper_opportunity = is_tie_sniper_opportunity
+                st.session_state.recommendation_text = recommendation_text
+                st.session_state.derived_road_trends = derived_road_trends
+                
+                pattern_names = { # Simplified pattern names for display
+                    "PBPB": "ปิงปอง", "BPBP": "ปิงปอง",
+                    "PPBB": "สองตัวติด", "BBPP": "สองตัวติด",
+                    "PPPP": "มังกร", "BBBB": "มังกร", 
+                    "PPPPP": "มังกรยาว", "BBBBB": "มังกรยาว",
+                    "PBPBP": "ปิงปองยาว", "BPBPB": "ปิงปองยาว",
+                    "PBPBPB": "ปิงปองยาว", "BPBPBP": "ปิงปองยาว",
+                    "PPPBBB": "สามตัวตัด", "BBBPBB": "สามตัวตัด",
+                    "PBB": "สองตัวตัด", "BPP": "สองตัวตัด",
+                    "PBBP": "คู่สลับ", "BPPB": "คู่สลับ",
+                    "PBBPPP": "สองตัดสาม", # New pattern name
+                    "BPPBBB": "สองตัดสาม", # New pattern name
+                    "มังกรตัด": "มังกรตัด",
+                    "ปิงปองตัด": "ปิงปองตัด",
+                    "ตัดสาม": "ตัดสาม"
+                }
+                st.session_state.pattern_name = pattern_names.get(pattern_code, pattern_code if pattern_code else None)
+
+                st.session_state.last_raw_module_predictions = raw_module_preds_for_next_round # Store for next round's logging
+                st.session_state.last_raw_tie_prediction = raw_tie_pred_for_next_round # Store for next round's logging
+                st.session_state.initial_shown = True # Ensure initial message is hidden if history is sufficient
+            else:
+                # If not enough history after upload, reset prediction states and set learning message
+                st.session_state.prediction = None
+                st.session_state.source = None
+                st.session_state.confidence = None
+                st.session_state.pattern_name = None
+                st.session_state.is_sniper_opportunity_main = False
+                st.session_state.tie_prediction = None
+                st.session_state.tie_confidence = None
+                st.session_state.is_tie_sniper_opportunity = False
+                st.session_state.recommendation_text = "กำลังเรียนรู้... รอข้อมูลครบ 15 ตา (P/B) ก่อนเริ่มทำนาย"
+                st.session_state.derived_road_trends = {
+                    "BigEyeBoy": "ไม่มีแนวโน้ม",
+                    "SmallRoad": "ไม่มีแนวโน้ม",
+                    "CockroachPig": "ไม่มีแนวโน้ม"
+                }
+                st.session_state.last_internal_prediction_outcome = None
+                st.session_state.last_raw_module_predictions = {}
+                st.session_state.last_raw_tie_prediction = None
+                st.session_state.initial_shown = False # Ensure initial message is shown if history becomes too short
+            
             st.query_params["_t"] = f"{time.time()}" # Force UI refresh
             
         except json.JSONDecodeError:
