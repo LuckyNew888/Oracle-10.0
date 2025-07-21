@@ -266,7 +266,7 @@ def remove_last_from_history():
     if st.session_state.history:
         st.session_state.history.pop()
         # Also notify the engine to remove its last history item
-        st.session_state.oracle_engine.remove_last()
+        st.session_state.oracle_engine.remove_last() # This will also reset engine's learning/backtest data
     # Reset money management states on history removal (optional, but good for consistency)
     reset_money_management_state_on_undo()
 
@@ -405,23 +405,23 @@ def record_bet_result(predicted_side, actual_result):
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
     # --- Notify OracleEngine to update its learning based on the last prediction and actual result ---
+    # To correctly update learning, we need the state of patterns/momentum *before* the current actual result.
+    # This implies running detect_patterns/momentum on history *before* the current result.
+    # Create a temporary engine instance to get patterns/momentum before current result
+    temp_engine_for_learning = OracleEngine()
+    # Set its history to be the state *before* the current result was added
+    temp_engine_for_learning.history = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
+
+    # Copy current learning stats to temp_engine_for_learning so it can update them
+    temp_engine_for_learning.pattern_stats = st.session_state.oracle_engine.pattern_stats
+    temp_engine_for_learning.momentum_stats = st.session_state.oracle_engine.momentum_stats
+    temp_engine_for_learning.failed_pattern_instances = st.session_state.oracle_engine.failed_pattern_instances
+
+    patterns_before = temp_engine_for_learning.detect_patterns(temp_engine_for_learning.history)
+    momentum_before = temp_engine_for_learning.detect_momentum(temp_engine_for_learning.history)
+
     # Only update learning if a prediction was made (i.e., not '?' or 'Avoid')
     if predicted_side in ['P', 'B', 'T']:
-        # Retrieve active patterns/momentum from the last prediction_data (if available)
-        # This requires storing prediction_data in session_state or passing it more directly.
-        # For simplicity, we'll re-detect patterns/momentum for learning based on the state *before* this result.
-        # A more robust solution would pass the 'active_patterns' and 'active_momentum' from predict_next.
-        # For now, let's assume predict_next's last output is available for learning.
-        # Or, we can re-run detection on history *before* the current result.
-
-        # To correctly update learning, we need the state of patterns/momentum *before* the current actual result.
-        # This implies running detect_patterns/momentum on history[:-1]
-        temp_engine = OracleEngine() # Create a temporary engine instance to get patterns/momentum before current result
-        temp_engine.history = st.session_state.history[:-1] # History up to *before* the current result
-
-        patterns_before = temp_engine.detect_patterns(temp_engine.history)
-        momentum_before = temp_engine.detect_momentum(temp_engine.history)
-
         st.session_state.oracle_engine._update_learning(
             predicted_outcome=predicted_side,
             actual_outcome=actual_result,
@@ -604,6 +604,10 @@ if history_results:
     last_non_tie_result = None
 
     for i, round_result in enumerate(history_results):
+        # Ensure round_result is a dictionary and has 'main_outcome'
+        if not isinstance(round_result, dict) or 'main_outcome' not in round_result:
+            continue # Skip invalid history entries
+
         main_outcome = round_result['main_outcome']
         is_any_natural = round_result['is_any_natural'] # Assuming this is always False for now
         ties_on_cell = round_result['ties'] # Get ties count from the history object itself
