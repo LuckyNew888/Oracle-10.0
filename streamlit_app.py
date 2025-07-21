@@ -160,7 +160,20 @@ st.markdown("""
 # App Header
 st.markdown('<div class="custom-title">🔮 Oracle AI</div>', unsafe_allow_html=True)
 
-# --- Session State Initialization ---
+# --- OracleEngine Caching ---
+# Use st.cache_resource to cache the OracleEngine instance
+# This ensures the engine and its internal states (pattern_stats, momentum_stats, etc.)
+# are initialized only once and persist across reruns.
+@st.cache_resource(ttl=None) # ttl=None means it persists indefinitely unless app restarts
+def get_oracle_engine():
+    return OracleEngine()
+
+# Initialize the engine in session state if not already present
+# This will call get_oracle_engine() only once.
+if "oracle_engine" not in st.session_state:
+    st.session_state.oracle_engine = get_oracle_engine()
+
+# --- Session State Initialization (other variables) ---
 if "history" not in st.session_state:
     # History will now store list of dicts:
     # {'main_outcome': 'P'/'B'/'T', 'ties': int, 'is_any_natural': bool}
@@ -171,8 +184,7 @@ if "bet_amount" not in st.session_state:
     st.session_state.bet_amount = 100.0 # Initial default bet amount
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
-if "oracle_engine" not in st.session_state:
-    st.session_state.oracle_engine = OracleEngine()
+
 
 # --- Session State for Money Management Systems ---
 if "money_management_system" not in st.session_state:
@@ -265,8 +277,12 @@ def remove_last_from_history():
     """Removes the last result from the session history and resets money management state."""
     if st.session_state.history:
         st.session_state.history.pop()
-        # Also notify the engine to remove its last history item
-        st.session_state.oracle_engine.remove_last() # This will also reset engine's learning/backtest data
+        # Also notify the cached engine to remove its last history item
+        # The engine's history attribute is a reference to st.session_state.history,
+        # so popping from st.session_state.history already affects engine.history.
+        # However, we need to explicitly tell the engine to reset its internal learning states
+        # which are not tied to the history list reference.
+        st.session_state.oracle_engine.reset_learning_states_on_undo() # New method in OracleEngine
     # Reset money management states on history removal (optional, but good for consistency)
     reset_money_management_state_on_undo()
 
@@ -275,7 +291,8 @@ def reset_all_history():
     st.session_state.history = []
     st.session_state.money_balance = 1000.0
     st.session_state.bet_log = []
-    st.session_state.oracle_engine = OracleEngine() # Create a new Engine to reset Memory Logic
+    # When resetting all history, we should also reset the cached OracleEngine's internal states
+    st.session_state.oracle_engine.reset_history() # This resets history, pattern_stats, etc.
     reset_money_management_state() # Reset all money management states
 
 def reset_money_management_state():
@@ -411,8 +428,7 @@ def record_bet_result(predicted_side, actual_result):
     # Get the history slice *before* the current result was added
     history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
 
-    # Use the main engine instance to detect patterns/momentum on the sliced history
-    # This ensures we are always working with the fully initialized engine from session_state
+    # Use the main engine instance (cached) to detect patterns/momentum on the sliced history
     patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result)
     momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result)
 
@@ -428,9 +444,13 @@ def record_bet_result(predicted_side, actual_result):
 
 # Load and update Engine
 engine = st.session_state.oracle_engine
-# The engine's history will be updated from st.session_state.history
-# by assigning it directly before prediction.
-engine.history = st.session_state.history # Ensure engine has the latest history
+# The engine's history attribute is a reference to st.session_state.history.
+# So, modifications to st.session_state.history (like .append(), .pop())
+# are automatically reflected in engine.history.
+# We just need to ensure the engine's internal learning states are managed correctly.
+# No explicit `engine.history = st.session_state.history` assignment is strictly needed here
+# if it's already a reference, but keeping it doesn't hurt and ensures consistency.
+engine.history = st.session_state.history
 
 
 # --- Capital Balance and Bet Amount ---
@@ -557,7 +577,9 @@ next_pred_side = '?'
 conf = 0
 
 # Pass the actual history (list of dicts) to the engine for prediction
-engine.history = st.session_state.history # Ensure engine has the latest history
+# This assignment is crucial for the cached engine to work with the latest history from session_state.
+engine = st.session_state.oracle_engine
+engine.history = st.session_state.history
 
 if len(engine.history) >= 20:
     prediction_data = engine.predict_next()
