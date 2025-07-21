@@ -32,6 +32,12 @@ class OracleEngine:
             self.momentum_stats = {}
             self.failed_pattern_instances = {}
 
+    def reset_learning_states_on_undo(self):
+        """Resets only the learning-related states when an undo operation occurs."""
+        self.pattern_stats = {}
+        self.momentum_stats = {}
+        self.failed_pattern_instances = {}
+        self.backtest_results = [] # Reset backtest results as well
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -133,7 +139,7 @@ class OracleEngine:
             # This is a simplified check for a "ladder"
             # For example, B P BB P BBB
             if h[-1] == h[-3] and h[-3] == h[-6] and h[-2] == h[-4] and h[-4] == h[-5]: # Very simplified
-                 momentum_detected.append(("Ladder Momentum (Simplified)", tuple(h[-6:])))
+                momentum_detected.append(("Ladder Momentum (Simplified)", tuple(h[-6:])))
 
         return momentum_detected
 
@@ -266,7 +272,7 @@ class OracleEngine:
         if last3_pb == ('P','P','B'): # PPB -> B
             return 'B'
         if len(h) >= 5 and tuple(h[-5:]) == ('B','P','B','P','P'): # B P B P P -> B (often a reversal)
-             return 'B'
+            return 'B'
         
         # New Intuition: Repeat Cut (BBPBB -> B) - simplified
         # This is a pattern where a streak is cut, then the original streak continues
@@ -308,7 +314,7 @@ class OracleEngine:
                 break
         
         if start_index_for_backtest == 0: # Not enough P/B history even after iterating all
-             return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
+            return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
 
 
         # Simulate predictions for each hand from start_index_for_backtest to the end
@@ -377,7 +383,7 @@ class OracleEngine:
             return {
                 "developer_view": developer_view,
                 "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'],
+                "accuracy": backtest_stats['accuracy_percent'], # Use real accuracy
                 "risk": risk_level,
                 "recommendation": recommendation,
                 "active_patterns": [], # No patterns considered if avoiding
@@ -452,54 +458,54 @@ class OracleEngine:
                             prediction_result = 'P' if last_two[0] == 'B' else 'B'
                             developer_view = f"DNA Pattern: Two-Cut detected. Predicting opposite of current pair."
                             break
-                elif p_name == 'Triple Cut':
-                    if len(current_pb_history) >= 3:
-                        last_three = current_pb_history[-3:]
-                        if len(set(last_three)) == 1:
-                            prediction_result = 'P' if last_three[0] == 'B' else 'B'
-                            developer_view = f"DNA Pattern: Triple Cut detected. Predicting opposite of last three."
-                            break
+                    elif p_name == 'Triple Cut':
+                        if len(current_pb_history) >= 3:
+                            last_three = current_pb_history[-3:]
+                            if len(set(last_three)) == 1:
+                                prediction_result = 'P' if last_three[0] == 'B' else 'B'
+                                developer_view = f"DNA Pattern: Triple Cut detected. Predicting opposite of last three."
+                                break
 
-            if developer_view_patterns_list and not developer_view:
-                developer_view += f"Detected patterns: {', '.join(developer_view_patterns_list)}."
-            elif developer_view_patterns_list:
-                developer_view += f" | Other patterns: {', '.join(developer_view_patterns_list)}."
+                if developer_view_patterns_list and not developer_view:
+                    developer_view += f"Detected patterns: {', '.join(developer_view_patterns_list)}."
+                elif developer_view_patterns_list:
+                    developer_view += f" | Other patterns: {', '.join(developer_view_patterns_list)}."
 
-        # --- 5. Intuition Logic (ใช้เมื่อไม่มี Pattern หลัก หรือ Pattern ที่เจอเคยพลาด) ---
-        if prediction_result == '?': # ถ้ายังไม่มีการทำนายจาก Pattern หลัก
-            intuitive_guess = self.intuition_predict(self.history) # Pass full history for Tie check
+            # --- 5. Intuition Logic (ใช้เมื่อไม่มี Pattern หลัก หรือ Pattern ที่เจอเคยพลาด) ---
+            if prediction_result == '?': # ถ้ายังไม่มีการทำนายจาก Pattern หลัก
+                intuitive_guess = self.intuition_predict(self.history) # Pass full history for Tie check
 
-            if intuitive_guess == 'T':
-                prediction_result = 'T'
-                developer_view += " (Intuition Logic: Specific Tie pattern identified.)"
-            elif intuitive_guess in ['P', 'B']:
-                prediction_result = intuitive_guess
-                developer_view += f" (Intuition Logic: Predicting {intuitive_guess} based on subtle patterns.)"
-            else:
-                recommendation = "Avoid ❌"
-                risk_level = "Uncertainty"
-                developer_view += " (Intuition Logic: No strong P/B/T prediction, recommending Avoid.)"
-                prediction_result = '?'
+                if intuitive_guess == 'T':
+                    prediction_result = 'T'
+                    developer_view += " (Intuition Logic: Specific Tie pattern identified.)"
+                elif intuitive_guess in ['P', 'B']:
+                    prediction_result = intuitive_guess
+                    developer_view += f" (Intuition Logic: Predicting {intuitive_guess} based on subtle patterns.)"
+                else:
+                    recommendation = "Avoid ❌"
+                    risk_level = "Uncertainty"
+                    developer_view += " (Intuition Logic: No strong P/B/T prediction, recommending Avoid.)"
+                    prediction_result = '?'
 
-        # Aggregate additional Developer View from Momentum
-        if momentum:
-            for m_name, m_snapshot in momentum:
-                # Only add to active_momentum_for_learning if not a failed instance
-                if not self._is_pattern_instance_failed(m_name, m_snapshot):
-                    active_momentum_for_learning.append((m_name, m_snapshot))
-            if developer_view: developer_view += " | "
-            developer_view += f"Momentum: {', '.join([m[0] for m in momentum])}."
+            # Aggregate additional Developer View from Momentum
+            if momentum:
+                for m_name, m_snapshot in momentum:
+                    # Only add to active_momentum_for_learning if not a failed instance
+                    if not self._is_pattern_instance_failed(m_name, m_snapshot):
+                        active_momentum_for_learning.append((m_name, m_snapshot))
+                if developer_view: developer_view += " | "
+                developer_view += f"Momentum: {', '.join([m[0] for m in momentum])}."
 
-        # If nothing at all and still no prediction
-        if not developer_view and prediction_result == '?':
-            developer_view = "No strong patterns or intuition detected."
+            # If nothing at all and still no prediction
+            if not developer_view and prediction_result == '?':
+                developer_view = "No strong patterns or intuition detected."
 
-        return {
-            "developer_view": developer_view,
-            "prediction": prediction_result,
-            "accuracy": backtest_stats['accuracy_percent'],
-            "risk": risk_level,
-            "recommendation": recommendation,
-            "active_patterns": active_patterns_for_learning, # Pass for learning
-            "active_momentum": active_momentum_for_learning # Pass for learning
-        }
+            return {
+                "developer_view": developer_view,
+                "prediction": prediction_result,
+                "accuracy": backtest_stats['accuracy_percent'],
+                "risk": risk_level,
+                "recommendation": recommendation,
+                "active_patterns": active_patterns_for_learning, # Pass for learning
+                "active_momentum": active_momentum_for_learning # Pass for learning
+            }
