@@ -940,19 +940,26 @@ if big_road_data:
     for col_idx in range(start_col_idx, max_display_cols):
         html_parts.append('<div class="big-road-column">')
         for row_idx in range(len(big_road_data)): # Iterate through max_rows (6)
-            cell_data = big_road_data[row_idx][col_idx]
+            # Ensure the cell exists before trying to access its data
+            if col_idx < len(big_road_data[row_idx]): # Check if row has this column
+                cell_data = big_road_data[row_idx][col_idx]
+            else:
+                cell_data = None # No data for this cell
+
             if cell_data:
                 circle_class = "player-circle" if cell_data['type'] == 'P' else "banker-circle"
                 tie_html = ''
                 if cell_data['ties'] > 0:
+                    # Use a simpler, single-line HTML for tie-line
                     tie_html = '<div class="tie-line"></div>'
 
-                html_parts.append(f"""
-                <div class="big-road-cell">
-                    <div class="big-road-circle {circle_class}"></div>
-                    {tie_html}
-                </div>
-                """)
+                # Compacted HTML for the cell, ensuring no extra newlines/spaces
+                html_parts.append(
+                    f'<div class="big-road-cell">'
+                    f'<div class="big-road-circle {circle_class}"></div>'
+                    f'{tie_html}'
+                    f'</div>'
+                )
             else:
                 html_parts.append('<div class="big-road-cell"></div>') # Empty cell
         html_parts.append('</div>') # Close big-road-column
