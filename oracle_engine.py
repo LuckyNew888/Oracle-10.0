@@ -3,14 +3,19 @@ import random
 
 class OracleEngine:
     def __init__(self):
+        # History will now store richer objects:
+        # {'main_outcome': 'P'/'B'/'T', 'ties': int, 'is_any_natural': bool}
         self.history = []
         self.memory_failed_patterns = set()
 
-    # --- ส่วน Data Management (สำหรับ Engine เอง) ---
-    def update_history(self, result):
-        """Adds a new result to the history."""
-        if result in ['P', 'B', 'T']:
-            self.history.append(result)
+    # --- Data Management (for the Engine itself) ---
+    # update_history is now primarily handled by record_bet_result in Streamlit app
+    # This method is kept for internal engine logic if needed, but not directly used for adding results from UI
+    def update_history(self, result_obj):
+        """Adds a new result object to the history (for internal engine use)."""
+        # Assuming result_obj is a dict like {'main_outcome': 'P'/'B'/'T', 'ties': int, 'is_any_natural': bool}
+        if isinstance(result_obj, dict) and 'main_outcome' in result_obj:
+            self.history.append(result_obj)
 
     def remove_last(self):
         """Removes the last result from the history."""
@@ -26,49 +31,45 @@ class OracleEngine:
     def detect_patterns(self):
         """
         Detects various patterns such as Pingpong, Two-Cut, Dragon, Broken Pattern, Triple Cut.
+        Uses main_outcome from history objects.
         """
+        # Extract only main outcomes for pattern detection
+        h = [item['main_outcome'] for item in self.history if item['main_outcome'] in ['P', 'B']]
+
         patterns = []
-        h = self.history
 
         # Detect Pingpong (Alternating P/B pattern for a certain length)
-        # Check for alternation from the end
-        if len(h) >= 2: # Needs at least 2 results to alternate
+        if len(h) >= 2:
             alternating_count = 0
-            # Loop backwards from the last element to count alternations
             for i in range(len(h) - 1, 0, -1):
                 if h[i] != h[i-1]:
                     alternating_count += 1
                 else:
-                    break # Stop counting if alternation ends
-
-            # Consider it a clear Pingpong if there are at least 3 alternations (meaning 4 results like P-B-P-B)
+                    break
             if alternating_count >= 3:
-                patterns.append(f'Pingpong ({alternating_count + 1}x)') # +1 to show total results in the pattern
+                patterns.append(f'Pingpong ({alternating_count + 1}x)')
 
         # Detect Two-Cut (BB-PP or PP-BB)
         if len(h) >= 4:
             last4 = h[-4:]
-            # Check if the first 2 are the same, the last 2 are the same, and the two pairs are different
             if last4[0] == last4[1] and last4[2] == last4[3] and last4[0] != last4[2]:
                 patterns.append('Two-Cut')
 
         # Detect Dragon (long streak: 3 to 6 consecutive same results)
         for i in range(3, 7):
             if len(h) >= i:
-                if len(set(h[-i:])) == 1: # If the last i elements are all the same
-                    patterns.append(f'Dragon ({i})') # Indicate the length of the Dragon
+                if len(set(h[-i:])) == 1:
+                    patterns.append(f'Dragon ({i})')
 
         # Detect Triple Cut (e.g., PPPBBB or BBBPPP)
         if len(h) >= 6:
             last6 = h[-6:]
-            # Check if the first 3 are the same, the last 3 are the same, and the first 3 are different from the last 3
             if (last6[0] == last6[1] == last6[2] and
                 last6[3] == last6[4] == last6[5] and
                 last6[0] != last6[3]):
                 patterns.append('Triple Cut')
 
         # Detect Broken Pattern (BPBPPBP) - Example Implementation
-        # **Note:** This logic is just a starting example. It should be refined based on the true definition.
         if len(h) >= 7:
             last7 = "".join(h[-7:])
             if "BPBPPBP" in last7 or "PBPBBBP" in last7:
@@ -78,15 +79,14 @@ class OracleEngine:
 
     # --- 2. 🚀 Momentum Tracker (ตรวจจับแรงเหวี่ยง) ---
     def detect_momentum(self):
-        """Detects momentum such as B3+, P3+, Steady Repeat."""
+        """Detects momentum such as B3+, P3+, Steady Repeat. Uses main_outcome."""
+        h = [item['main_outcome'] for item in self.history if item['main_outcome'] in ['P', 'B']]
         momentum = []
-        h = self.history
 
         # Check for Momentum (3 or more consecutive same results)
         if len(h) >= 3:
             last_char = h[-1]
             streak_count = 0
-            # Count consecutive same characters from the end
             for i in reversed(range(len(h))):
                 if h[i] == last_char:
                     streak_count += 1
@@ -106,8 +106,8 @@ class OracleEngine:
 
     # --- 3. ⚠️ Trap Zone Detection (ตรวจจับโซนอันตราย) ---
     def in_trap_zone(self):
-        """Detects zones where changes are rapid and dangerous."""
-        h = self.history
+        """Detects zones where changes are rapid and dangerous. Uses main_outcome."""
+        h = [item['main_outcome'] for item in self.history if item['main_outcome'] in ['P', 'B']]
         if len(h) < 2:
             return False
 
@@ -161,8 +161,8 @@ class OracleEngine:
 
     # --- 6. 🧠 Intuition Logic (ลอจิกเชิงลึกเมื่อไม่มี Pattern ชัดเจน) ---
     def intuition_predict(self):
-        """Uses deep logic to predict when no clear pattern is present."""
-        h = self.history
+        """Uses deep logic to predict when no clear pattern is present. Uses main_outcome."""
+        h = [item['main_outcome'] for item in self.history] # Use all outcomes for intuition
         if len(h) < 3:
             return '?'
 
@@ -272,26 +272,26 @@ class OracleEngine:
 
                 # ลอจิกการทำนายตาม Pattern ที่มั่นใจ
                 if 'Dragon' in pat_name:
-                    prediction_result = self.history[-1]
+                    # Use main_outcome from the last history item
+                    prediction_result = self.history[-1]['main_outcome']
                     developer_view = f"DNA Pattern: {pat_name} detected. Predicting last result."
                     break
-                elif 'Pingpong' in pat_name: # Updated to check if 'Pingpong' is in name
-                    last = self.history[-1]
+                elif 'Pingpong' in pat_name:
+                    last = self.history[-1]['main_outcome']
                     prediction_result = 'P' if last == 'B' else 'B'
                     developer_view = f"DNA Pattern: {pat_name} detected. Predicting opposite of last."
                     break
                 elif pat_name == 'Two-Cut':
                     if len(self.history) >= 2:
-                        last_two = self.history[-2:]
+                        last_two = [item['main_outcome'] for item in self.history[-2:]]
                         if last_two[0] == last_two[1]:
                             prediction_result = 'P' if last_two[0] == 'B' else 'B'
                             developer_view = f"DNA Pattern: Two-Cut detected. Predicting opposite of current pair."
                             break
-                elif pat_name == 'Triple Cut': # Logic for Triple Cut
+                elif pat_name == 'Triple Cut':
                     if len(self.history) >= 3:
-                        last_three = self.history[-3:]
-                        if len(set(last_three)) == 1: # E.g., PPP
-                            # Predict the opposite of the current triple
+                        last_three = [item['main_outcome'] for item in self.history[-3:]]
+                        if len(set(last_three)) == 1:
                             prediction_result = 'P' if last_three[0] == 'B' else 'B'
                             developer_view = f"DNA Pattern: Triple Cut detected. Predicting opposite of last three."
                             break
@@ -302,7 +302,7 @@ class OracleEngine:
                 developer_view += f" | Other patterns: {', '.join(developer_view_patterns_list)}."
 
         # --- 5. Intuition Logic (ใช้เมื่อไม่มี Pattern หลัก หรือ Pattern ที่เจอเคยพลาด) ---
-        if prediction_result == '?': # ถ้ายังไม่มีการทำนายจาก Pattern หลัก
+        if prediction_result == '?':
             intuitive_guess = self.intuition_predict()
 
             if intuitive_guess == 'T':
@@ -333,67 +333,3 @@ class OracleEngine:
             "risk": risk_level,
             "recommendation": recommendation
         }
-
-    def _build_big_road(self, history, max_rows=6):
-        """
-        Builds the Big Road representation from the history.
-        Returns a 2D list (grid) where each cell is a dict {'type': 'P'/'B', 'ties': count} or None.
-        Handles column changes, vertical stacking, and horizontal tailing.
-        Ties are marked on the last P/B result.
-        """
-        if not history:
-            return []
-
-        # This will store the data for each cell in the Big Road, with its calculated grid position
-        # Format: {'type': 'P'/'B', 'ties': count, 'grid_col': int, 'grid_row': int}
-        road_cells = []
-
-        current_col_idx = 0
-        current_row_idx = 0
-        last_pb_type = None # Stores the type of the last P/B result to determine column breaks
-
-        # Iterate through the history to determine cell types and positions
-        for i, result in enumerate(history):
-            if result == 'T':
-                # Ties are marked on the last P/B cell.
-                # Find the last P/B cell that was added to road_cells and increment its tie count.
-                found_pb_for_tie = False
-                for cell in reversed(road_cells):
-                    if cell['type'] in ['P', 'B']: # Only attach ties to P or B cells
-                        cell['ties'] += 1
-                        found_pb_for_tie = True
-                        break
-                # If no P/B cell exists yet (e.g., history starts with 'T'), we ignore the tie for Big Road.
-                # Standard Big Road doesn't start with standalone ties, they are usually overlays.
-                continue # Ties do not advance the main P/B column/row logic
-
-            # Handle P or B results
-            if last_pb_type is None: # This is the very first P/B result
-                road_cells.append({'type': result, 'ties': 0, 'grid_col': current_col_idx, 'grid_row': current_row_idx})
-            elif result == last_pb_type: # Same type as previous P/B, continue in current column
-                if current_row_idx < max_rows - 1: # Still space to go down
-                    current_row_idx += 1
-                else: # Column is full, start tailing
-                    current_col_idx += 1
-                    # current_row_idx remains at max_rows - 1 for tailing
-                road_cells.append({'type': result, 'ties': 0, 'grid_col': current_col_idx, 'grid_row': current_row_idx})
-            else: # Different type from previous P/B, start a new column
-                current_col_idx += 1
-                current_row_idx = 0 # Reset row for the new column
-                road_cells.append({'type': result, 'ties': 0, 'grid_col': current_col_idx, 'grid_row': current_row_idx})
-
-            last_pb_type = result # Update the last P/B type
-
-        # Now, convert the `road_cells` into a proper 2D grid for rendering
-        if not road_cells:
-            return []
-
-        # Determine the maximum column index to size the grid correctly
-        max_grid_col = max(cell['grid_col'] for cell in road_cells)
-        # The grid will have `max_rows` rows and `max_grid_col + 1` columns
-        big_road_grid = [[None for _ in range(max_grid_col + 1)] for _ in range(max_rows)]
-
-        for cell in road_cells:
-            big_road_grid[cell['grid_row']][cell['grid_col']] = {'type': cell['type'], 'ties': cell['ties']}
-
-        return big_road_grid
