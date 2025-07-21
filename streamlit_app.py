@@ -4,15 +4,13 @@ import random
 import pandas as pd
 import math # สำหรับฟังก์ชัน floor ใน Fibonacci
 
-# --- OracleEngine Class (as provided previously) ---
-# This class needs to be in the same file or imported correctly.
-# For this Streamlit app, we'll include it directly for simplicity.
+# --- OracleEngine Class (รวมอยู่ในไฟล์เดียวกับ Streamlit App เพื่อความสะดวก) ---
 class OracleEngine:
     def __init__(self):
         self.history = []
         self.memory_failed_patterns = set()
 
-    # --- Data Management (for the Engine itself) ---
+    # --- ส่วน Data Management (สำหรับ Engine เอง) ---
     def update_history(self, result):
         """Adds a new result to the history."""
         if result in ['P', 'B', 'T']:
@@ -28,7 +26,7 @@ class OracleEngine:
         self.history = []
         self.memory_failed_patterns = set()
 
-    # --- 1. 🧬 DNA Pattern Analysis (Pattern Detection) ---
+    # --- 1. 🧬 DNA Pattern Analysis (ตรวจจับรูปแบบ) ---
     def detect_patterns(self):
         """
         Detects various patterns such as Pingpong, Two-Cut, Dragon, Broken Pattern, Triple Cut.
@@ -82,7 +80,7 @@ class OracleEngine:
 
         return patterns
 
-    # --- 2. 🚀 Momentum Tracker (Momentum Detection) ---
+    # --- 2. 🚀 Momentum Tracker (ตรวจจับแรงเหวี่ยง) ---
     def detect_momentum(self):
         """Detects momentum such as B3+, P3+, Steady Repeat."""
         momentum = []
@@ -110,7 +108,7 @@ class OracleEngine:
 
         return momentum
 
-    # --- 3. ⚠️ Trap Zone Detection (Dangerous Zone Detection) ---
+    # --- 3. ⚠️ Trap Zone Detection (ตรวจจับโซนอันตราย) ---
     def in_trap_zone(self):
         """Detects zones where changes are rapid and dangerous."""
         h = self.history
@@ -128,7 +126,7 @@ class OracleEngine:
                 return True
         return False
 
-    # --- 4. 🎯 Confidence Engine (Confidence Evaluation 0-100%) ---
+    # --- 4. 🎯 Confidence Engine (ระบบประเมินความมั่นใจ 0-100%) ---
     def confidence_score(self):
         """Calculates the system's confidence score for prediction."""
         if not self.history or len(self.history) < 10:
@@ -156,7 +154,7 @@ class OracleEngine:
 
         return score
 
-    # --- 5. 🔁 Memory Logic (Remembering Failed Patterns) ---
+    # --- 5. 🔁 Memory Logic (จดจำ Pattern ที่เคยพลาด) ---
     def update_failed_pattern(self, pattern_name):
         """Adds a pattern that led to an incorrect prediction to memory."""
         self.memory_failed_patterns.add(pattern_name)
@@ -165,7 +163,7 @@ class OracleEngine:
         """Checks if this pattern has previously led to an incorrect prediction."""
         return pattern_name in self.memory_failed_patterns
 
-    # --- 6. 🧠 Intuition Logic (Deep Logic when no clear pattern) ---
+    # --- 6. 🧠 Intuition Logic (ลอจิกเชิงลึกเมื่อไม่มี Pattern ชัดเจน) ---
     def intuition_predict(self):
         """Uses deep logic to predict when no clear pattern is present."""
         h = self.history
@@ -193,7 +191,7 @@ class OracleEngine:
 
         return '?'
 
-    # --- 7. 🔬 Backtest Simulation (Historical Testing) ---
+    # --- 7. 🔬 Backtest Simulation (ทดสอบผลย้อนหลัง) ---
     def backtest_accuracy(self):
         """
         Calculates the system's accuracy from historical predictions (requires actual logic).
@@ -212,7 +210,7 @@ class OracleEngine:
         # TODO: Implement actual drawdown checking logic here
         return False # Assume not exceeded (dummy value)
 
-    # --- Main function for predicting the next result ---
+    # --- ฟังก์ชันหลักในการทำนายผลถัดไป ---
     def predict_next(self):
         """
         Main function for analyzing and predicting the next outcome.
@@ -223,7 +221,7 @@ class OracleEngine:
         recommendation = "Play ✅"
         developer_view = ""
 
-        # --- 1. Check Trap Zone first (avoid betting immediately) ---
+        # --- 1. ตรวจสอบ Trap Zone เป็นอันดับแรกสุด (งดเดิมพันทันที) ---
         if self.in_trap_zone():
             risk_level = "Trap"
             recommendation = "Avoid ❌"
@@ -236,7 +234,7 @@ class OracleEngine:
                 "recommendation": recommendation
             }
 
-        # --- 2. Check Confidence Score (avoid betting if below threshold) ---
+        # --- 2. ตรวจสอบ Confidence Score (งดเดิมพันหากต่ำกว่าเกณฑ์) ---
         score = self.confidence_score()
         if score < 60:
             recommendation = "Avoid ❌"
@@ -249,7 +247,7 @@ class OracleEngine:
                 "recommendation": recommendation
             }
 
-        # --- 3. Check Drawdown (if more than 3 consecutive misses, avoid betting) ---
+        # --- 3. ตรวจสอบ Drawdown (หากเกิน 3 miss ติดกัน ให้งดเดิมพัน) ---
         if self.backtest_drawdown_exceeded():
             risk_level = "High Drawdown"
             recommendation = "Avoid ❌"
@@ -262,7 +260,7 @@ class OracleEngine:
                 "recommendation": recommendation
             }
 
-        # --- 4. Use Main Patterns for Prediction (if available) ---
+        # --- 4. ใช้ Pattern หลักในการทำนาย (หากมี) ---
         patterns = self.detect_patterns()
         momentum = self.detect_momentum()
 
@@ -271,12 +269,12 @@ class OracleEngine:
             for pat_name in patterns:
                 developer_view_patterns_list.append(pat_name)
 
-                # Check Memory Logic: Do not use patterns that have previously failed
+                # ตรวจสอบ Memory Logic: ห้ามใช้ pattern ที่เคยพลาด
                 if self.is_pattern_failed(pat_name):
                     developer_view += f" (Note: Pattern '{pat_name}' previously failed. Skipping.)"
                     continue
 
-                # Prediction logic based on confident patterns
+                # ลอจิกการทำนายตาม Pattern ที่มั่นใจ
                 if 'Dragon' in pat_name:
                     prediction_result = self.history[-1]
                     developer_view = f"DNA Pattern: {pat_name} detected. Predicting last result."
@@ -413,7 +411,7 @@ st.markdown("""
     /* CSS for the main title */
     .custom-title {
         font-family: 'Georgia', serif;
-        font-size: 3rem;
+        font-size: 2.5rem; /* Adjusted from 3rem */
         text-align: center;
         color: #FFD700;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
@@ -442,20 +440,6 @@ st.markdown("""
     /* CSS for numbers in st.number_input fields */
     .stNumberInput div[data-baseweb="input"] input {
         font-size: 0.95rem;
-    }
-    /* CSS for historical results display (old, now replaced by Big Road) */
-    .history-display {
-        font-size: 1.2rem;
-        word-wrap: break-word;
-        background-color: #262730; /* Dark gray to match dark theme */
-        padding: 10px;
-        border-radius: 5px;
-        margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
-        min-height: 40px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
     }
     /* CSS for h4 headings to be smaller and more compact */
     h4 {
@@ -497,7 +481,7 @@ st.markdown("""
         border-radius: 8px;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        min-height: 200px; /* Minimum height for visibility */
+        min-height: 200px; /* Minimum height for visibility (6 rows * ~30px height per cell) */
         align-items: flex-start; /* Align columns to the top */
         border: 1px solid #333; /* Subtle border */
     }
@@ -941,33 +925,40 @@ st.markdown("#### 🛣️ Big Road (เค้าไพ่หลัก):")
 big_road_data = engine._build_big_road(engine.history)
 
 if big_road_data:
-    html_content = '<div class="big-road-container">'
-    # Determine max columns needed for display (to avoid empty columns if grid is sparse)
+    html_parts = []
+    html_parts.append('<div class="big-road-container">')
+
     max_display_cols = 0
     if big_road_data and big_road_data[0]:
-        max_display_cols = len(big_road_data[0]) # Assuming all rows have same length after grid creation
+        max_display_cols = len(big_road_data[0])
 
-    # Build columns
-    for col_idx in range(max_display_cols):
-        html_content += '<div class="big-road-column">'
+    # Limit display columns to, for example, 30. Adjust as needed.
+    # This ensures the Big Road doesn't become excessively wide.
+    display_limit = 30
+    start_col_idx = max(0, max_display_cols - display_limit)
+
+    for col_idx in range(start_col_idx, max_display_cols):
+        html_parts.append('<div class="big-road-column">')
         for row_idx in range(len(big_road_data)): # Iterate through max_rows (6)
             cell_data = big_road_data[row_idx][col_idx]
             if cell_data:
                 circle_class = "player-circle" if cell_data['type'] == 'P' else "banker-circle"
-                # For ties, we'll draw a green line.
-                tie_html = f'<div class="tie-line"></div>' if cell_data['ties'] > 0 else ''
-                html_content += f"""
+                tie_html = ''
+                if cell_data['ties'] > 0:
+                    tie_html = '<div class="tie-line"></div>'
+
+                html_parts.append(f"""
                 <div class="big-road-cell">
                     <div class="big-road-circle {circle_class}"></div>
                     {tie_html}
                 </div>
-                """
+                """)
             else:
-                html_content += '<div class="big-road-cell"></div>' # Empty cell
-        html_content += '</div>' # Close big-road-column
-    html_content += '</div>' # Close big-road-container
+                html_parts.append('<div class="big-road-cell"></div>') # Empty cell
+        html_parts.append('</div>') # Close big-road-column
+    html_parts.append('</div>') # Close big-road-container
 
-    st.markdown(html_content, unsafe_allow_html=True)
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
 else:
     st.info("ยังไม่มีข้อมูลสำหรับ Big Road (ประวัติไม่เพียงพอ)")
 
