@@ -226,55 +226,10 @@ def record_bet_result(predicted_side, actual_result):
 
     current_system = st.session_state.money_management_system
 
-    # Update money management state based on actual result
-    if current_system == "Martingale":
-        if predicted_side == actual_result: # Win
-            st.session_state.martingale_current_step = 0 # Reset step
-        else: # Loss
-            st.session_state.martingale_current_step += 1
-            # Ensure not to exceed max steps
-            if st.session_state.martingale_current_step > st.session_state.martingale_max_steps:
-                st.session_state.martingale_current_step = st.session_state.martingale_max_steps
-
-    elif current_system == "Fibonacci":
-        fib_seq = st.session_state.fibonacci_sequence
-        current_idx = st.session_state.fibonacci_current_index
-        
-        if predicted_side == actual_result: # Win
-            # Go back two steps, but not below index 1 (0 is not used for betting)
-            st.session_state.fibonacci_current_index = max(1, current_idx - 2)
-        else: # Loss
-            # Move to next step
-            st.session_state.fibonacci_current_index += 1
-            # Ensure not to exceed max steps or sequence length
-            max_steps = st.session_state.fibonacci_max_steps_input
-            if st.session_state.fibonacci_current_index >= len(fib_seq) or st.session_state.fibonacci_current_index > max_steps:
-                st.session_state.fibonacci_current_index = max_steps # Cap at max_steps or end of defined sequence
-
-    elif current_system == "Labouchere":
-        current_seq = st.session_state.labouchere_current_sequence
-        
-        # Only modify sequence if it's not empty before this bet
-        if current_seq:
-            if predicted_side == actual_result: # Win
-                if len(current_seq) <= 2: # If 1 or 2 numbers left, sequence becomes empty
-                    st.session_state.labouchere_current_sequence = []
-                else:
-                    # Remove first and last element
-                    st.session_state.labouchere_current_sequence = current_seq[1:-1]
-            else: # Loss
-                # Add the bet amount (converted to unit) to the end of the sequence
-                # bet_amt_for_log / st.session_state.labouchere_unit_bet gives the 'unit' value
-                if st.session_state.labouchere_unit_bet > 0:
-                    st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
-                else: # Prevent division by zero, just add a 1 unit
-                    st.session_state.labouchere_current_sequence.append(1.0)
-        else: # Sequence was already empty (completed last round)
-            st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy() # Reset for new round
-
-    # --- Calculation of Win/Loss for actual money balance ---
-    # This part remains the same as it's about actual money change
-    if predicted_side in ['P', 'B', 'T']: # Only if the system *intended* to bet
+    # --- การคำนวณเงินเข้า/ออก (อิงตามผลจริง) ---
+    # จะคำนวณเงินเข้า/ออกเสมอ ถ้ามีการลงบันทึกผล (แม้จะ Avoid หรือ ไม่มีทำนายก็ตาม)
+    # แต่การหัก/บวกเงินจะเกิดขึ้นเมื่อมีการ "Play" จริงๆ
+    if predicted_side in ['P', 'B', 'T']: # ถ้ามีการทำนายและแนะนำให้ Play
         if predicted_side == actual_result:
             outcome = "Hit"
             if actual_result == 'P':
@@ -287,9 +242,57 @@ def record_bet_result(predicted_side, actual_result):
         else: # Loss
             win_loss = -bet_amt_for_log
             st.session_state.money_balance -= bet_amt_for_log
-    else: # If predicted_side was '?' or 'Avoid' - no actual bet was placed
+    else: # If predicted_side was '?' (no prediction) or 'Avoid' - no actual bet was placed for system
         win_loss = 0.0
-        outcome = "Avoided"
+        outcome = "Avoided" # หรือ "No Bet"
+        # หากเป็นการบันทึกผลกรณี 'Avoid' หรือ '?' จะไม่มีการอัปเดตสถานะการเดินเงิน
+    
+    # --- การอัปเดตสถานะระบบเดินเงิน (เฉพาะเมื่อมีการ "Play" จริง) ---
+    if predicted_side in ['P', 'B', 'T']: # ถ้ามีการทำนายและแนะนำให้ Play
+        if current_system == "Martingale":
+            if predicted_side == actual_result: # Win
+                st.session_state.martingale_current_step = 0 # Reset step
+            else: # Loss
+                st.session_state.martingale_current_step += 1
+                # Ensure not to exceed max steps
+                if st.session_state.martingale_current_step > st.session_state.martingale_max_steps:
+                    st.session_state.martingale_current_step = st.session_state.martingale_max_steps
+
+        elif current_system == "Fibonacci":
+            fib_seq = st.session_state.fibonacci_sequence
+            current_idx = st.session_state.fibonacci_current_index
+            
+            if predicted_side == actual_result: # Win
+                st.session_state.fibonacci_current_index = 1 # Reset to start of sequence after a win
+            else: # Loss
+                # Move to next step
+                st.session_state.fibonacci_current_index += 1
+                # Ensure not to exceed max steps or sequence length
+                max_steps = st.session_state.fibonacci_max_steps_input
+                if st.session_state.fibonacci_current_index >= len(fib_seq) or st.session_state.fibonacci_current_index > max_steps:
+                    st.session_state.fibonacci_current_index = max_steps # Cap at max_steps or end of defined sequence
+
+        elif current_system == "Labouchere":
+            current_seq = st.session_state.labouchere_current_sequence
+            
+            # Only modify sequence if it's not empty before this bet
+            if current_seq:
+                if predicted_side == actual_result: # Win
+                    if len(current_seq) <= 2: # If 1 or 2 numbers left, sequence becomes empty
+                        st.session_state.labouchere_current_sequence = []
+                    else:
+                        # Remove first and last element
+                        st.session_state.labouchere_current_sequence = current_seq[1:-1]
+                else: # Loss
+                    # Add the bet amount (converted to unit) to the end of the sequence
+                    # bet_amt_for_log / st.session_state.labouchere_unit_bet gives the 'unit' value
+                    if st.session_state.labouchere_unit_bet > 0:
+                        st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
+                    else: # Prevent division by zero, just add a 1 unit
+                        st.session_state.labouchere_current_sequence.append(1.0)
+            else: # Sequence was already empty (completed last round) - treat as a new round for next calculation
+                st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy() # Reset for new round
+
 
     st.session_state.bet_log.append({
         "System": current_system,
@@ -385,7 +388,7 @@ elif st.session_state.money_management_system == "Fibonacci":
 
 # UI สำหรับ Labouchere
 elif st.session_state.money_management_system == "Labouchere":
-    original_seq_str = ",".join([str(s) for s in st.session_state.labouchere_original_sequence])
+    original_seq_str = ",".join([f"{s:.1f}" if s % 1 != 0 else f"{int(s)}" for s in st.session_state.labouchere_original_sequence])
     
     new_original_seq_str = st.text_input(
         "🔢 ลำดับ Labouchere (คั่นด้วย , เช่น 1,2,3,4):",
@@ -413,7 +416,7 @@ elif st.session_state.money_management_system == "Labouchere":
         format="%.2f",
         help="1 หน่วยในลำดับ Labouchere จะเท่ากับเงินเท่าไหร่"
     )
-    st.info(f"Labouchere: ลำดับปัจจุบัน: {', '.join([f'{x:.1f}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'ว่างเปล่า (เป้าหมายสำเร็จ!)'}")
+    st.info(f"Labouchere: ลำดับปัจจุบัน: {', '.join([f'{x:.1f}' if x % 1 != 0 else f'{int(x)}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'ว่างเปล่า (เป้าหมายสำเร็จ!)'}")
 
 
 # คำนวณเงินเดิมพันสำหรับตาถัดไป
@@ -482,28 +485,28 @@ if prediction_data and isinstance(prediction_data, dict) and 'recommendation' in
     elif prediction_data['recommendation'] == "Avoid ❌":
         with col_p_b_t[0]:
             if st.button(f"บันทึก: 🔵 P", key="no_bet_P", use_container_width=True):
-                record_bet_result('?', 'P')
+                record_bet_result('?', 'P') # Pass '?' as predicted_side to indicate no actual bet
                 st.rerun()
         with col_p_b_t[1]:
             if st.button(f"บันทึก: 🔴 B", key="no_bet_B", use_container_width=True):
-                record_bet_result('?', 'B')
+                record_bet_result('?', 'B') # Pass '?' as predicted_side to indicate no actual bet
                 st.rerun()
         with col_p_b_t[2]:
             if st.button(f"บันทึก: 🟢 T", key="no_bet_T", use_container_width=True):
-                record_bet_result('?', 'T')
+                record_bet_result('?', 'T') # Pass '?' as predicted_side to indicate no actual bet
                 st.rerun()
-else:
+else: # Case when history is less than 20 or an error in engine
     with col_p_b_t[0]:
         if st.button(f"บันทึก: 🔵 P", key="init_P", use_container_width=True):
-            record_bet_result('?', 'P')
+            record_bet_result('?', 'P') # Pass '?' as predicted_side
             st.rerun()
     with col_p_b_t[1]:
         if st.button(f"บันทึก: 🔴 B", key="init_B", use_container_width=True):
-            record_bet_result('?', 'B')
+            record_bet_result('?', 'B') # Pass '?' as predicted_side
             st.rerun()
     with col_p_b_t[2]:
         if st.button(f"บันทึก: 🟢 T", key="init_T", use_container_width=True):
-            record_bet_result('?', 'T')
+            record_bet_result('?', 'T') # Pass '?' as predicted_side
             st.rerun()
 
 col_hist1, col_hist2 = st.columns(2)
