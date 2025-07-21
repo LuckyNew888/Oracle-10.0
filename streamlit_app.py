@@ -1,4 +1,4 @@
-# streamlit_app.py (Oracle V10.6.7 - Fix Module Accuracy Display)
+# streamlit_app.py (Oracle V10.6.8 - Fix NameError in predict_next)
 import streamlit as st
 import time 
 from typing import List, Optional, Literal, Tuple, Dict, Any
@@ -1333,6 +1333,12 @@ class OracleBrain:
         # Calculate raw tie prediction
         raw_tie_pred, raw_tie_conf = self.tie_predictor.predict(self.history)
 
+        # --- IMPORTANT: Calculate module accuracies *before* any early returns ---
+        module_accuracies_all_time = self.get_module_accuracy_all_time()
+        module_accuracies_recent_10 = self.get_module_accuracy_recent(10) 
+        module_accuracies_recent_20 = self.get_module_accuracy_recent(20) 
+
+
         # --- High Priority: Game Break (6 consecutive misses on *displayed* bets) ---
         if current_displayed_miss_streak >= 6:
             st.session_state.in_recovery_mode = False # Exit recovery if game breaks completely
@@ -1504,7 +1510,7 @@ class OracleBrain:
 # --- Streamlit UI Code ---
 
 # --- Setup Page ---
-st.set_page_config(page_title="🔮 Oracle V10.6.7", layout="centered") # Updated version to V10.6.7
+st.set_page_config(page_title="🔮 Oracle V10.6.8", layout="centered") # Updated version to V10.6.8
 
 # --- Custom CSS for Styling ---
 st.markdown("""
@@ -2134,7 +2140,7 @@ def handle_start_new_shoe():
     st.query_params["_t"] = f"{time.time()}"
 
 # --- Header ---
-st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.7</span></div>', unsafe_allow_html=True) # Updated version to V10.6.7
+st.markdown('<div class="header-container"><span class="main-title">🔮 Oracle</span><span class="version-text">V10.6.8</span></div>', unsafe_allow_html=True) # Updated version to V10.6.8
 
 # --- Prediction Output Box (Main Outcome) ---
 st.markdown("<div class='predict-box'>", unsafe_allow_html=True)
