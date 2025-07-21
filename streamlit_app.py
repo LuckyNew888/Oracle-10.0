@@ -413,9 +413,10 @@ def record_bet_result(predicted_side, actual_result):
     temp_engine_for_learning.history = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
 
     # Copy current learning stats to temp_engine_for_learning so it can update them
-    temp_engine_for_learning.pattern_stats = st.session_state.oracle_engine.pattern_stats
-    temp_engine_for_learning.momentum_stats = st.session_state.oracle_engine.momentum_stats
-    temp_engine_for_learning.failed_pattern_instances = st.session_state.oracle_engine.failed_pattern_instances
+    # Use .copy() to create a shallow copy of the dictionaries to avoid AttributeError
+    temp_engine_for_learning.pattern_stats = st.session_state.oracle_engine.pattern_stats.copy()
+    temp_engine_for_learning.momentum_stats = st.session_state.oracle_engine.momentum_stats.copy()
+    temp_engine_for_learning.failed_pattern_instances = st.session_state.oracle_engine.failed_pattern_instances.copy()
 
     patterns_before = temp_engine_for_learning.detect_patterns(temp_engine_for_learning.history)
     momentum_before = temp_engine_for_learning.detect_momentum(temp_engine_for_learning.history)
