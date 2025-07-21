@@ -1,407 +1,7 @@
 import streamlit as st
-from collections import Counter
-import random
 import pandas as pd
 import math # สำหรับฟังก์ชัน floor ใน Fibonacci
-
-# --- OracleEngine Class (รวมอยู่ในไฟล์เดียวกับ Streamlit App เพื่อความสะดวก) ---
-class OracleEngine:
-    def __init__(self):
-        self.history = []
-        self.memory_failed_patterns = set()
-
-    # --- ส่วน Data Management (สำหรับ Engine เอง) ---
-    def update_history(self, result):
-        """Adds a new result to the history."""
-        if result in ['P', 'B', 'T']:
-            self.history.append(result)
-
-    def remove_last(self):
-        """Removes the last result from the history."""
-        if self.history:
-            self.history.pop()
-
-    def reset_history(self):
-        """Resets the entire history and failed patterns memory."""
-        self.history = []
-        self.memory_failed_patterns = set()
-
-    # --- 1. 🧬 DNA Pattern Analysis (ตรวจจับรูปแบบ) ---
-    def detect_patterns(self):
-        """
-        Detects various patterns such as Pingpong, Two-Cut, Dragon, Broken Pattern, Triple Cut.
-        """
-        patterns = []
-        h = self.history
-
-        # Detect Pingpong (Alternating P/B pattern for a certain length)
-        # Check for alternation from the end
-        if len(h) >= 2: # Needs at least 2 results to alternate
-            alternating_count = 0
-            # Loop backwards from the last element to count alternations
-            for i in range(len(h) - 1, 0, -1):
-                if h[i] != h[i-1]:
-                    alternating_count += 1
-                else:
-                    break # Stop counting if alternation ends
-
-            # Consider it a clear Pingpong if there are at least 3 alternations (meaning 4 results like P-B-P-B)
-            if alternating_count >= 3:
-                patterns.append(f'Pingpong ({alternating_count + 1}x)') # +1 to show total results in the pattern
-
-        # Detect Two-Cut (BB-PP or PP-BB)
-        if len(h) >= 4:
-            last4 = h[-4:]
-            # Check if the first 2 are the same, the last 2 are the same, and the two pairs are different
-            if last4[0] == last4[1] and last4[2] == last4[3] and last4[0] != last4[2]:
-                patterns.append('Two-Cut')
-
-        # Detect Dragon (long streak: 3 to 6 consecutive same results)
-        for i in range(3, 7):
-            if len(h) >= i:
-                if len(set(h[-i:])) == 1: # If the last i elements are all the same
-                    patterns.append(f'Dragon ({i})') # Indicate the length of the Dragon
-
-        # Detect Triple Cut (e.g., PPPBBB or BBBPPP)
-        if len(h) >= 6:
-            last6 = h[-6:]
-            # Check if the first 3 are the same, the last 3 are the same, and the first 3 are different from the last 3
-            if (last6[0] == last6[1] == last6[2] and
-                last6[3] == last6[4] == last6[5] and
-                last6[0] != last6[3]):
-                patterns.append('Triple Cut')
-
-        # Detect Broken Pattern (BPBPPBP) - Example Implementation
-        # **Note:** This logic is just a starting example. It should be refined based on the true definition.
-        if len(h) >= 7:
-            last7 = "".join(h[-7:])
-            if "BPBPPBP" in last7 or "PBPBBBP" in last7:
-                patterns.append('Broken Pattern')
-
-        return patterns
-
-    # --- 2. 🚀 Momentum Tracker (ตรวจจับแรงเหวี่ยง) ---
-    def detect_momentum(self):
-        """Detects momentum such as B3+, P3+, Steady Repeat."""
-        momentum = []
-        h = self.history
-
-        # Check for Momentum (3 or more consecutive same results)
-        if len(h) >= 3:
-            last_char = h[-1]
-            streak_count = 0
-            # Count consecutive same characters from the end
-            for i in reversed(range(len(h))):
-                if h[i] == last_char:
-                    streak_count += 1
-                else:
-                    break
-            if streak_count >= 3:
-                momentum.append(f"{last_char}{streak_count}+ Momentum")
-
-        # Detect Steady Repeat (PBPBPBP or BPBPBPB)
-        if len(h) >= 7:
-            seq = h[-7:]
-            if (seq == ['P','B','P','B','P','B','P'] or
-                seq == ['B','P','B','P','B','P','B']):
-                momentum.append("Steady Repeat Momentum")
-
-        return momentum
-
-    # --- 3. ⚠️ Trap Zone Detection (ตรวจจับโซนอันตราย) ---
-    def in_trap_zone(self):
-        """Detects zones where changes are rapid and dangerous."""
-        h = self.history
-        if len(h) < 2:
-            return False
-
-        # P1-B1, B1-P1 (Unstable)
-        last2 = h[-2:]
-        if tuple(last2) in [('P','B'), ('B','P')]:
-            return True
-
-        # B3-P1 or P3-B1 (Risk of reversal) - 3 consecutive then cut
-        if len(h) >= 4:
-            if (len(set(h[-4:-1])) == 1 and h[-4] != h[-1]):
-                return True
-        return False
-
-    # --- 4. 🎯 Confidence Engine (ระบบประเมินความมั่นใจ 0-100%) ---
-    def confidence_score(self):
-        """Calculates the system's confidence score for prediction."""
-        if not self.history or len(self.history) < 10:
-            return 0
-
-        patterns = self.detect_patterns()
-        momentum = self.detect_momentum()
-        trap = self.in_trap_zone()
-
-        score = 50
-
-        if patterns:
-            score += len(patterns) * 10
-
-        if momentum:
-            score += len(momentum) * 8
-
-        if trap:
-            score -= 60
-
-        if score < 0:
-            score = 0
-        if score > 100:
-            score = 100
-
-        return score
-
-    # --- 5. 🔁 Memory Logic (จดจำ Pattern ที่เคยพลาด) ---
-    def update_failed_pattern(self, pattern_name):
-        """Adds a pattern that led to an incorrect prediction to memory."""
-        self.memory_failed_patterns.add(pattern_name)
-
-    def is_pattern_failed(self, pattern_name):
-        """Checks if this pattern has previously led to an incorrect prediction."""
-        return pattern_name in self.memory_failed_patterns
-
-    # --- 6. 🧠 Intuition Logic (ลอจิกเชิงลึกเมื่อไม่มี Pattern ชัดเจน) ---
-    def intuition_predict(self):
-        """Uses deep logic to predict when no clear pattern is present."""
-        h = self.history
-        if len(h) < 3:
-            return '?'
-
-        last3 = h[-3:]
-        last4 = h[-4:] if len(h) >= 4 else None
-
-        # Specific Tie patterns
-        if 'T' in last3 and last3.count('T') == 1 and last3[0] != last3[1] and last3[1] != last3[2]:
-            return 'T'
-        if last4 and Counter(last4)['T'] >= 2:
-            return 'T'
-
-        # Specific P/B patterns
-        if last3 == ['P','B','P']:
-            return 'P'
-        if last3 == ['B','B','P']:
-            return 'P'
-        if last3 == ['P','P','B']:
-            return 'B'
-        if len(h) >= 5 and h[-5:] == ['B','P','B','P','P']:
-             return 'B'
-
-        return '?'
-
-    # --- 7. 🔬 Backtest Simulation (ทดสอบผลย้อนหลัง) ---
-    def backtest_accuracy(self):
-        """
-        Calculates the system's accuracy from historical predictions (requires actual logic).
-        And checks Drawdown.
-        """
-        if len(self.history) < 20:
-            return 0
-
-        # TODO: Implement actual backtesting simulation here
-        return random.randint(60, 90) # Dummy accuracy value between 60-90%
-
-    def backtest_drawdown_exceeded(self):
-        """
-        Checks if Drawdown (consecutive misses) exceeds 3 times (requires actual logic).
-        """
-        # TODO: Implement actual drawdown checking logic here
-        return False # Assume not exceeded (dummy value)
-
-    # --- ฟังก์ชันหลักในการทำนายผลถัดไป ---
-    def predict_next(self):
-        """
-        Main function for analyzing and predicting the next outcome.
-        Returns a dictionary with prediction, risk, recommendation, developer_view.
-        """
-        prediction_result = '?'
-        risk_level = "Normal"
-        recommendation = "Play ✅"
-        developer_view = ""
-
-        # --- 1. ตรวจสอบ Trap Zone เป็นอันดับแรกสุด (งดเดิมพันทันที) ---
-        if self.in_trap_zone():
-            risk_level = "Trap"
-            recommendation = "Avoid ❌"
-            developer_view = "Trap Zone detected: High volatility, recommending avoidance."
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": self.backtest_accuracy(),
-                "risk": risk_level,
-                "recommendation": recommendation
-            }
-
-        # --- 2. ตรวจสอบ Confidence Score (งดเดิมพันหากต่ำกว่าเกณฑ์) ---
-        score = self.confidence_score()
-        if score < 60:
-            recommendation = "Avoid ❌"
-            developer_view = f"Confidence Score ({score}%) is below threshold (60%), recommending avoidance."
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": self.backtest_accuracy(),
-                "risk": "Low Confidence",
-                "recommendation": recommendation
-            }
-
-        # --- 3. ตรวจสอบ Drawdown (หากเกิน 3 miss ติดกัน ให้งดเดิมพัน) ---
-        if self.backtest_drawdown_exceeded():
-            risk_level = "High Drawdown"
-            recommendation = "Avoid ❌"
-            developer_view = "Drawdown exceeded 3 consecutive misses, recommending avoidance."
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": self.backtest_accuracy(),
-                "risk": risk_level,
-                "recommendation": recommendation
-            }
-
-        # --- 4. ใช้ Pattern หลักในการทำนาย (หากมี) ---
-        patterns = self.detect_patterns()
-        momentum = self.detect_momentum()
-
-        if patterns:
-            developer_view_patterns_list = []
-            for pat_name in patterns:
-                developer_view_patterns_list.append(pat_name)
-
-                # ตรวจสอบ Memory Logic: ห้ามใช้ pattern ที่เคยพลาด
-                if self.is_pattern_failed(pat_name):
-                    developer_view += f" (Note: Pattern '{pat_name}' previously failed. Skipping.)"
-                    continue
-
-                # ลอจิกการทำนายตาม Pattern ที่มั่นใจ
-                if 'Dragon' in pat_name:
-                    prediction_result = self.history[-1]
-                    developer_view = f"DNA Pattern: {pat_name} detected. Predicting last result."
-                    break
-                elif 'Pingpong' in pat_name: # Updated to check if 'Pingpong' is in name
-                    last = self.history[-1]
-                    prediction_result = 'P' if last == 'B' else 'B'
-                    developer_view = f"DNA Pattern: {pat_name} detected. Predicting opposite of last."
-                    break
-                elif pat_name == 'Two-Cut':
-                    if len(self.history) >= 2:
-                        last_two = self.history[-2:]
-                        if last_two[0] == last_two[1]:
-                            prediction_result = 'P' if last_two[0] == 'B' else 'B'
-                            developer_view = f"DNA Pattern: Two-Cut detected. Predicting opposite of current pair."
-                            break
-                elif pat_name == 'Triple Cut': # Logic for Triple Cut
-                    if len(self.history) >= 3:
-                        last_three = self.history[-3:]
-                        if len(set(last_three)) == 1: # E.g., PPP
-                            # Predict the opposite of the current triple
-                            prediction_result = 'P' if last_three[0] == 'B' else 'B'
-                            developer_view = f"DNA Pattern: Triple Cut detected. Predicting opposite of last three."
-                            break
-
-            if developer_view_patterns_list and not developer_view:
-                developer_view += f"Detected patterns: {', '.join(developer_view_patterns_list)}."
-            elif developer_view_patterns_list:
-                developer_view += f" | Other patterns: {', '.join(developer_view_patterns_list)}."
-
-        # --- 5. Intuition Logic (ใช้เมื่อไม่มี Pattern หลัก หรือ Pattern ที่เจอเคยพลาด) ---
-        if prediction_result == '?': # ถ้ายังไม่มีการทำนายจาก Pattern หลัก
-            intuitive_guess = self.intuition_predict()
-
-            if intuitive_guess == 'T':
-                prediction_result = 'T'
-                developer_view += " (Intuition Logic: Specific Tie pattern identified.)"
-            elif intuitive_guess in ['P', 'B']:
-                prediction_result = intuitive_guess
-                developer_view += f" (Intuition Logic: Predicting {intuitive_guess} based on subtle patterns.)"
-            else:
-                recommendation = "Avoid ❌"
-                risk_level = "Uncertainty"
-                developer_view += " (Intuition Logic: No strong P/B/T prediction, recommending Avoid.)"
-                prediction_result = '?'
-
-        # รวบรวม Developer View เพิ่มเติมจาก Momentum
-        if momentum:
-            if developer_view: developer_view += " | "
-            developer_view += f"Momentum: {', '.join(momentum)}."
-
-        # หากไม่มีอะไรเลยและยังทำนายไม่ได้
-        if not developer_view and prediction_result == '?':
-            developer_view = "No strong patterns or intuition detected."
-
-        return {
-            "developer_view": developer_view,
-            "prediction": prediction_result,
-            "accuracy": self.backtest_accuracy(),
-            "risk": risk_level,
-            "recommendation": recommendation
-        }
-
-    def _build_big_road(self, history, max_rows=6):
-        """
-        Builds the Big Road representation from the history.
-        Returns a 2D list (grid) where each cell is a dict {'type': 'P'/'B', 'ties': count} or None.
-        Handles column changes, vertical stacking, and horizontal tailing.
-        Ties are marked on the last P/B result.
-        """
-        if not history:
-            return []
-
-        # This will store the data for each cell in the Big Road, with its calculated grid position
-        # Format: {'type': 'P'/'B', 'ties': count, 'grid_col': int, 'grid_row': int}
-        road_cells = []
-
-        current_col_idx = 0
-        current_row_idx = 0
-        last_pb_type = None # Stores the type of the last P/B result to determine column breaks
-
-        # Iterate through the history to determine cell types and positions
-        for i, result in enumerate(history):
-            if result == 'T':
-                # Ties are marked on the last P/B cell.
-                # Find the last P/B cell that was added to road_cells and increment its tie count.
-                found_pb_for_tie = False
-                for cell in reversed(road_cells):
-                    if cell['type'] in ['P', 'B']: # Only attach ties to P or B cells
-                        cell['ties'] += 1
-                        found_pb_for_tie = True
-                        break
-                # If no P/B cell exists yet (e.g., history starts with 'T'), we ignore the tie for Big Road.
-                # Standard Big Road doesn't start with standalone ties, they are usually overlays.
-                continue # Ties do not advance the main P/B column/row logic
-
-            # Handle P or B results
-            if last_pb_type is None: # This is the very first P/B result
-                road_cells.append({'type': result, 'ties': 0, 'grid_col': current_col_idx, 'grid_row': current_row_idx})
-            elif result == last_pb_type: # Same type as previous P/B, continue in current column
-                if current_row_idx < max_rows - 1: # Still space to go down
-                    current_row_idx += 1
-                else: # Column is full, start tailing
-                    current_col_idx += 1
-                    # current_row_idx remains at max_rows - 1 for tailing
-                road_cells.append({'type': result, 'ties': 0, 'grid_col': current_col_idx, 'grid_row': current_row_idx})
-            else: # Different type from previous P/B, start a new column
-                current_col_idx += 1
-                current_row_idx = 0 # Reset row for the new column
-                road_cells.append({'type': result, 'ties': 0, 'grid_col': current_col_idx, 'grid_row': current_row_idx})
-
-            last_pb_type = result # Update the last P/B type
-
-        # Now, convert the `road_cells` into a proper 2D grid for rendering
-        if not road_cells:
-            return []
-
-        # Determine the maximum column index to size the grid correctly
-        max_grid_col = max(cell['grid_col'] for cell in road_cells)
-        # The grid will have `max_rows` rows and `max_grid_col + 1` columns
-        big_road_grid = [[None for _ in range(max_grid_col + 1)] for _ in range(max_rows)]
-
-        for cell in road_cells:
-            big_road_grid[cell['grid_row']][cell['grid_col']] = {'type': cell['type'], 'ties': cell['ties']}
-
-        return big_road_grid
-
+from oracle_engine import OracleEngine # Import the OracleEngine class
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
@@ -481,7 +81,7 @@ st.markdown("""
         border-radius: 8px;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        min-height: 200px; /* Minimum height for visibility (6 rows * ~30px height per cell) */
+        min-height: 200px; /* Minimum height for visibility (6 rows * ~28px height per cell + margins) */
         align-items: flex-start; /* Align columns to the top */
         border: 1px solid #333; /* Subtle border */
     }
@@ -501,6 +101,7 @@ st.markdown("""
         align-items: center;
         position: relative;
         margin-bottom: 2px; /* Gap between cells in a column */
+        box-sizing: border-box; /* Include padding and border in element's total width and height */
     }
 
     .big-road-circle {
@@ -514,6 +115,7 @@ st.markdown("""
         font-weight: bold;
         color: white;
         border: 1px solid rgba(255,255,255,0.2);
+        box-sizing: border-box;
     }
 
     .player-circle {
@@ -522,6 +124,18 @@ st.markdown("""
 
     .banker-circle {
         background-color: #dc3545; /* Red */
+    }
+
+    .tie-count {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%); /* Center the text */
+        font-size: 0.6em; /* Smaller font for tie count */
+        color: #28a745; /* Green color for tie count */
+        font-weight: bold;
+        line-height: 1; /* Remove extra line height */
+        z-index: 2; /* Ensure tie count is on top of circle */
     }
 
     .tie-line {
@@ -533,8 +147,18 @@ st.markdown("""
         top: 50%;
         left: 10%;
         transform-origin: center;
-        /* Ensure it's on top of the circle */
-        z-index: 1;
+        z-index: 1; /* Ensure it's on top of the circle */
+    }
+
+    .natural-indicator {
+        position: absolute;
+        bottom: 0px; /* Position at the bottom of the cell */
+        right: 0px; /* Position at the right of the cell */
+        font-size: 0.6em; /* Smaller font for natural indicator */
+        color: #FFD700; /* Gold color for natural */
+        font-weight: bold;
+        line-height: 1; /* Remove extra line height */
+        z-index: 2; /* Ensure natural indicator is on top */
     }
     </style>
 """, unsafe_allow_html=True)
@@ -544,6 +168,8 @@ st.markdown('<div class="custom-title">🔮 Oracle AI</div>', unsafe_allow_html=
 
 # --- Session State Initialization ---
 if "history" not in st.session_state:
+    # History will now store list of dicts:
+    # {'main_outcome': 'P'/'B'/'T', 'ties': int, 'is_any_natural': bool}
     st.session_state.history = []
 if "money_balance" not in st.session_state:
     st.session_state.money_balance = 1000.0
@@ -641,10 +267,6 @@ def calculate_next_bet():
     return st.session_state.bet_amount # Fallback
 
 # --- Callback Functions for History and Betting Management ---
-def add_to_history(result):
-    """Adds a result to the session history."""
-    st.session_state.history.append(result)
-
 def remove_last_from_history():
     """Removes the last result from the session history and resets money management state."""
     if st.session_state.history:
@@ -685,6 +307,7 @@ def reset_money_management_state_on_undo():
 def record_bet_result(predicted_side, actual_result):
     """
     Records the bet result, updates balance, and adjusts money management system state.
+    Also updates the history with structured data for Big Road.
     """
     bet_amt_for_log = st.session_state.bet_amount_calculated # Use the calculated bet amount for the log
     win_loss = 0.0
@@ -770,11 +393,27 @@ def record_bet_result(predicted_side, actual_result):
         "Outcome": outcome
     })
 
-    st.session_state.history.append(actual_result) # Add actual result to history for engine
+    # --- Update history with structured data for Big Road ---
+    # If the actual result is a Tie, we increment the tie count of the last P/B result
+    if actual_result == 'T':
+        found_pb_for_tie = False
+        for i in reversed(range(len(st.session_state.history))):
+            if st.session_state.history[i]['main_outcome'] in ['P', 'B']:
+                st.session_state.history[i]['ties'] += 1
+                found_pb_for_tie = True
+                break
+        if not found_pb_for_tie: # If history is empty or only ties, add a new tie entry
+            st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
+    else: # For P or B results, add a new entry
+        st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
+
 
 # Load and update Engine
 engine = st.session_state.oracle_engine
-engine.history = st.session_state.history.copy()
+# The engine's history will be updated from st.session_state.history
+# by passing the main_outcome for pattern detection
+engine.history = st.session_state.history # Ensure engine has the latest history
+
 
 # --- Capital Balance and Bet Amount ---
 st.session_state.money_balance = st.number_input(
@@ -890,14 +529,17 @@ st.session_state.bet_amount_calculated = calculate_next_bet()
 st.info(f"**จำนวนเงินที่ต้องเดิมพันตาถัดไป:** {st.session_state.bet_amount_calculated:.2f} บาท")
 
 
-if len(engine.history) < 20:
-    st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(engine.history)}** ตา)")
+if len(st.session_state.history) < 20: # Use st.session_state.history directly
+    st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(st.session_state.history)}** ตา)")
 
 # --- Prediction and Display Results ---
 st.markdown("#### 🔮 ทำนายตาถัดไป:")
 prediction_data = None
 next_pred_side = '?'
 conf = 0
+
+# Pass the actual history (list of dicts) to the engine for prediction
+engine.history = st.session_state.history # Ensure engine has the latest history
 
 if len(engine.history) >= 20:
     prediction_data = engine.predict_next()
@@ -921,53 +563,87 @@ else:
     st.markdown("— (ประวัติไม่ครบ)")
 
 # --- Big Road Display ---
-st.markdown("#### 🛣️ Big Road (เค้าไพ่หลัก):")
-big_road_data = engine._build_big_road(engine.history)
+st.markdown("<b>🛣️ Big Road:</b>", unsafe_allow_html=True) # Changed to bold tag
 
-if big_road_data:
-    html_parts = []
-    html_parts.append('<div class="big-road-container">')
+history_results = st.session_state.history # Use the structured history
 
-    max_display_cols = 0
-    if big_road_data and big_road_data[0]:
-        max_display_cols = len(big_road_data[0])
+if history_results:
+    max_row = 6
+    columns = []
+    current_col = []
+    last_non_tie_result = None
 
-    # Limit display columns to, for example, 30. Adjust as needed.
-    # This ensures the Big Road doesn't become excessively wide.
-    display_limit = 30
-    start_col_idx = max(0, max_display_cols - display_limit)
+    for i, round_result in enumerate(history_results):
+        main_outcome = round_result['main_outcome']
+        is_any_natural = round_result['is_any_natural'] # Assuming this is always False for now
+        ties_on_cell = round_result['ties'] # Get ties count from the history object itself
 
-    for col_idx in range(start_col_idx, max_display_cols):
-        html_parts.append('<div class="big-road-column">')
-        for row_idx in range(len(big_road_data)): # Iterate through max_rows (6)
-            # Ensure the cell exists before trying to access its data
-            if col_idx < len(big_road_data[row_idx]): # Check if row has this column
-                cell_data = big_road_data[row_idx][col_idx]
-            else:
-                cell_data = None # No data for this cell
+        if main_outcome == "T":
+            # Ties are handled by incrementing the tie count of the last P/B result
+            # This logic is now handled in record_bet_result, so we just skip ties here for Big Road drawing
+            continue # Skip to the next round if it's a Tie, as Ties don't form new columns in Big Road
 
-            if cell_data:
-                circle_class = "player-circle" if cell_data['type'] == 'P' else "banker-circle"
-                tie_html = ''
-                if cell_data['ties'] > 0:
-                    # Use a simpler, single-line HTML for tie-line
-                    tie_html = '<div class="tie-line"></div>'
+        # If the current outcome is the same as the last non-tie outcome, continue the streak in the current column
+        if main_outcome == last_non_tie_result:
+            if len(current_col) < max_row: # Add to current column if space available
+                current_col.append((main_outcome, ties_on_cell, is_any_natural))
+            else: # If column is full, start a new column (tailing)
+                columns.append(current_col)
+                current_col = [(main_outcome, ties_on_cell, is_any_natural)]
+        else: # If the current outcome is different, start a new column (new streak)
+            if current_col: # Append existing column if not empty
+                columns.append(current_col)
+            current_col = [(main_outcome, ties_on_cell, is_any_natural)] # Start a new column with the new outcome
+            last_non_tie_result = main_outcome # Update last non-tie result
 
-                # Compacted HTML for the cell, ensuring no extra newlines/spaces
-                html_parts.append(
-                    f'<div class="big-road-cell">'
-                    f'<div class="big-road-circle {circle_class}"></div>'
-                    f'{tie_html}'
-                    f'</div>'
+    # Append the last current column if it's not empty after the loop
+    if current_col:
+        columns.append(current_col)
+
+    MAX_DISPLAY_COLUMNS = 14 # Changed to 14 columns as requested (แนวนอน 14 แถว)
+    if len(columns) > MAX_DISPLAY_COLUMNS:
+        columns = columns[-MAX_DISPLAY_COLUMNS:] # Display only the last N columns for recent history
+
+    # Build the HTML string for the Big Road display
+    big_road_html_parts = []
+    big_road_html_parts.append(f"<div class='big-road-container' id='big-road-container-unique'>")
+    for col in columns:
+        big_road_html_parts.append("<div class='big-road-column'>")
+        # Ensure that cells are always created up to max_row for consistent column height
+        for row_idx in range(max_row):
+            cell_content = ""
+            if row_idx < len(col):
+                cell_result, tie_count, natural_flag = col[row_idx]
+                emoji_color_class = "player-circle" if cell_result == "P" else "banker-circle"
+                
+                tie_html = ""
+                # Only show tie count if it's > 0 AND it's the first cell in the column (or the cell where the tie was added)
+                # This simplified logic assumes ties are only counted on the P/B cell they attach to.
+                # If you want to show a separate tie symbol, you'd need more complex logic.
+                if tie_count > 0:
+                    tie_html = f"<div class='tie-line'></div>" # Draw a line for ties
+                    # If you want to show the count, you might need another element or combine:
+                    # tie_html += f"<span class='tie-count'>{tie_count}</span>"
+
+                natural_indicator = ""
+                if natural_flag: # Assuming natural_flag is True/False
+                    natural_indicator = f"<span class='natural-indicator'>N</span>"
+                
+                cell_content = (
+                    f"<div class='big-road-circle {emoji_color_class}'>"
+                    f"{natural_indicator}" # Natural indicator inside the circle
+                    f"</div>"
+                    f"{tie_html}" # Tie line outside the circle but within the cell for layering
                 )
-            else:
-                html_parts.append('<div class="big-road-cell"></div>') # Empty cell
-        html_parts.append('</div>') # Close big-road-column
-    html_parts.append('</div>') # Close big-road-container
+            
+            big_road_html_parts.append(f"<div class='big-road-cell'>{cell_content}</div>")
+        big_road_html_parts.append("</div>") # Close big-road-column
+    big_road_html_parts.append("</div>") # Close big-road-container
 
-    st.markdown("".join(html_parts), unsafe_allow_html=True)
+    st.markdown("".join(big_road_html_parts), unsafe_allow_html=True)
+
 else:
-    st.info("ยังไม่มีข้อมูลสำหรับ Big Road (ประวัติไม่เพียงพอ)")
+    st.info("🔄 ยังไม่มีข้อมูล")
 
 
 col_p_b_t = st.columns(3)
