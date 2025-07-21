@@ -25,12 +25,21 @@ class OracleEngine:
         patterns = []
         h = self.history
 
-        # ตรวจจับ Pingpong (B-P-B-P หรือ P-B-P-B)
-        if len(h) >= 4:
-            last4 = h[-4:]
-            if (last4 == ['B','P','B','P'] or last4 == ['P','B','P','B']):
-                patterns.append('Pingpong')
-        
+        # ตรวจจับ Pingpong (Alternating P/B pattern for a certain length)
+        # ตรวจสอบการสลับจากท้ายสุด
+        if len(h) >= 2: # ต้องมีอย่างน้อย 2 ผลลัพธ์เพื่อจะสลับได้
+            alternating_count = 0
+            # วนลูปย้อนหลังจากตัวสุดท้ายไปหาตัวแรกสุด เพื่อตรวจนับการสลับ
+            for i in range(len(h) - 1, 0, -1):
+                if h[i] != h[i-1]:
+                    alternating_count += 1
+                else:
+                    break # หยุดนับถ้าการสลับสิ้นสุดลง
+            
+            # ถือว่าเป็น Pingpong ที่ชัดเจนหากมีการสลับอย่างน้อย 3 ครั้ง (หมายถึง 4 ผลลัพธ์ เช่น P-B-P-B)
+            if alternating_count >= 3:
+                patterns.append(f'Pingpong ({alternating_count + 1}x)') # +1 เพื่อแสดงจำนวนผลลัพธ์ทั้งหมดในรูปแบบ
+
         # ตรวจจับ Two-Cut (BB-PP หรือ PP-BB)
         if len(h) >= 4:
             last4 = h[-4:]
@@ -259,10 +268,10 @@ class OracleEngine:
                     prediction_result = self.history[-1]
                     developer_view = f"DNA Pattern: {pat_name} detected. Predicting last result."
                     break
-                elif pat_name == 'Pingpong':
+                elif 'Pingpong' in pat_name: # Updated to check if 'Pingpong' is in name
                     last = self.history[-1]
                     prediction_result = 'P' if last == 'B' else 'B'
-                    developer_view = f"DNA Pattern: Pingpong detected. Predicting opposite of last."
+                    developer_view = f"DNA Pattern: {pat_name} detected. Predicting opposite of last."
                     break
                 elif pat_name == 'Two-Cut':
                     if len(self.history) >= 2:
@@ -271,7 +280,7 @@ class OracleEngine:
                             prediction_result = 'P' if last_two[0] == 'B' else 'B'
                             developer_view = f"DNA Pattern: Two-Cut detected. Predicting opposite of current pair."
                             break
-                elif pat_name == 'Triple Cut': # NEW: Logic for Triple Cut
+                elif pat_name == 'Triple Cut': # Logic for Triple Cut
                     if len(self.history) >= 3:
                         last_three = self.history[-3:]
                         if len(set(last_three)) == 1: # E.g., PPP
