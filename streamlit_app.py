@@ -14,19 +14,20 @@ st.markdown("""
         text-align: center;
         color: #FFD700; /* สีทอง */
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); /* เงาเข้มขึ้น */
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem; /* ลดระยะห่างด้านล่าง */
         font-weight: bold; /* ตัวหนา */
     }
     /* CSS สำหรับข้อความขนาดเล็ก (ใช้กับส่วนเงินทุน) */
     .small-text {
         font-size: 0.95rem; /* ขนาดเล็กลงเล็กน้อย */
         font-weight: normal;
-        margin-bottom: 0.25rem; /* ระยะห่างด้านล่าง */
+        margin-bottom: 0.1rem; /* ลดระยะห่างด้านล่าง */
     }
     /* CSS สำหรับ Label ของ st.number_input (เงินทุน, เงินเดิมพัน) */
     .stNumberInput > label {
         font-size: 0.95rem; /* ปรับขนาด label ของ st.number_input ให้เล็กลง */
         font-weight: bold;
+        margin-bottom: 0.1rem; /* ลดระยะห่างด้านล่างของ label */
     }
     /* CSS สำหรับตัวเลขในช่อง input ของ st.number_input */
     .stNumberInput div[data-baseweb="input"] input {
@@ -36,10 +37,11 @@ st.markdown("""
     .history-display {
         font-size: 1.2rem; /* ขนาดตัวอักษรของ emoji ใหญ่ขึ้นเล็กน้อย */
         word-wrap: break-word; /* ให้ขึ้นบรรทัดใหม่ได้ถ้าข้อความยาว */
-        background-color: #f0f2f6; /* สีพื้นหลังอ่อนๆ */
+        background-color: #262730; /* สีเทาเข้มเข้ากับธีมมืด (คล้ายดำ) */
         padding: 10px;
         border-radius: 5px;
-        margin-top: 10px;
+        margin-top: 0.5rem; /* ลดระยะห่างด้านบน */
+        margin-bottom: 0.5rem; /* ลดระยะห่างด้านล่าง */
         min-height: 40px; /* ขั้นต่ำเพื่อให้มีพื้นที่ */
         display: flex;
         flex-wrap: wrap; /* ให้ emoji ขึ้นบรรทัดใหม่ได้ */
@@ -51,7 +53,7 @@ st.markdown("""
         margin-bottom: 0.5rem; /* ระยะห่างด้านล่าง */
         font-size: 1.25rem; /* ขนาดที่เล็กกว่า h3 */
     }
-    /* CSS สำหรับผลการทำนาย (ใหม่) */
+    /* CSS สำหรับผลการทำนาย (ใหญ่ขึ้น) */
     .prediction-text {
         font-size: 2rem; /* ทำให้ผลทำนายใหญ่ขึ้น */
         font-weight: bold;
@@ -59,6 +61,16 @@ st.markdown("""
         text-align: center;
         margin-top: 0.5rem;
         margin-bottom: 0.5rem;
+    }
+    /* ลด margin ของปุ่ม */
+    div.stButton > button {
+        margin-top: 0.2rem;
+        margin-bottom: 0.2rem;
+    }
+    /* ลด margin ของ st.columns */
+    div.stColumns > div {
+        padding-top: 0.1rem;
+        padding-bottom: 0.1rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -68,39 +80,33 @@ st.markdown('<div class="custom-title">🔮 Oracle AI</div>', unsafe_allow_html=
 
 # --- การเริ่มต้น Session State ---
 if "history" not in st.session_state:
-    st.session_state.history = [] # เก็บประวัติผล B/P/T
+    st.session_state.history = [] 
 if "money_balance" not in st.session_state: 
-    st.session_state.money_balance = 1000.0 # กำหนดค่าเริ่มต้นเป็น float
+    st.session_state.money_balance = 1000.0 
 if "bet_amount" not in st.session_state:
-    st.session_state.bet_amount = 100.0 # กำหนดค่าเริ่มต้นเป็น float
+    st.session_state.bet_amount = 100.0 
 if "bet_log" not in st.session_state:
-    st.session_state.bet_log = [] # บันทึกรายละเอียดการเดิมพันแต่ละตา
+    st.session_state.bet_log = [] 
 if "oracle_engine" not in st.session_state:
     st.session_state.oracle_engine = OracleEngine()
 
 # --- ฟังก์ชัน Callback สำหรับการจัดการประวัติและการเดิมพัน ---
 def add_to_history(result):
-    """เพิ่มผลลัพธ์ (P/B/T) ลงในประวัติ"""
     st.session_state.history.append(result)
 
 def remove_last_from_history():
-    """ลบผลลัพธ์ล่าสุดออกจากประวัติ"""
     if st.session_state.history:
         st.session_state.history.pop()
         
 def reset_all_history():
-    """รีเซ็ตประวัติทั้งหมด, เงินทุน (กลับไปเป็น 1000.0), บันทึกการเดิมพัน และสร้าง OracleEngine ใหม่"""
     st.session_state.history = []
-    st.session_state.money_balance = 1000.0 # รีเซ็ตเงินทุนกลับเป็น 1000.0 (float)
+    st.session_state.money_balance = 1000.0 
     st.session_state.bet_log = []
-    st.session_state.oracle_engine = OracleEngine() # สร้าง Engine ใหม่ เพื่อรีเซ็ต Memory Logic
+    st.session_state.oracle_engine = OracleEngine() 
 
 def record_bet_result(predicted_side, actual_result):
-    """
-    บันทึกผลการเดิมพันและอัปเดตยอดเงินทุน
-    """
     bet_amt = st.session_state.bet_amount
-    win_loss = 0.0 # เปลี่ยนเป็น float
+    win_loss = 0.0 
     outcome = "Miss"
 
     if predicted_side in ['P', 'B', 'T']:
@@ -111,14 +117,14 @@ def record_bet_result(predicted_side, actual_result):
             elif predicted_side == 'B':
                 win_loss = bet_amt * 0.95
             elif predicted_side == 'T':
-                win_loss = bet_amt * 8.0 # เปลี่ยนเป็น float
+                win_loss = bet_amt * 8.0 
             st.session_state.money_balance += win_loss
         else:
             win_loss = -bet_amt
             st.session_state.money_balance -= bet_amt
-    else: # กรณีที่ระบบแนะนำให้ Avoid หรือ prediction_side เป็น '?'
-        win_loss = 0.0 # ไม่มีได้เสียเงินจริง
-        outcome = "Avoided"
+    else: 
+        win_loss = 0.0 
+        outcome = "Avoided" 
 
     st.session_state.bet_log.append({
         "Predict": predicted_side,
@@ -135,22 +141,22 @@ engine = st.session_state.oracle_engine
 engine.history = st.session_state.history.copy() 
 
 # --- สถานะเงินทุนและจำนวนเงินเดิมพัน ---
-st.markdown("---")
+# ไม่มี st.markdown("---") แล้ว
 st.session_state.money_balance = st.number_input(
     "💰 เงินทุนปัจจุบัน:", 
-    min_value=1.0, # เปลี่ยน min_value เป็น float
+    min_value=1.0, 
     value=st.session_state.money_balance, 
-    step=100.0, # เปลี่ยน step เป็น float
-    format="%.2f", # ใช้ format สำหรับ float (ทศนิยม 2 ตำแหน่ง)
+    step=100.0, 
+    format="%.2f", 
     help="กำหนดจำนวนเงินทุนเริ่มต้นของคุณ"
 )
 
 st.session_state.bet_amount = st.number_input(
     "💸 เงินเดิมพันต่อตา:", 
-    min_value=1.0, # เปลี่ยน min_value เป็น float
+    min_value=1.0, 
     value=st.session_state.bet_amount,
-    step=10.0, # เปลี่ยน step เป็น float
-    format="%.2f", # ใช้ format สำหรับ float (ทศนิยม 2 ตำแหน่ง)
+    step=10.0, 
+    format="%.2f", 
     help="กำหนดจำนวนเงินที่คุณจะเดิมพันในแต่ละตา"
 )
 
@@ -158,7 +164,7 @@ if len(engine.history) < 20:
     st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(engine.history)}** ตา)")
 
 # --- การทำนายและแสดงผลลัพธ์ ---
-st.markdown("---")
+# ไม่มี st.markdown("---") แล้ว
 st.markdown("#### 🔮 ทำนายตาถัดไป:")
 prediction_data = None 
 next_pred_side = '?' 
@@ -173,7 +179,6 @@ if len(engine.history) >= 20:
         
         emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
 
-        # ปรับขนาดผลทำนายให้ใหญ่ขึ้นโดยใช้ CSS class
         st.markdown(f'<div class="prediction-text">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}")
         st.markdown(f"**🧾 คำแนะนำ:** **{prediction_data['recommendation']}**")
@@ -187,7 +192,7 @@ else:
     st.markdown("— (ประวัติไม่ครบ)")
 
 # --- ส่วนบันทึกผลลัพธ์ + ประวัติ + ปุ่มควบคุม ---
-st.markdown("---")
+# ไม่มี st.markdown("---") แล้ว
 st.markdown("#### 📝 บันทึกผลลัพธ์:")
 history_emojis = engine.get_history_emojis()
 
@@ -251,7 +256,7 @@ with col_hist2:
         st.rerun()
 
 # --- บันทึกการเดิมพัน (Bet Log) ---
-st.markdown("---")
+# ไม่มี st.markdown("---") แล้ว
 st.markdown("### 📊 บันทึกการเดิมพัน")
 if st.session_state.bet_log:
     df_log = pd.DataFrame(st.session_state.bet_log)
@@ -260,5 +265,5 @@ else:
     st.info("ยังไม่มีการเดิมพันบันทึกไว้")
 
 # --- ข้อความปิดท้าย ---
-st.markdown("---")
+# ไม่มี st.markdown("---") แล้ว
 st.caption("ระบบวิเคราะห์ Oracle AI โดยคุณ")
