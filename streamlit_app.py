@@ -81,7 +81,7 @@ st.markdown("""
         border-radius: 8px;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        min-height: 200px; /* Minimum height for visibility (6 rows * ~28px height per cell + margins) */
+        min-height: 180px; /* Adjusted minimum height for 6 rows of smaller cells */
         align-items: flex-start; /* Align columns to the top */
         border: 1px solid #333; /* Subtle border */
     }
@@ -89,33 +89,35 @@ st.markdown("""
     .big-road-column {
         display: flex;
         flex-direction: column; /* Stack cells vertically */
-        min-width: 30px; /* Minimum width for each column */
-        margin-right: 2px; /* Small gap between columns */
+        min-width: 26px; /* Adjusted minimum width for each column */
+        margin-right: 1px; /* Smaller gap between columns */
     }
 
     .big-road-cell {
-        width: 28px; /* Fixed width for circles */
-        height: 28px; /* Fixed height for circles */
+        width: 24px; /* Adjusted fixed width for circles */
+        height: 24px; /* Adjusted fixed height for circles */
         display: flex;
         justify-content: center;
         align-items: center;
         position: relative;
-        margin-bottom: 2px; /* Gap between cells in a column */
+        margin-bottom: 1px; /* Smaller gap between cells in a column */
         box-sizing: border-box; /* Include padding and border in element's total width and height */
     }
 
     .big-road-circle {
-        width: 24px;
-        height: 24px;
+        width: 20px; /* Adjusted circle size */
+        height: 20px; /* Adjusted circle size */
         border-radius: 50%;
         display: flex;
         justify-content: center;
         align-items: center;
-        font-size: 0.7em; /* Text inside circle if needed */
+        font-size: 0.6em; /* Smaller font inside circle */
         font-weight: bold;
         color: white;
         border: 1px solid rgba(255,255,255,0.2);
         box-sizing: border-box;
+        /* Modern look: subtle shadow */
+        box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.4);
     }
 
     .player-circle {
@@ -126,35 +128,27 @@ st.markdown("""
         background-color: #dc3545; /* Red */
     }
 
-    .tie-count {
+    .tie-oval {
         position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%); /* Center the text */
-        font-size: 0.6em; /* Smaller font for tie count */
-        color: #28a745; /* Green color for tie count */
+        top: -4px; /* Position above the circle */
+        right: -4px; /* Position to the right of the circle */
+        background-color: #28a745; /* Green */
+        color: white;
+        font-size: 0.55em; /* Smaller font for tie count */
         font-weight: bold;
-        line-height: 1; /* Remove extra line height */
-        z-index: 2; /* Ensure tie count is on top of circle */
-    }
-
-    .tie-line {
-        position: absolute;
-        width: 80%; /* Length of the line */
-        height: 2px; /* Thickness of the line */
-        background-color: #28a745; /* Green line */
-        transform: rotate(45deg); /* Rotate for a slash */
-        top: 50%;
-        left: 10%;
-        transform-origin: center;
-        z-index: 1; /* Ensure it's on top of the circle */
+        padding: 0px 3px; /* Smaller padding */
+        border-radius: 6px; /* Oval shape */
+        line-height: 1; /* Ensure text fits */
+        z-index: 3; /* Ensure it's on top */
+        border: 1px solid rgba(255,255,255,0.3); /* Subtle white border */
+        box-shadow: 0px 0px 2px rgba(0, 0, 0, 0.5); /* Small shadow for pop */
     }
 
     .natural-indicator {
         position: absolute;
         bottom: 0px; /* Position at the bottom of the cell */
         right: 0px; /* Position at the right of the cell */
-        font-size: 0.6em; /* Smaller font for natural indicator */
+        font-size: 0.55em; /* Smaller font for natural indicator */
         color: #FFD700; /* Gold color for natural */
         font-weight: bold;
         line-height: 1; /* Remove extra line height */
@@ -600,7 +594,7 @@ if history_results:
     if current_col:
         columns.append(current_col)
 
-    MAX_DISPLAY_COLUMNS = 14 # Changed to 14 columns as requested (แนวนอน 14 แถว)
+    MAX_DISPLAY_COLUMNS = 12 # Changed to 12 columns as requested
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:] # Display only the last N columns for recent history
 
@@ -617,14 +611,9 @@ if history_results:
                 emoji_color_class = "player-circle" if cell_result == "P" else "banker-circle"
                 
                 tie_html = ""
-                # Only show tie count if it's > 0 AND it's the first cell in the column (or the cell where the tie was added)
-                # This simplified logic assumes ties are only counted on the P/B cell they attach to.
-                # If you want to show a separate tie symbol, you'd need more complex logic.
                 if tie_count > 0:
-                    tie_html = f"<div class='tie-line'></div>" # Draw a line for ties
-                    # If you want to show the count, you might need another element or combine:
-                    # tie_html += f"<span class='tie-count'>{tie_count}</span>"
-
+                    tie_html = f"<div class='tie-oval'>{tie_count}</div>"
+                
                 natural_indicator = ""
                 if natural_flag: # Assuming natural_flag is True/False
                     natural_indicator = f"<span class='natural-indicator'>N</span>"
@@ -633,7 +622,7 @@ if history_results:
                     f"<div class='big-road-circle {emoji_color_class}'>"
                     f"{natural_indicator}" # Natural indicator inside the circle
                     f"</div>"
-                    f"{tie_html}" # Tie line outside the circle but within the cell for layering
+                    f"{tie_html}" # Tie oval outside the circle but within the cell for layering
                 )
             
             big_road_html_parts.append(f"<div class='big-road-cell'>{cell_content}</div>")
