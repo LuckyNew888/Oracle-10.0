@@ -1,7 +1,6 @@
 from collections import Counter
 import random
-import streamlit as st # Import streamlit for caching
-# Removed import json as it's no longer needed for failed_pattern_instances serialization
+import streamlit as st
 
 # --- Helper Functions (outside OracleEngine class) ---
 def _get_pb_history(current_history):
@@ -56,12 +55,15 @@ def _build_big_road_data(full_history_list):
         if not current_column: # First entry or starting a new column
             current_column.append((main_outcome, ties, is_natural))
             last_main_outcome = main_outcome
-        elif main_outcome == last_main_outcome: # Continue current column
-            current_column.append((main_outcome, ties, is_natural))
-        else: # New main outcome, start a new column
-            big_road.append(current_column)
-            current_column = [(main_outcome, ties, is_natural)]
-            last_main_outcome = main_outcome
+        else:
+            # Check if the current outcome is different from the last main outcome
+            # This handles cases where a tie might have been inserted but the main outcome streak continues
+            if main_outcome != last_main_outcome:
+                big_road.append(current_column)
+                current_column = [(main_outcome, ties, is_natural)]
+                last_main_outcome = main_outcome
+            else: # Continue current column
+                current_column.append((main_outcome, ties, is_natural))
     
     if current_column: # Add the last column if not empty
         big_road.append(current_column)
@@ -70,7 +72,7 @@ def _build_big_road_data(full_history_list):
 
 
 @st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
-def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances):
+def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances, sequence_memory_stats):
     """
     Calculates the system's accuracy from historical predictions and tracks drawdown.
     This is a global cached function to improve performance.
@@ -103,7 +105,8 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         temp_sim_engine = OracleEngine(
             initial_pattern_stats=pattern_stats,
             initial_momentum_stats=momentum_stats,
-            initial_failed_pattern_instances=failed_pattern_instances
+            initial_failed_pattern_instances=failed_pattern_instances,
+            initial_sequence_memory_stats=sequence_memory_stats # Pass sequence memory for backtest
         )
         temp_sim_engine.history = simulated_history
 
@@ -133,16 +136,16 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
 
 
 class OracleEngine:
-    def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None):
+    def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None):
         self.history = []
         self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
         self.momentum_stats = initial_momentum_stats if initial_momentum_stats is not None else {}
-        # failed_pattern_instances keys are (pattern_name, sequence_snapshot_tuple)
         self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
+        # New: Memory-based Matching for short sequences
+        self.sequence_memory_stats = initial_sequence_memory_stats if initial_sequence_memory_stats is not None else {}
         
-        # Removed Firebase context attributes (self.db, self.user_id, self.room_id, self.app_id)
-
-        # Weighted Pattern Scoring: Define weights for each pattern and momentum
+        # Weighted Pattern Scoring: Define base weights for each pattern and momentum
+        # Actual contribution to confidence will be modulated by their success rate
         self.pattern_weights = {
             'Dragon': 1.0,
             'FollowStreak': 0.95,
@@ -151,11 +154,11 @@ class OracleEngine:
             'Triple-Cut': 0.8,
             'One-Two Pattern': 0.7,
             'Two-One Pattern': 0.7,
-            'Big Eye Boy (2D Simple - Follow)': 0.9, # High weight for following 2D trends
-            'Big Eye Boy (2D Simple - Break)': 0.8, # Slightly lower for breaking
+            'Big Eye Boy (2D Simple - Follow)': 0.9,
+            'Big Eye Boy (2D Simple - Break)': 0.8,
             'Small Road (2D Simple - Chop)': 0.75,
             'Cockroach Pig (2D Simple - Chop)': 0.7,
-            'Broken Pattern': 0.3, # Low weight for chaotic patterns
+            'Broken Pattern': 0.3,
         }
         self.momentum_weights = {
             'B3+ Momentum': 0.9,
@@ -164,8 +167,13 @@ class OracleEngine:
             'Ladder Momentum (1-2-3)': 0.7,
             'Ladder Momentum (X-Y-XX-Y)': 0.6,
         }
+        # Weights for sequence memory (can be adjusted)
+        self.sequence_weights = {
+            3: 0.6, # Weight for 3-bit sequences
+            4: 0.7, # Weight for 4-bit sequences
+            5: 0.8, # Weight for 5-bit sequences
+        }
 
-    # Removed set_firestore_context method
 
     # --- Data Management (for the Engine itself) ---
     def update_history(self, result_obj):
@@ -184,7 +192,7 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        # Removed Firestore save trigger
+        self.sequence_memory_stats = {} # Reset sequence memory too
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -192,16 +200,11 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        # Removed Firestore save trigger
+        self.sequence_memory_stats = {} # Reset sequence memory too
 
     def get_current_learning_states(self):
         """Returns the current learning states for caching purposes."""
-        # No longer need to serialize/deserialize keys for Firestore
-        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances
-
-    # Removed load_learning_states_from_firestore method
-    # Removed save_learning_states_to_firestore method
-
+        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances, self.sequence_memory_stats
 
     # --- 1. 🧬 DNA Pattern Analysis (Pattern Detection) ---
     def detect_patterns(self, current_history, big_road_data):
@@ -291,6 +294,22 @@ class OracleEngine:
 
 
         return patterns_detected
+
+    # --- 1.1 New: Memory-based Matching (for short sequences) ---
+    def _detect_sequences(self, current_history):
+        """
+        Detects short, exact sequences in the recent history (e.g., last 3, 4, 5 outcomes).
+        Returns a list of (sequence_length, sequence_tuple) tuples.
+        """
+        h = _get_pb_history(current_history)
+        detected_sequences = []
+
+        # Check for sequences of length 3, 4, 5
+        for length in [3, 4, 5]:
+            if len(h) >= length:
+                sequence = tuple(h[-length:])
+                detected_sequences.append((length, sequence))
+        return detected_sequences
 
     # --- 2. 🚀 Momentum Tracker (Momentum Detection) ---
     def detect_momentum(self, current_history, big_road_data):
@@ -385,10 +404,41 @@ class OracleEngine:
 
         return False
 
+    # --- New: Trend Analysis (Choppy Detector) ---
+    def is_choppy(self, current_history):
+        """
+        Detects if the current history exhibits choppy (rapidly alternating) behavior.
+        A high number of outcome changes in a short period.
+        """
+        h = _get_pb_history(current_history)
+        if len(h) < 10: # Need enough history to detect choppiness
+            return False
+
+        # Count changes in the last 10 P/B outcomes
+        changes = 0
+        for i in range(len(h) - min(len(h), 10), len(h) - 1):
+            if h[i] != h[i+1]:
+                changes += 1
+        
+        # If more than 70% of hands changed, it's choppy
+        if changes / min(len(h), 9) >= 0.7: # 9 possible changes in 10 hands
+            return True
+        
+        # Another indicator: many short streaks (length 1 or 2)
+        streaks = _get_streaks(h)
+        if len(streaks) >= 5: # Look at last 5 streaks
+            short_streaks = [s for s in streaks[-5:] if s[1] <= 2]
+            if len(short_streaks) >= 4: # 4 out of 5 streaks are short
+                return True
+
+        return False
+
+
     # --- 4. 🎯 Confidence Engine (2-Layer Confidence Score 0-100%) ---
     def confidence_score(self, current_history, big_road_data):
         """
         Calculates the system's confidence score for prediction (Layer 1: Pattern Stability).
+        This layer incorporates Weighted Pattern Scoring and Memory-based Matching.
         """
         pb_history_len = len(_get_pb_history(current_history))
         if pb_history_len < 10:
@@ -396,6 +446,7 @@ class OracleEngine:
 
         patterns = self.detect_patterns(current_history, big_road_data)
         momentum = self.detect_momentum(current_history, big_road_data)
+        sequences = self._detect_sequences(current_history) # New: Detected sequences
         
         score = 75 # Increased base confidence to be even more proactive
 
@@ -403,42 +454,59 @@ class OracleEngine:
         for p_name, p_snapshot in patterns:
             stats = self.pattern_stats.get(p_name, {'hits': 0, 'misses': 0})
             total = stats['hits'] + stats['misses']
-            weight = self.pattern_weights.get(p_name, 0.5) # Default weight if not defined
+            base_weight = self.pattern_weights.get(p_name, 0.5)
 
             if total > 0:
                 success_rate = stats['hits'] / total
-                score += success_rate * weight * 100 # Multiply by 100 to scale
+                # Dynamic weighting: higher success rate * higher base_weight = higher contribution
+                score += success_rate * base_weight * 100
             else: # If no data, still give a significant boost for detection
-                score += weight * 50 # Boost for new patterns, scaled by weight
+                score += base_weight * 50 # Boost for new patterns, scaled by base_weight
 
         for m_name, m_snapshot in momentum:
             stats = self.momentum_stats.get(m_name, {'hits': 0, 'misses': 0})
             total = stats['hits'] + stats['misses']
-            weight = self.momentum_weights.get(m_name, 0.5) # Default weight if not defined
+            base_weight = self.momentum_weights.get(m_name, 0.5)
 
             if total > 0:
                 success_rate = stats['hits'] / total
-                score += success_rate * weight * 80 # Multiply by 80 to scale
+                score += success_rate * base_weight * 80
             else: # If no data, still give a significant boost for detection
-                score += weight * 40 # Boost for new momentum, scaled by weight
+                score += base_weight * 40
+
+        # New: Incorporate Sequence Memory Stats into Confidence
+        for length, sequence_tuple in sequences:
+            seq_stats = self.sequence_memory_stats.get(sequence_tuple, {'hits': 0, 'misses': 0})
+            total_seq = seq_stats['hits'] + seq_stats['misses']
+            seq_weight = self.sequence_weights.get(length, 0.5) # Get weight based on sequence length
+
+            if total_seq > 0:
+                seq_success_rate = seq_stats['hits'] / total_seq
+                score += seq_success_rate * seq_weight * 70 # Scale contribution for sequences
+            else:
+                score += seq_weight * 30 # Boost for new sequences
 
         score = max(0, min(100, score))
         return int(score)
 
-    # --- 5. 🔁 Memory Logic (Remembering Failed Patterns) ---
+    # --- 5. 🔁 Memory Logic (Remembering Failed Patterns & Sequences) ---
     def _is_pattern_instance_failed(self, pattern_type, sequence_snapshot):
         """Checks if this specific pattern instance has previously led to a miss."""
-        # No longer need to convert key to string for lookup
         return self.failed_pattern_instances.get((pattern_type, sequence_snapshot), 0) > 0
 
+    def _is_sequence_failed(self, sequence_tuple):
+        """Checks if this specific sequence has previously led to a miss."""
+        return self.sequence_memory_stats.get(sequence_tuple, {}).get('misses', 0) > 0
 
-    def _update_learning(self, predicted_outcome, actual_outcome, patterns_detected, momentum_detected):
+
+    def _update_learning(self, predicted_outcome, actual_outcome, patterns_detected, momentum_detected, sequences_detected):
         """
-        Updates pattern/momentum success statistics and failed pattern instances.
+        Updates pattern/momentum/sequence success statistics and failed pattern instances.
         Called after each actual result is recorded.
         """
         is_hit = (predicted_outcome == actual_outcome)
 
+        # Update Pattern Stats
         for p_name, p_snapshot in patterns_detected:
             if p_name not in self.pattern_stats:
                 self.pattern_stats[p_name] = {'hits': 0, 'misses': 0}
@@ -449,6 +517,7 @@ class OracleEngine:
                 failed_key = (p_name, p_snapshot)
                 self.failed_pattern_instances[failed_key] = self.failed_pattern_instances.get(failed_key, 0) + 1
 
+        # Update Momentum Stats
         for m_name, m_snapshot in momentum_detected:
             if m_name not in self.momentum_stats:
                 self.momentum_stats[m_name] = {'hits': 0, 'misses': 0}
@@ -459,7 +528,15 @@ class OracleEngine:
                 failed_key = (m_name, m_snapshot)
                 self.failed_pattern_instances[failed_key] = self.failed_pattern_instances.get(failed_key, 0) + 1
         
-        # Removed Firestore save trigger (st.session_state.save_learning_trigger = True)
+        # Update Sequence Memory Stats
+        for length, sequence_tuple in sequences_detected:
+            if sequence_tuple not in self.sequence_memory_stats:
+                self.sequence_memory_stats[sequence_tuple] = {'hits': 0, 'misses': 0}
+            if is_hit:
+                self.sequence_memory_stats[sequence_tuple]['hits'] += 1
+            else:
+                self.sequence_memory_stats[sequence_tuple]['misses'] += 1
+
 
     # --- 6. 🧠 Adaptive Intuition Logic (Deep Logic when no clear Pattern) ---
     def intuition_predict(self, current_history):
@@ -552,7 +629,8 @@ class OracleEngine:
             self.history,
             self.pattern_stats,
             self.momentum_stats,
-            self.failed_pattern_instances
+            self.failed_pattern_instances,
+            self.sequence_memory_stats # Pass sequence memory for backtest
         )
 
         # --- Debugging Info for Developer View ---
@@ -561,7 +639,9 @@ class OracleEngine:
             "Big Road Columns (P/B only)": [[item[0] for item in col] for col in big_road_data],
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
-            "Is in Trap Zone": self.in_trap_zone(self.history),
+            "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)], # New debug info
+            "Is in Trap Zone (False Pattern)": self.in_trap_zone(self.history),
+            "Is Choppy (High Volatility)": self.is_choppy(self.history), # New debug info
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown']
         }
@@ -573,11 +653,11 @@ class OracleEngine:
 
         # --- Layer 2 Confidence: Early Exit Conditions (Risk Management) ---
 
-        # 1. Check Trap Zone (Avoid if truly dangerous)
+        # 1. Check Trap Zone (Avoid if truly dangerous or false pattern)
         if self.in_trap_zone(self.history):
-            risk_level = "Trap"
+            risk_level = "Trap / False Pattern"
             recommendation = "Avoid ❌"
-            decision_path.append(f"Decision: Trap Zone detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance.")
+            decision_path.append(f"Decision: Trap Zone / False Pattern detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance.")
             developer_view += "\n".join(decision_path)
             return {
                 "developer_view": developer_view,
@@ -586,10 +666,28 @@ class OracleEngine:
                 "risk": risk_level,
                 "recommendation": recommendation,
                 "active_patterns": [],
-                "active_momentum": []
+                "active_momentum": [],
+                "active_sequences": []
             }
 
-        # 2. Check Confidence Score (Layer 1) - Avoid if too low
+        # 2. Check Choppy (High Volatility) - Avoid if too unpredictable
+        if self.is_choppy(self.history):
+            risk_level = "High Volatility (Choppy)"
+            recommendation = "Avoid ❌"
+            decision_path.append(f"Decision: Choppy behavior detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance.")
+            developer_view += "\n".join(decision_path)
+            return {
+                "developer_view": developer_view,
+                "prediction": prediction_result,
+                "accuracy": backtest_stats['accuracy_percent'],
+                "risk": risk_level,
+                "recommendation": recommendation,
+                "active_patterns": [],
+                "active_momentum": [],
+                "active_sequences": []
+            }
+
+        # 3. Check Confidence Score (Layer 1) - Avoid if too low
         score = self.confidence_score(self.history, big_road_data)
         if score < 50: # Keep threshold at 50 for initial 'Play' consideration
             recommendation = "Avoid ❌"
@@ -603,12 +701,13 @@ class OracleEngine:
                 "risk": risk_level,
                 "recommendation": recommendation,
                 "active_patterns": [],
-                "active_momentum": []
+                "active_momentum": [],
+                "active_sequences": []
             }
 
-        # 3. Check Drawdown (Avoid if too many consecutive misses)
+        # 4. Check Drawdown (Avoid if too many consecutive misses)
         if backtest_stats['max_drawdown'] >= 3:
-            risk_level = "High Drawdown"
+            risk_level = "High Drawdown (Break Pattern)"
             recommendation = "Avoid ❌"
             decision_path.append(f"Decision: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Recommending avoidance.")
             developer_view += "\n".join(decision_path)
@@ -619,15 +718,18 @@ class OracleEngine:
                 "risk": risk_level,
                 "recommendation": recommendation,
                 "active_patterns": [],
-                "active_momentum": []
+                "active_momentum": [],
+                "active_sequences": []
             }
 
         # --- Primary Prediction Logic ---
         patterns = self.detect_patterns(self.history, big_road_data)
         momentum = self.detect_momentum(self.history, big_road_data)
+        sequences = self._detect_sequences(self.history) # New: Detected sequences
 
         active_patterns_for_learning = []
         active_momentum_for_learning = []
+        active_sequences_for_learning = [] # New: For learning update
 
         predicted_by_rule = False
         prediction_source_detail = ""
@@ -735,10 +837,56 @@ class OracleEngine:
             if not predicted_by_rule:
                 decision_path.append(f"  - Momentum detected but no prediction made (or all instances failed). Raw momentum: {[m[0] for m in momentum]}")
 
+        # If no prediction from patterns or momentum, try memory-based sequences
+        if not predicted_by_rule and sequences:
+            decision_path.append("Evaluating Memory-based Sequences:")
+            # Prioritize longer, more accurate sequences
+            sequences.sort(key=lambda x: (x[0], self.sequence_memory_stats.get(x[1], {'hits':0, 'misses':0}).get('hits',0)), reverse=True)
+            
+            for length, sequence_tuple in sequences:
+                active_sequences_for_learning.append((length, sequence_tuple))
+                seq_stats = self.sequence_memory_stats.get(sequence_tuple, {'hits': 0, 'misses': 0})
+                total_seq = seq_stats['hits'] + seq_stats['misses']
 
-        # --- Intuition Logic (Used when no clear Primary Pattern or Momentum) ---
+                if total_seq > 0 and seq_stats['hits'] / total_seq < 0.6: # Only use if success rate is decent
+                    decision_path.append(f"  - Sequence {sequence_tuple} has low success rate ({seq_stats['hits']}/{total_seq}). Skipping.")
+                    continue
+                
+                # Predict the outcome that historically follows this sequence
+                # This requires storing the next outcome with the sequence, or inferring from pattern.
+                # For simplicity, we'll assume the sequence itself implies the next outcome based on its last char
+                # and if it implies a continuation or alternation.
+                # A more advanced model would store (sequence, next_outcome_stats)
+                
+                # For now, if a sequence is detected and has a good success rate,
+                # we can infer the next outcome based on common patterns it might represent.
+                # E.g., if sequence is (P,B,P) and has high success, next is B (pingpong)
+                # If (B,B,B) and high success, next is B (dragon)
+                # This is an intuition layer for sequences.
+                
+                # Let's use the last element of the sequence and assume continuation if it's a streak,
+                # or alternation if it's a pingpong-like sequence.
+                # This is a basic heuristic for sequence prediction.
+                if len(sequence_tuple) >= 2 and sequence_tuple[-1] == sequence_tuple[-2]: # Last two are same, implies streak
+                    prediction_result = sequence_tuple[-1] # Predict continuation
+                    prediction_source_detail = f"Sequence: {sequence_tuple}. Predicting continuation ({prediction_result})."
+                    predicted_by_rule = True
+                    decision_path.append(f"  - Matched Sequence {sequence_tuple}. {prediction_source_detail}")
+                    break
+                elif len(sequence_tuple) >= 2 and sequence_tuple[-1] != sequence_tuple[-2]: # Last two are different, implies alternation
+                    prediction_result = 'P' if sequence_tuple[-1] == 'B' else 'B' # Predict alternation
+                    prediction_source_detail = f"Sequence: {sequence_tuple}. Predicting alternation ({prediction_result})."
+                    predicted_by_rule = True
+                    decision_path.append(f"  - Matched Sequence {sequence_tuple}. {prediction_source_detail}")
+                    break
+            
+            if not predicted_by_rule:
+                decision_path.append(f"  - Sequences detected but no prediction made (or all instances failed/low success). Raw sequences: {sequences}")
+
+
+        # --- Intuition Logic (Used when no clear Primary Pattern or Momentum or Sequence) ---
         if not predicted_by_rule:
-            decision_path.append("Applying Intuition Logic (No strong patterns/momentum):")
+            decision_path.append("Applying Intuition Logic (No strong patterns/momentum/sequences):")
             intuitive_guess = self.intuition_predict(self.history)
             if intuitive_guess == 'T':
                 prediction_result = 'T'
@@ -767,7 +915,8 @@ class OracleEngine:
             "risk": risk_level,
             "recommendation": recommendation,
             "active_patterns": active_patterns_for_learning,
-            "active_momentum": active_momentum_for_learning
+            "active_momentum": active_momentum_for_learning,
+            "active_sequences": active_sequences_for_learning # New: Return active sequences
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
@@ -786,15 +935,26 @@ class OracleEngine:
             recommendation = "Avoid ❌"
             return {"prediction": prediction_result, "recommendation": recommendation}
 
+        if self.is_choppy(self.history): # New: Choppy check for backtest
+            recommendation = "Avoid ❌"
+            return {"prediction": prediction_result, "recommendation": recommendation}
+
         score = self.confidence_score(self.history, big_road_data)
         if score < 50:
             recommendation = "Avoid ❌"
             return {"prediction": prediction_result, "recommendation": recommendation}
         
+        # Backtest also needs to check drawdown, but _cached_backtest_accuracy already does this
+        # for the main predict_next. For this simplified version, we assume the main loop
+        # will handle the drawdown check.
+
         patterns = self.detect_patterns(self.history, big_road_data)
         momentum = self.detect_momentum(self.history, big_road_data)
+        sequences = self._detect_sequences(self.history) # New: Detected sequences for backtest
 
         predicted_by_rule_for_backtest = False
+
+        # Prioritize patterns for backtest prediction
         if patterns:
             for p_name, p_snapshot in patterns:
                 if self._is_pattern_instance_failed(p_name, p_snapshot):
@@ -832,7 +992,7 @@ class OracleEngine:
                     predicted_by_rule_for_backtest = True
                     break
 
-
+        # If no prediction from patterns, try momentum for backtest
         if not predicted_by_rule_for_backtest and momentum:
             for m_name, m_snapshot in momentum:
                 if self._is_pattern_instance_failed(m_name, m_snapshot):
@@ -858,12 +1018,31 @@ class OracleEngine:
                             prediction_result = prev_streak[0]
                             predicted_by_rule_for_backtest = True
                             break
+        
+        # If no prediction from patterns or momentum, try memory-based sequences for backtest
+        if not predicted_by_rule_for_backtest and sequences:
+            sequences.sort(key=lambda x: (x[0], self.sequence_memory_stats.get(x[1], {'hits':0, 'misses':0}).get('hits',0)), reverse=True)
+            for length, sequence_tuple in sequences:
+                seq_stats = self.sequence_memory_stats.get(sequence_tuple, {'hits': 0, 'misses': 0})
+                total_seq = seq_stats['hits'] + seq_stats['misses']
+                if total_seq > 0 and seq_stats['hits'] / total_seq < 0.6:
+                    continue
 
+                if len(sequence_tuple) >= 2 and sequence_tuple[-1] == sequence_tuple[-2]:
+                    prediction_result = sequence_tuple[-1]
+                    predicted_by_rule_for_backtest = True
+                    break
+                elif len(sequence_tuple) >= 2 and sequence_tuple[-1] != sequence_tuple[-2]:
+                    prediction_result = 'P' if sequence_tuple[-1] == 'B' else 'B'
+                    predicted_by_rule_for_backtest = True
+                    break
+
+        # If still no prediction, use intuition logic for backtest
         if not predicted_by_rule_for_backtest:
             intuitive_guess = self.intuition_predict(self.history)
             if intuitive_guess in ['P', 'B', 'T']:
                 prediction_result = intuitive_guess
             else:
-                recommendation = "Avoid ❌"
-        
+                recommendation = "Avoid ❌" # If intuition can't give a strong P/B/T, avoid
+
         return {"prediction": prediction_result, "recommendation": recommendation}
