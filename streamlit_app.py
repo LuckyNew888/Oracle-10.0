@@ -212,6 +212,9 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
+if "last_prediction_data" not in st.session_state: # New: Store last prediction data
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
+
 
 # --- Callback Functions for History and Betting Management ---
 def remove_last_from_history():
@@ -226,17 +229,16 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.bet_log = []
     st.session_state.oracle_engine.reset_history() # Resets all learning states
     _cached_backtest_accuracy.clear()
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
 
 
-def record_bet_result(actual_result, current_prediction_data):
-    # Simplified logic: no money management, just record the outcome and update learning
-    
-    # Extract predicted_side and recommendation_status from current_prediction_data
-    predicted_side = current_prediction_data['prediction'] if current_prediction_data and 'prediction' in current_prediction_data else '?'
-    recommendation_status = current_prediction_data['recommendation'] if current_prediction_data and 'recommendation' in current_prediction_data else "Avoid ❌"
+def record_bet_result(actual_result): # Simplified signature
+    # Retrieve predicted_side and recommendation_status from session state
+    predicted_side = st.session_state.last_prediction_data['prediction']
+    recommendation_status = st.session_state.last_prediction_data['recommendation']
     
     outcome_status = "Recorded" # Default outcome status for log
-
+    
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "Predict": predicted_side,
@@ -292,23 +294,23 @@ if len(st.session_state.history) < 20:
     st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(st.session_state.history)}** ตา)")
 
 st.markdown("#### 🔮 ทำนายตาถัดไป:")
-prediction_data = None
+prediction_data = None # Initialize for the current run
 next_pred_side = '?'
 conf = 0
-recommendation_status = "—" # Initialize recommendation status
-current_drawdown_display = 0 # Initialize for display
-
-engine = st.session_state.oracle_engine
-engine.history = st.session_state.history
+recommendation_status = "—"
+current_drawdown_display = 0
 
 if len(engine.history) >= 20:
-    prediction_data = engine.predict_next()
+    prediction_data = engine.predict_next() # Calculate prediction for current state
 
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
         next_pred_side = prediction_data['prediction']
         conf = engine.confidence_score(engine.history, _build_big_road_data(engine.history))
-        recommendation_status = prediction_data['recommendation'] # Get the recommendation status
-        current_drawdown_display = prediction_data['current_drawdown'] # Get current drawdown
+        recommendation_status = prediction_data['recommendation']
+        current_drawdown_display = prediction_data['current_drawdown']
+
+        # Store the current prediction data in session state for the next button click
+        st.session_state.last_prediction_data = prediction_data
 
         emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
 
@@ -344,8 +346,13 @@ if len(engine.history) >= 20:
     else:
         st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
+        # Ensure last_prediction_data is reset if there's an error or no prediction
+        st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
 else:
     st.markdown("— (ประวัติไม่ครบ)")
+    # Ensure last_prediction_data is reset if history is insufficient
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
+
 
 # --- Big Road Display ---
 st.markdown("<b>🛣️ Big Road:</b>", unsafe_allow_html=True)
@@ -401,16 +408,17 @@ else:
 
 col_p_b_t = st.columns(3)
 
-# Use static keys for buttons to prevent "mixed up" issue
+# Use on_click and pass only the actual result.
+# predicted_side and recommendation_status will be retrieved from st.session_state.last_prediction_data
 with col_p_b_t[0]:
-    if st.button(f"บันทึก: 🔵 P", key="record_P", use_container_width=True):
-        record_bet_result('P', prediction_data) # Pass actual result and current prediction_data
+    if st.button(f"บันทึก: 🔵 P", key="record_P", use_container_width=True, on_click=record_bet_result, args=('P',)):
+        pass # Action handled by on_click
 with col_p_b_t[1]:
-    if st.button(f"บันทึก: 🔴 B", key="record_B", use_container_width=True):
-        record_bet_result('B', prediction_data) # Pass actual result and current prediction_data
+    if st.button(f"บันทึก: 🔴 B", key="record_B", use_container_width=True, on_click=record_bet_result, args=('B',)):
+        pass # Action handled by on_click
 with col_p_b_t[2]:
-    if st.button(f"บันทึก: 🟢 T", key="record_T", use_container_width=True):
-        record_bet_result('T', prediction_data) # Pass actual result and current prediction_data
+    if st.button(f"บันทึก: 🟢 T", key="record_T", use_container_width=True, on_click=record_bet_result, args=('T',)):
+        pass # Action handled by on_click
 
 
 col_hist1, col_hist2 = st.columns(2)
