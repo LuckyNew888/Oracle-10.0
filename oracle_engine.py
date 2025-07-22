@@ -712,11 +712,11 @@ class OracleEngine:
             }
 
         # 3. Check Confidence Score (Layer 1) - Avoid if too low
-        score = self.confidence_score(self.history, big_road_data)
-        if score < 50: # Keep threshold at 50 for initial 'Play' consideration
+        # Changed threshold from 50 to 60
+        if score < 60: 
             recommendation = "Avoid ❌"
             risk_level = "Low Confidence"
-            decision_path.append(f"Decision: Confidence Score (Layer 1: {score}%) is below threshold (50%). Recommending avoidance.")
+            decision_path.append(f"Decision: Confidence Score (Layer 1: {score}%) is below threshold (60%). Recommending avoidance.")
             developer_view += "\n".join(decision_path)
             return {
                 "developer_view": developer_view,
@@ -960,7 +960,8 @@ class OracleEngine:
             return {"prediction": prediction_result, "recommendation": recommendation}
 
         score = self.confidence_score(self.history, big_road_data)
-        if score < 50:
+        # Changed threshold from 50 to 60 for backtest prediction as well
+        if score < 60:
             recommendation = "Avoid ❌"
             return {"prediction": prediction_result, "recommendation": recommendation}
         
