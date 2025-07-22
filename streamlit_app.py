@@ -277,12 +277,9 @@ def remove_last_from_history():
     """Removes the last result from the session history and resets money management state."""
     if st.session_state.history:
         st.session_state.history.pop()
-        # Also notify the cached engine to remove its last history item
-        # The engine's history attribute is a reference to st.session_state.history,
-        # so popping from st.session_state.history already affects engine.history.
-        # However, we need to explicitly tell the engine to reset its internal learning states
-        # which are not tied to the history list reference.
-        st.session_state.oracle_engine.reset_learning_states_on_undo() # New method in OracleEngine
+        # Notify the cached engine to clear its backtest cache and reset learning states
+        st.session_state.oracle_engine.clear_cache()
+        st.session_state.oracle_engine.reset_learning_states_on_undo()
     # Reset money management states on history removal (optional, but good for consistency)
     reset_money_management_state_on_undo()
 
@@ -292,7 +289,7 @@ def reset_all_history():
     st.session_state.money_balance = 1000.0
     st.session_state.bet_log = []
     # When resetting all history, we should also reset the cached OracleEngine's internal states
-    st.session_state.oracle_engine.reset_history() # This resets history, pattern_stats, etc.
+    st.session_state.oracle_engine.reset_history() # This resets history, pattern_stats, etc. and clears cache
     reset_money_management_state() # Reset all money management states
 
 def reset_money_management_state():
@@ -440,6 +437,9 @@ def record_bet_result(predicted_side, actual_result):
             patterns_detected=patterns_before,
             momentum_detected=momentum_before
         )
+    
+    # Clear the cache for backtest_accuracy after history changes, so it recalculates on next run
+    st.session_state.oracle_engine.clear_cache()
 
 
 # Load and update Engine
@@ -603,7 +603,9 @@ if len(engine.history) >= 20:
             st.write("--- Failed Pattern Instances ---")
             st.write(engine.failed_pattern_instances)
             st.write("--- Backtest Results ---")
-            st.write(engine.backtest_accuracy()) # Display full backtest results
+            backtest_summary = engine.backtest_accuracy()
+            st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
+            st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
     else:
         st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
