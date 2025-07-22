@@ -90,7 +90,7 @@ st.markdown("""
         border-radius: 8px;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        min-height: 180px;
+        min-height: 180px; /* Still maintain a min-height for visual consistency */
         align-items: flex-start;
         border: 1px solid #333;
     }
@@ -183,7 +183,7 @@ if "oracle_engine" not in st.session_state:
 if not hasattr(st.session_state.oracle_engine, '_detect_sequences'):
     st.session_state.oracle_engine = OracleEngine()
     st.session_state.oracle_engine.reset_history() # Reset all learning states
-    st.warning("Detected an outdated OracleEngine instance (missing _detect_sequences method). Re-initializing the AI engine. History and learning stats have been reset.")
+    # st.warning("Detected an outdated OracleEngine instance (missing _detect_sequences method). Re-initializing the AI engine. History and learning stats have been reset.") # Removed this warning
     # No need for individual attribute checks below if we just re-initialized the whole engine.
     # The new OracleEngine() instance will have all the latest attributes.
 else:
@@ -611,18 +611,11 @@ history_results = st.session_state.history
 big_road_display_data = _build_big_road_data(history_results)
 
 if big_road_display_data:
-    # Calculate max_row dynamically based on the tallest column, with a reasonable cap
-    max_row = 6 # Default minimum rows to display
-    if big_road_display_data:
-        # Get the maximum height among all columns
-        max_row = max(max_row, max(len(col) for col in big_road_display_data))
+    max_row_display = 6 # Fixed to 6 rows as requested for vertical display
     
-    # Ensure a reasonable upper limit for display, e.g., 15-20 rows, to prevent excessively tall columns
-    max_row = min(max_row, 15) # Cap at 15 rows for display purposes, adjust as needed.
-
     columns = big_road_display_data
 
-    MAX_DISPLAY_COLUMNS = 12
+    MAX_DISPLAY_COLUMNS = 12 # Still limit horizontal display to 12 columns
     if len(columns) > MAX_DISPLAY_COLUMNS:
         columns = columns[-MAX_DISPLAY_COLUMNS:]
 
@@ -630,9 +623,11 @@ if big_road_display_data:
     big_road_html_parts.append(f"<div class='big-road-container' id='big-road-container-unique'>")
     for col in columns:
         big_road_html_parts.append("<div class='big-road-column'>")
-        for row_idx in range(max_row): # This loop will now go up to the tallest column's height
+        # Loop through fixed 6 rows
+        for row_idx in range(max_row_display): 
             cell_content = ""
-            if row_idx < len(col):
+            # Check if there's data for this cell in the current column
+            if row_idx < len(col) and col[row_idx] is not None:
                 cell_result, tie_count, natural_flag = col[row_idx]
                 emoji_color_class = "player-circle" if cell_result == "P" else "banker-circle"
                 
