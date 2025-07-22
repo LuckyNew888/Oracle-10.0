@@ -336,7 +336,8 @@ def record_bet_result(predicted_side, actual_result):
         
     else: # Miss (Loss for P/B/T bets)
         win_loss = -bet_amt_for_log
-        st.session_state.money_balance -= bet_amt_for_log
+        # Ensure money_balance doesn't go below 0.0
+        st.session_state.money_balance = max(0.0, st.session_state.money_balance - bet_amt_for_log)
 
         # Advance money management system on loss
         if current_system == "Martingale":
