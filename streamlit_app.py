@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import math # สำหรับฟังก์ชัน floor ใน Fibonacci
-from oracle_engine import OracleEngine, _cached_backtest_accuracy # Import OracleEngine and the global cached function
+import math # For floor function in Fibonacci
+from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data # Import new helper
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
@@ -161,93 +161,77 @@ st.markdown("""
 st.markdown('<div class="custom-title">🔮 Oracle AI</div>', unsafe_allow_html=True)
 
 # --- OracleEngine Caching ---
-# Use st.cache_resource to cache the OracleEngine instance
-# This ensures the engine and its internal states (pattern_stats, momentum_stats, etc.)
-# are initialized only once and persist across reruns.
-@st.cache_resource(ttl=None) # ttl=None means it persists indefinitely unless app restarts
+@st.cache_resource(ttl=None)
 def get_oracle_engine():
     return OracleEngine()
 
-# Initialize the engine in session state if not already present
-# This will call get_oracle_engine() only once.
 if "oracle_engine" not in st.session_state:
     st.session_state.oracle_engine = get_oracle_engine()
 
 # --- Session State Initialization (other variables) ---
 if "history" not in st.session_state:
-    # History will now store list of dicts:
-    # {'main_outcome': 'P'/'B'/'T', 'ties': int, 'is_any_natural': bool}
     st.session_state.history = []
 if "money_balance" not in st.session_state:
     st.session_state.money_balance = 1000.0
 if "bet_amount" not in st.session_state:
-    st.session_state.bet_amount = 100.0 # Initial default bet amount
+    st.session_state.bet_amount = 100.0
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
 
-
 # --- Session State for Money Management Systems ---
 if "money_management_system" not in st.session_state:
-    st.session_state.money_management_system = "Fixed Bet" # Default system
+    st.session_state.money_management_system = "Fixed Bet"
 
-# Martingale State
 if "martingale_current_step" not in st.session_state:
-    st.session_state.martingale_current_step = 0 # 0 = starting bet
+    st.session_state.martingale_current_step = 0
 if "martingale_base_bet" not in st.session_state:
-    st.session_state.martingale_base_bet = 100.0 # Default starting bet
-if "martingale_multiplier" not in st.session_state: # Initialize multiplier
+    st.session_state.martingale_base_bet = 100.0
+if "martingale_multiplier" not in st.session_state:
     st.session_state.martingale_multiplier = 2.0
-if "martingale_max_steps" not in st.session_state: # Initialize max steps
+if "martingale_max_steps" not in st.session_state:
     st.session_state.martingale_max_steps = 5
 
-# Fibonacci State
 if "fibonacci_sequence" not in st.session_state:
-    # Standard Fibonacci sequence (indexed from 0)
     st.session_state.fibonacci_sequence = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181]
 if "fibonacci_current_index" not in st.session_state:
-    st.session_state.fibonacci_current_index = 1 # Start with 1 unit (index 1)
+    st.session_state.fibonacci_current_index = 1
 if "fibonacci_unit_bet" not in st.session_state:
-    st.session_state.fibonacci_unit_bet = 100.0 # Default unit bet
-if "fibonacci_max_steps_input" not in st.session_state: # Initialize max steps input
+    st.session_state.fibonacci_unit_bet = 100.0
+if "fibonacci_max_steps_input" not in st.session_state:
     st.session_state.fibonacci_max_steps_input = len(st.session_state.fibonacci_sequence) - 1
 
-# Labouchere State
 if "labouchere_original_sequence" not in st.session_state:
-    st.session_state.labouchere_original_sequence = [1.0, 2.0, 3.0, 4.0] # Default sequence
+    st.session_state.labouchere_original_sequence = [1.0, 2.0, 3.0, 4.0]
 if "labouchere_current_sequence" not in st.session_state:
     st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
 if "labouchere_unit_bet" not in st.session_state:
-    st.session_state.labouchere_unit_bet = 100.0 # Default unit bet
+    st.session_state.labouchere_unit_bet = 100.0
 
 # --- Function to Calculate Next Bet Amount ---
 def calculate_next_bet():
-    """Calculates the next bet amount based on the selected money management system."""
     system = st.session_state.money_management_system
 
     if system == "Fixed Bet":
         return st.session_state.bet_amount
 
     elif system == "Martingale":
-        # Calculate current bet based on step and base bet
         current_bet_multiplier = st.session_state.martingale_multiplier ** st.session_state.martingale_current_step
         next_bet = st.session_state.martingale_base_bet * current_bet_multiplier
 
-        # Check against Max Martingale Steps
         if st.session_state.martingale_current_step >= st.session_state.martingale_max_steps:
             st.warning(f"Martingale ถึงไม้สูงสุด ({st.session_state.martingale_max_steps}) แล้ว! จะใช้เงินเดิมพันฐาน.")
-            return st.session_state.martingale_base_bet # Revert to base bet if max steps reached
+            return st.session_state.martingale_base_bet
 
         return next_bet
 
     elif system == "Fibonacci":
         fib_seq = st.session_state.fibonacci_sequence
         current_idx = st.session_state.fibonacci_current_index
-        max_steps = st.session_state.fibonacci_max_steps_input # Use value from input
+        max_steps = st.session_state.fibonacci_max_steps_input
 
-        # Ensure index is within bounds of defined sequence
         if current_idx >= len(fib_seq) or current_idx > max_steps:
             st.warning(f"Fibonacci ถึงไม้สูงสุด ({max_steps}) หรือเกินลำดับแล้ว! จะใช้เงินเดิมพันหน่วย.")
-            return st.session_state.fibonacci_unit_bet # Revert to unit bet
+            return st.session_state.fibonacci_unit_bet
 
         next_bet = fib_seq[current_idx] * st.session_state.fibonacci_unit_bet
         return next_bet
@@ -256,12 +240,12 @@ def calculate_next_bet():
         current_seq = st.session_state.labouchere_current_sequence
         unit_bet = st.session_state.labouchere_unit_bet
 
-        if not current_seq: # Sequence is empty, means target achieved
+        if not current_seq:
             st.success("Labouchere: ลำดับครบเป้าหมายแล้ว! กำลังรีเซ็ตลำดับ.")
             st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
-            if not st.session_state.labouchere_current_sequence: # If original sequence is also empty, fallback
-                return unit_bet # Fallback if original sequence is empty
-            current_seq = st.session_state.labouchere_current_sequence # Update current_seq after reset
+            if not st.session_state.labouchere_current_sequence:
+                return unit_bet
+            current_seq = st.session_state.labouchere_current_sequence
 
         if len(current_seq) == 1:
             next_bet = current_seq[0] * unit_bet
@@ -270,43 +254,30 @@ def calculate_next_bet():
 
         return next_bet
 
-    return st.session_state.bet_amount # Fallback
+    return st.session_state.bet_amount
 
 # --- Callback Functions for History and Betting Management ---
 def remove_last_from_history():
-    """Removes the last result from the session history and resets money management state."""
     if st.session_state.history:
         st.session_state.history.pop()
-        # Notify the cached engine to clear its backtest cache and reset learning states
-        _cached_backtest_accuracy.clear() # Clear the global cache
+        _cached_backtest_accuracy.clear()
         st.session_state.oracle_engine.reset_learning_states_on_undo()
-    # Reset money management states on history removal (optional, but good for consistency)
     reset_money_management_state_on_undo()
 
 def reset_all_history():
-    """Resets all history, money balance, bet log, and creates a new OracleEngine instance."""
     st.session_state.history = []
     st.session_state.money_balance = 1000.0
     st.session_state.bet_log = []
-    # When resetting all history, we should also reset the cached OracleEngine's internal states
-    st.session_state.oracle_engine.reset_history() # This resets history, pattern_stats, etc.
-    _cached_backtest_accuracy.clear() # Clear the global cache
-    reset_money_management_state() # Reset all money management states
+    st.session_state.oracle_engine.reset_history()
+    _cached_backtest_accuracy.clear()
+    reset_money_management_state()
 
 def reset_money_management_state():
-    """Resets the state of all money management systems to their initial values."""
-    # Martingale
     st.session_state.martingale_current_step = 0
-    # Fibonacci
     st.session_state.fibonacci_current_index = 1
-    # Labouchere
     st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
 
 def reset_money_management_state_on_undo():
-    """
-    Resets the current money management system's state to its base.
-    A true undo would require storing the state *before* each bet.
-    """
     if st.session_state.money_management_system == "Martingale":
         st.session_state.martingale_current_step = 0
     elif st.session_state.money_management_system == "Fibonacci":
@@ -316,45 +287,35 @@ def reset_money_management_state_on_undo():
 
 
 def record_bet_result(predicted_side, actual_result):
-    """
-    Records the bet result, updates balance, and adjusts money management system state.
-    Also updates the history with structured data for Big Road and notifies the engine.
-    """
-    bet_amt_for_log = st.session_state.bet_amount_calculated # Use the calculated bet amount for the log
+    bet_amt_for_log = st.session_state.bet_amount_calculated
     win_loss = 0.0
     outcome = "Miss"
 
     current_system = st.session_state.money_management_system
 
-    # --- Calculate money in/out (based on actual result) ---
-    # Money in/out is always calculated if a result is recorded (even if Avoid or no prediction)
-    # But actual deduction/addition to balance only happens if "Play" was recommended.
-    if predicted_side in ['P', 'B', 'T']: # If there was a prediction and recommended to Play
+    if predicted_side in ['P', 'B', 'T']:
         if predicted_side == actual_result:
             outcome = "Hit"
             if actual_result == 'P':
                 win_loss = bet_amt_for_log
             elif actual_result == 'B':
-                win_loss = bet_amt_for_log * 0.95 # Banker deduction
+                win_loss = bet_amt_for_log * 0.95
             elif actual_result == 'T':
-                win_loss = bet_amt_for_log * 8.0 # Tie payout
+                win_loss = bet_amt_for_log * 8.0
             st.session_state.money_balance += win_loss
-        else: # Loss
+        else:
             win_loss = -bet_amt_for_log
             st.session_state.money_balance -= bet_amt_for_log
-    else: # If predicted_side was '?' (no prediction) or 'Avoid' - no actual bet was placed for system
+    else:
         win_loss = 0.0
-        outcome = "Avoided" # Or "No Bet"
-        # If recording a result for 'Avoid' or '?', money management state is not updated.
+        outcome = "Avoided"
 
-    # --- Update Money Management System State (only when "Play" was recommended) ---
-    if predicted_side in ['P', 'B', 'T']: # If there was a prediction and recommended to Play
+    if predicted_side in ['P', 'B', 'T']:
         if current_system == "Martingale":
-            if predicted_side == actual_result: # Win
-                st.session_state.martingale_current_step = 0 # Reset step
-            else: # Loss
+            if predicted_side == actual_result:
+                st.session_state.martingale_current_step = 0
+            else:
                 st.session_state.martingale_current_step += 1
-                # Ensure not to exceed max steps
                 if st.session_state.martingale_current_step > st.session_state.martingale_max_steps:
                     st.session_state.martingale_current_step = st.session_state.martingale_max_steps
 
@@ -362,36 +323,30 @@ def record_bet_result(predicted_side, actual_result):
             fib_seq = st.session_state.fibonacci_sequence
             current_idx = st.session_state.fibonacci_current_index
 
-            if predicted_side == actual_result: # Win
-                st.session_state.fibonacci_current_index = 1 # Reset to start of sequence after a win
-            else: # Loss
-                # Move to next step
+            if predicted_side == actual_result:
+                st.session_state.fibonacci_current_index = 1
+            else:
                 st.session_state.fibonacci_current_index += 1
-                # Ensure not to exceed max steps or sequence length
                 max_steps = st.session_state.fibonacci_max_steps_input
                 if st.session_state.fibonacci_current_index >= len(fib_seq) or st.session_state.fibonacci_current_index > max_steps:
-                    st.session_state.fibonacci_current_index = max_steps # Cap at max_steps or end of defined sequence
+                    st.session_state.fibonacci_current_index = max_steps
 
         elif current_system == "Labouchere":
             current_seq = st.session_state.labouchere_current_sequence
 
-            # Only modify sequence if it's not empty before this bet
             if current_seq:
-                if predicted_side == actual_result: # Win
-                    if len(current_seq) <= 2: # If 1 or 2 numbers left, sequence becomes empty
+                if predicted_side == actual_result:
+                    if len(current_seq) <= 2:
                         st.session_state.labouchere_current_sequence = []
                     else:
-                        # Remove first and last element
                         st.session_state.labouchere_current_sequence = current_seq[1:-1]
-                else: # Loss
-                    # Add the bet amount (converted to unit) to the end of the sequence
-                    # bet_amt_for_log / st.session_state.labouchere_unit_bet gives the 'unit' value
+                else:
                     if st.session_state.labouchere_unit_bet > 0:
                         st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
-                    else: # Prevent division by zero, just add a 1 unit
+                    else:
                         st.session_state.labouchere_current_sequence.append(1.0)
-            else: # Sequence was already empty (completed last round) - treat as a new round for next calculation
-                st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy() # Reset for new round
+            else:
+                st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
 
 
     st.session_state.bet_log.append({
@@ -404,8 +359,6 @@ def record_bet_result(predicted_side, actual_result):
         "Outcome": outcome
     })
 
-    # --- Update history with structured data for Big Road ---
-    # If the actual result is a Tie, we increment the tie count of the last P/B result
     if actual_result == 'T':
         found_pb_for_tie = False
         for i in reversed(range(len(st.session_state.history))):
@@ -413,24 +366,17 @@ def record_bet_result(predicted_side, actual_result):
                 st.session_state.history[i]['ties'] += 1
                 found_pb_for_tie = True
                 break
-        if not found_pb_for_tie: # If history is empty or only ties, add a new tie entry
-            # If a tie is the very first result, or follows only ties, we still record it
+        if not found_pb_for_tie:
             st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
-    else: # For P or B results, add a new entry
+    else:
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
-    # --- Notify OracleEngine to update its learning based on the last prediction and actual result ---
-    # To correctly update learning, we need the state of patterns/momentum *before* the current actual result.
-    # This implies running detect_patterns/momentum on history *before* the current result.
-    
-    # Get the history slice *before* the current result was added
     history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
+    big_road_data_before = _build_big_road_data(history_before_current_result)
+    
+    patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result, big_road_data_before)
+    momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result, big_road_data_before)
 
-    # Use the main engine instance (cached) to detect patterns/momentum on the sliced history
-    patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result)
-    momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result)
-
-    # Only update learning if a prediction was made (i.e., not '?' or 'Avoid')
     if predicted_side in ['P', 'B', 'T']:
         st.session_state.oracle_engine._update_learning(
             predicted_outcome=predicted_side,
@@ -439,146 +385,128 @@ def record_bet_result(predicted_side, actual_result):
             momentum_detected=momentum_before
         )
     
-    # Clear the cache for backtest_accuracy after history changes, so it recalculates on next run
     _cached_backtest_accuracy.clear()
 
 
-# Load and update Engine
 engine = st.session_state.oracle_engine
-# The engine's history attribute is a reference to st.session_state.history.
-# So, modifications to st.session_state.history (like .append(), .pop())
-# are automatically reflected in engine.history.
-# We just need to ensure the engine's internal learning states are managed correctly.
-# No explicit `engine.history = st.session_state.history` assignment is strictly needed here
-# if it's already a reference, but keeping it doesn't hurt and ensures consistency.
 engine.history = st.session_state.history
-
 
 # --- Capital Balance and Bet Amount ---
 st.session_state.money_balance = st.number_input(
-    "💰 เงินทุนปัจจุบัน:",
-    min_value=0.0, # Can start at 0
+    "💰 Current Capital:",
+    min_value=0.0,
     value=st.session_state.money_balance,
     step=100.0,
     format="%.2f",
-    help="กำหนดจำนวนเงินทุนเริ่มต้นของคุณ"
+    help="Define your starting capital."
 )
 
 # --- Select and Configure Money Management System ---
 st.session_state.money_management_system = st.selectbox(
-    "📊 เลือกระบบเดินเงิน:",
+    "📊 Select Money Management System:",
     ("Fixed Bet", "Martingale", "Fibonacci", "Labouchere"),
     key="select_money_system"
 )
 
-# UI for Fixed Bet
 if st.session_state.money_management_system == "Fixed Bet":
     st.session_state.bet_amount = st.number_input(
-        "💸 เงินเดิมพันต่อตา (Fixed Bet):",
+        "💸 Bet Amount (Fixed Bet):",
         min_value=1.0,
         value=st.session_state.bet_amount,
         step=10.0,
         format="%.2f",
-        help="กำหนดจำนวนเงินที่คุณจะเดิมพันในแต่ละตา"
+        help="Define the amount you will bet each round."
     )
 
-# UI for Martingale
 elif st.session_state.money_management_system == "Martingale":
     st.session_state.martingale_base_bet = st.number_input(
-        "💰 เงินเดิมพันเริ่มต้น Martingale:",
+        "💰 Martingale Starting Bet:",
         min_value=1.0,
         value=st.session_state.martingale_base_bet,
         step=10.0,
         format="%.2f",
-        help="เงินเดิมพันเริ่มต้นของระบบ Martingale"
+        help="Starting bet for the Martingale system."
     )
     st.session_state.martingale_multiplier = st.number_input(
-        "✖️ ตัวคูณ Martingale (เช่น 2.0):",
-        min_value=1.1, # Must be greater than 1
-        value=st.session_state.martingale_multiplier, # Use session state value
+        "✖️ Martingale Multiplier (e.g., 2.0):",
+        min_value=1.1,
+        value=st.session_state.martingale_multiplier,
         step=0.1,
         format="%.1f",
-        help="ตัวคูณเงินเดิมพันเมื่อแพ้ในระบบ Martingale"
+        help="Bet multiplier when losing in Martingale system."
     )
     st.session_state.martingale_max_steps = st.number_input(
-        "🪜 จำนวนไม้สูงสุด Martingale (ป้องกันความเสี่ยง):",
+        "🪜 Martingale Max Steps (Risk Control):",
         min_value=1,
-        value=st.session_state.martingale_max_steps, # Use session state value
+        value=st.session_state.martingale_max_steps,
         step=1,
         format="%d",
-        help="จำนวนครั้งสูงสุดที่จะทบเงินเมื่อแพ้"
+        help="Maximum number of times to double bet after a loss."
     )
-    st.info(f"Martingale: ปัจจุบันอยู่ที่ไม้ที่ {st.session_state.martingale_current_step}")
+    st.info(f"Martingale: Currently at step {st.session_state.martingale_current_step}")
 
-# UI for Fibonacci
 elif st.session_state.money_management_system == "Fibonacci":
     st.session_state.fibonacci_unit_bet = st.number_input(
-        "💸 เงินเดิมพันหน่วย Fibonacci:",
+        "💸 Fibonacci Unit Bet:",
         min_value=1.0,
         value=st.session_state.fibonacci_unit_bet,
         step=10.0,
         format="%.2f",
-        help="1 หน่วยในลำดับ Fibonacci จะเท่ากับเงินเท่าไหร่"
+        help="What 1 unit in the Fibonacci sequence equals in money."
     )
     st.session_state.fibonacci_max_steps_input = st.number_input(
-        "🪜 จำนวนไม้สูงสุด Fibonacci (ป้องกันความเสี่ยง):",
+        "🪜 Fibonacci Max Steps (Risk Control):",
         min_value=1,
-        value=st.session_state.fibonacci_max_steps_input, # Use session state value
+        value=st.session_state.fibonacci_max_steps_input,
         step=1,
         format="%d",
-        help="จำนวนครั้งสูงสุดที่จะทบตามลำดับ Fibonacci"
+        help="Maximum number of steps to follow in the Fibonacci sequence."
     )
-    st.info(f"Fibonacci: ปัจจุบันอยู่ที่ลำดับที่ {st.session_state.fibonacci_current_index} (ค่า {st.session_state.fibonacci_sequence[st.session_state.fibonacci_current_index]})")
+    st.info(f"Fibonacci: Currently at index {st.session_state.fibonacci_current_index} (value {st.session_state.fibonacci_sequence[st.session_state.fibonacci_current_index]})")
 
-# UI for Labouchere
 elif st.session_state.money_management_system == "Labouchere":
     original_seq_str = ",".join([f"{s:.1f}" if s % 1 != 0 else f"{int(s)}" for s in st.session_state.labouchere_original_sequence])
 
     new_original_seq_str = st.text_input(
-        "🔢 ลำดับ Labouchere (คั่นด้วย , เช่น 1,2,3,4):",
+        "🔢 Labouchere Sequence (comma-separated, e.g., 1,2,3,4):",
         value=original_seq_str,
-        help="กำหนดลำดับตัวเลขเริ่มต้นของ Labouchere"
+        help="Define the starting number sequence for Labouchere."
     )
-    # Parse the input string to update original_sequence
     try:
         parsed_seq = [float(x.strip()) for x in new_original_seq_str.split(',') if x.strip()]
-        if parsed_seq: # Only update if parsed successfully and not empty
+        if parsed_seq:
             if st.session_state.labouchere_original_sequence != parsed_seq:
                 st.session_state.labouchere_original_sequence = parsed_seq
-                st.session_state.labouchere_current_sequence = parsed_seq.copy() # Reset current sequence
-        elif not parsed_seq and st.session_state.labouchere_original_sequence: # User cleared input
+                st.session_state.labouchere_current_sequence = parsed_seq.copy()
+        elif not parsed_seq and st.session_state.labouchere_original_sequence:
              st.session_state.labouchere_original_sequence = []
              st.session_state.labouchere_current_sequence = []
     except ValueError:
         st.error("Invalid Labouchere sequence format. Please use numbers separated by commas.")
 
     st.session_state.labouchere_unit_bet = st.number_input(
-        "💸 เงินเดิมพันหน่วย Labouchere:",
+        "💸 Labouchere Unit Bet:",
         min_value=1.0,
         value=st.session_state.labouchere_unit_bet,
         step=10.0,
         format="%.2f",
-        help="1 หน่วยในลำดับ Labouchere จะเท่ากับเงินเท่าไหร่"
+        help="What 1 unit in the Labouchere sequence equals in money."
     )
-    st.info(f"Labouchere: ลำดับปัจจุบัน: {', '.join([f'{x:.1f}' if x % 1 != 0 else f'{int(x)}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'ว่างเปล่า (เป้าหมายสำเร็จ!)'}")
+    st.info(f"Labouchere: Current sequence: {', '.join([f'{x:.1f}' if x % 1 != 0 else f'{int(x)}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'Empty (Target Achieved!)'}")
 
 
-# Calculate next bet amount
 st.session_state.bet_amount_calculated = calculate_next_bet()
-st.info(f"**จำนวนเงินที่ต้องเดิมพันตาถัดไป:** {st.session_state.bet_amount_calculated:.2f} บาท")
+st.info(f"**Next Bet Amount:** {st.session_state.bet_amount_calculated:.2f} Baht")
 
 
-if len(st.session_state.history) < 20: # Use st.session_state.history directly
-    st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(st.session_state.history)}** ตา)")
+if len(st.session_state.history) < 20:
+    st.warning(f"⚠️ Please record at least 20 hands for accurate analysis.\n(Currently **{len(st.session_state.history)}** hands recorded)")
 
-# --- Prediction and Display Results ---
-st.markdown("#### 🔮 ทำนายตาถัดไป:")
+st.markdown("#### 🔮 Predict Next Hand:")
 prediction_data = None
 next_pred_side = '?'
 conf = 0
 
-# Pass the actual history (list of dicts) to the engine for prediction
-# This assignment is crucial for the cached engine to work with the latest history from session_state.
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
 
@@ -587,16 +515,16 @@ if len(engine.history) >= 20:
 
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
         next_pred_side = prediction_data['prediction']
-        conf = engine.confidence_score(engine.history) # Pass history to confidence_score
+        conf = engine.confidence_score(engine.history, _build_big_road_data(engine.history))
 
-        emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
+        emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— No Recommendation'}
 
         st.markdown(f'<div class="prediction-text">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
-        st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}")
-        st.markdown(f"**🧾 คำแนะนำ:** **{prediction_data['recommendation']}**")
+        st.markdown(f"**📍 Risk:** {prediction_data['risk']}")
+        st.markdown(f"**🧾 Recommendation:** **{prediction_data['recommendation']}**")
 
         with st.expander("🧬 Developer View"):
-            st.text(prediction_data['developer_view']) # Use st.text for pre-formatted text
+            st.text(prediction_data['developer_view'])
             st.write("--- Pattern Success Rates ---")
             st.write(engine.pattern_stats)
             st.write("--- Momentum Success Rates ---")
@@ -613,63 +541,29 @@ if len(engine.history) >= 20:
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
     else:
-        st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
-        st.markdown("— (ไม่สามารถทำนายได้)")
+        st.error("❌ Error retrieving prediction from OracleEngine. Please check 'oracle_engine.py'")
+        st.markdown("— (Cannot predict)")
 else:
-    st.markdown("— (ประวัติไม่ครบ)")
+    st.markdown("— (Insufficient history)")
 
 # --- Big Road Display ---
-st.markdown("<b>🛣️ Big Road:</b>", unsafe_allow_html=True) # Changed to bold tag
+st.markdown("<b>🛣️ Big Road:</b>", unsafe_allow_html=True)
 
-history_results = st.session_state.history # Use the structured history
+history_results = st.session_state.history
+big_road_display_data = _build_big_road_data(history_results)
 
-if history_results:
+if big_road_display_data:
     max_row = 6
-    columns = []
-    current_col = []
-    last_non_tie_result = None
+    columns = big_road_display_data
 
-    for i, round_result in enumerate(history_results):
-        # Ensure round_result is a dictionary and has 'main_outcome'
-        if not isinstance(round_result, dict) or 'main_outcome' not in round_result:
-            continue # Skip invalid history entries
-
-        main_outcome = round_result['main_outcome']
-        is_any_natural = round_result['is_any_natural'] # Assuming this is always False for now
-        ties_on_cell = round_result['ties'] # Get ties count from the history object itself
-
-        if main_outcome == "T":
-            # Ties are handled by incrementing the tie count of the last P/B result
-            # This logic is now handled in record_bet_result, so we just skip ties here for Big Road drawing
-            continue # Skip to the next round if it's a Tie, as Ties don't form new columns in Big Road
-
-        # If the current outcome is the same as the last non-tie outcome, continue the streak in the current column
-        if main_outcome == last_non_tie_result:
-            if len(current_col) < max_row: # Add to current column if space available
-                current_col.append((main_outcome, ties_on_cell, is_any_natural))
-            else: # If column is full, start a new column (tailing)
-                columns.append(current_col)
-                current_col = [(main_outcome, ties_on_cell, is_any_natural)]
-        else: # If the current outcome is different, start a new column (new streak)
-            if current_col: # Append existing column if not empty
-                columns.append(current_col)
-            current_col = [(main_outcome, ties_on_cell, is_any_natural)] # Start a new column with the new outcome
-            last_non_tie_result = main_outcome # Update last non-tie result
-
-    # Append the last current column if it's not empty after the loop
-    if current_col:
-        columns.append(current_col)
-
-    MAX_DISPLAY_COLUMNS = 12 # Changed to 12 columns as requested
+    MAX_DISPLAY_COLUMNS = 12
     if len(columns) > MAX_DISPLAY_COLUMNS:
-        columns = columns[-MAX_DISPLAY_COLUMNS:] # Display only the last N columns for recent history
+        columns = columns[-MAX_DISPLAY_COLUMNS:]
 
-    # Build the HTML string for the Big Road display
     big_road_html_parts = []
     big_road_html_parts.append(f"<div class='big-road-container' id='big-road-container-unique'>")
     for col in columns:
         big_road_html_parts.append("<div class='big-road-column'>")
-        # Ensure that cells are always created up to max_row for consistent column height
         for row_idx in range(max_row):
             cell_content = ""
             if row_idx < len(col):
@@ -681,24 +575,24 @@ if history_results:
                     tie_html = f"<div class='tie-oval'>{tie_count}</div>"
                 
                 natural_indicator = ""
-                if natural_flag: # Assuming natural_flag is True/False
+                if natural_flag:
                     natural_indicator = f"<span class='natural-indicator'>N</span>"
                 
                 cell_content = (
                     f"<div class='big-road-circle {emoji_color_class}'>"
-                    f"{natural_indicator}" # Natural indicator inside the circle
+                    f"{natural_indicator}"
                     f"</div>"
-                    f"{tie_html}" # Tie oval outside the circle but within the cell for layering
+                    f"{tie_html}"
                 )
             
             big_road_html_parts.append(f"<div class='big-road-cell'>{cell_content}</div>")
-        big_road_html_parts.append("</div>") # Close big-road-column
-    big_road_html_parts.append("</div>") # Close big-road-container
+        big_road_html_parts.append("</div>")
+    big_road_html_parts.append("</div>")
 
     st.markdown("".join(big_road_html_parts), unsafe_allow_html=True)
 
 else:
-    st.info("🔄 ยังไม่มีข้อมูล")
+    st.info("🔄 No data yet")
 
 
 col_p_b_t = st.columns(3)
@@ -719,46 +613,44 @@ if prediction_data and isinstance(prediction_data, dict) and 'recommendation' in
                 st.rerun()
     elif prediction_data['recommendation'] == "Avoid ❌":
         with col_p_b_t[0]:
-            if st.button(f"บันทึก: 🔵 P", key="no_bet_P", use_container_width=True):
-                record_bet_result('?', 'P') # Pass '?' as predicted_side to indicate no actual bet
+            if st.button(f"Record: 🔵 P", key="no_bet_P", use_container_width=True):
+                record_bet_result('?', 'P')
                 st.rerun()
         with col_p_b_t[1]:
-            if st.button(f"บันทึก: 🔴 B", key="no_bet_B", use_container_width=True):
-                record_bet_result('?', 'B') # Pass '?' as predicted_side to indicate no actual bet
+            if st.button(f"Record: 🔴 B", key="no_bet_B", use_container_width=True):
+                record_bet_result('?', 'B')
                 st.rerun()
         with col_p_b_t[2]:
-            if st.button(f"บันทึก: 🟢 T", key="no_bet_T", use_container_width=True):
-                record_bet_result('?', 'T') # Pass '?' as predicted_side to indicate no actual bet
+            if st.button(f"Record: 🟢 T", key="no_bet_T", use_container_width=True):
+                record_bet_result('?', 'T')
                 st.rerun()
-else: # Case when history is less than 20 or an error in engine
+else:
     with col_p_b_t[0]:
-        if st.button(f"บันทึก: 🔵 P", key="init_P", use_container_width=True):
-            record_bet_result('?', 'P') # Pass '?' as predicted_side
+        if st.button(f"Record: 🔵 P", key="init_P", use_container_width=True):
+            record_bet_result('?', 'P')
             st.rerun()
     with col_p_b_t[1]:
-        if st.button(f"บันทึก: 🔴 B", key="init_B", use_container_width=True):
-            record_bet_result('?', 'B') # Pass '?' as predicted_side
+        if st.button(f"Record: 🔴 B", key="init_B", use_container_width=True):
+            record_bet_result('?', 'B')
             st.rerun()
     with col_p_b_t[2]:
-        if st.button(f"บันทึก: 🟢 T", key="init_T", use_container_width=True):
-            record_bet_result('?', 'T') # Pass '?' as predicted_side
+        if st.button(f"Record: 🟢 T", key="init_T", use_container_width=True):
+            record_bet_result('?', 'T')
             st.rerun()
 
 col_hist1, col_hist2 = st.columns(2)
 with col_hist1:
-    if st.button("↩️ ลบล่าสุด", key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
+    if st.button("↩️ Undo Last", key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
         st.rerun()
 with col_hist2:
-    if st.button("🧹 รีเซ็ตทั้งหมด", key="resetAllHist", use_container_width=True, on_click=reset_all_history):
+    if st.button("🧹 Reset All", key="resetAllHist", use_container_width=True, on_click=reset_all_history):
         st.rerun()
 
-# --- Bet Log ---
-st.markdown("### 📊 บันทึกการเดิมพัน")
+st.markdown("### 📊 Bet Log")
 if st.session_state.bet_log:
     df_log = pd.DataFrame(st.session_state.bet_log)
     st.dataframe(df_log, use_container_width=True, hide_index=True)
 else:
-    st.info("ยังไม่มีการเดิมพันบันทึกไว้")
+    st.info("No bets recorded yet.")
 
-# --- Footer ---
-st.caption("ระบบวิเคราะห์ Oracle AI โดยคุณ")
+st.caption("Oracle AI Analysis System by You")
