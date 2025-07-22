@@ -6,19 +6,26 @@ import math
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
 
 # --- Streamlit App Setup and CSS ---
-st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered") # Updated page title
+st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
 
 st.markdown("""
     <style>
     /* CSS for the main title */
     .custom-title {
         font-family: 'Georgia', serif;
-        font-size: 2.5rem;
+        font-size: 2rem; /* Adjusted main title size */
         text-align: center;
         color: #FFD700;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
         margin-bottom: 0.5rem;
         font-weight: bold;
+    }
+    /* New style for version text */
+    .version-text {
+        font-size: 0.6em; /* Smaller relative to parent */
+        vertical-align: super; /* Raise it slightly */
+        opacity: 0.7; /* Make it a bit less prominent */
+        font-weight: normal; /* Less bold for version */
     }
     /* Reduce overall spacing of Streamlit elements */
     .stApp > header {
@@ -159,7 +166,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # App Header
-st.markdown('<div class="custom-title">🔮 Oracle AI v3.0</div>', unsafe_allow_html=True) # Updated display title
+st.markdown('<div class="custom-title">🔮 Oracle AI <span class="version-text">v3.0</span></div>', unsafe_allow_html=True) # Updated display title with smaller version text
 
 # --- OracleEngine Caching ---
 @st.cache_resource(ttl=None)
@@ -168,6 +175,28 @@ def get_oracle_engine():
 
 if "oracle_engine" not in st.session_state:
     st.session_state.oracle_engine = get_oracle_engine()
+
+# --- Cache compatibility check for new attributes ---
+# This ensures that if a cached OracleEngine instance is loaded from a previous version
+# that didn't have certain attributes, they get initialized.
+if not hasattr(st.session_state.oracle_engine, 'sequence_memory_stats'):
+    st.session_state.oracle_engine.sequence_memory_stats = {}
+if not hasattr(st.session_state.oracle_engine, 'pattern_weights'):
+    st.session_state.oracle_engine.pattern_weights = {
+        'Dragon': 1.0, 'FollowStreak': 0.95, 'Pingpong': 0.9, 'Two-Cut': 0.8,
+        'Triple-Cut': 0.8, 'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7,
+        'Big Eye Boy (2D Simple - Follow)': 0.9, 'Big Eye Boy (2D Simple - Break)': 0.8,
+        'Small Road (2D Simple - Chop)': 0.75, 'Cockroach Pig (2D Simple - Chop)': 0.7,
+        'Broken Pattern': 0.3,
+    }
+if not hasattr(st.session_state.oracle_engine, 'momentum_weights'):
+    st.session_state.oracle_engine.momentum_weights = {
+        'B3+ Momentum': 0.9, 'P3+ Momentum': 0.9, 'Steady Repeat Momentum': 0.85,
+        'Ladder Momentum (1-2-3)': 0.7, 'Ladder Momentum (X-Y-XX-Y)': 0.6,
+    }
+if not hasattr(st.session_state.oracle_engine, 'sequence_weights'):
+    st.session_state.oracle_engine.sequence_weights = {3: 0.6, 4: 0.7, 5: 0.8}
+
 
 # --- Session State Initialization (other variables) ---
 if "history" not in st.session_state:
