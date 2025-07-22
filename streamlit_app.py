@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import math # สำหรับฟังก์ชัน floor ใน Fibonacci
-from oracle_engine import OracleEngine # Import the OracleEngine class
+from oracle_engine import OracleEngine, _cached_backtest_accuracy # Import OracleEngine and the global cached function
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
@@ -278,7 +278,7 @@ def remove_last_from_history():
     if st.session_state.history:
         st.session_state.history.pop()
         # Notify the cached engine to clear its backtest cache and reset learning states
-        st.session_state.oracle_engine.clear_cache()
+        _cached_backtest_accuracy.clear() # Clear the global cache
         st.session_state.oracle_engine.reset_learning_states_on_undo()
     # Reset money management states on history removal (optional, but good for consistency)
     reset_money_management_state_on_undo()
@@ -289,7 +289,8 @@ def reset_all_history():
     st.session_state.money_balance = 1000.0
     st.session_state.bet_log = []
     # When resetting all history, we should also reset the cached OracleEngine's internal states
-    st.session_state.oracle_engine.reset_history() # This resets history, pattern_stats, etc. and clears cache
+    st.session_state.oracle_engine.reset_history() # This resets history, pattern_stats, etc.
+    _cached_backtest_accuracy.clear() # Clear the global cache
     reset_money_management_state() # Reset all money management states
 
 def reset_money_management_state():
@@ -439,7 +440,7 @@ def record_bet_result(predicted_side, actual_result):
         )
     
     # Clear the cache for backtest_accuracy after history changes, so it recalculates on next run
-    st.session_state.oracle_engine.clear_cache()
+    _cached_backtest_accuracy.clear()
 
 
 # Load and update Engine
@@ -603,7 +604,12 @@ if len(engine.history) >= 20:
             st.write("--- Failed Pattern Instances ---")
             st.write(engine.failed_pattern_instances)
             st.write("--- Backtest Results ---")
-            backtest_summary = engine.backtest_accuracy()
+            backtest_summary = _cached_backtest_accuracy(
+                engine.history,
+                engine.pattern_stats,
+                engine.momentum_stats,
+                engine.failed_pattern_instances
+            )
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
     else:
