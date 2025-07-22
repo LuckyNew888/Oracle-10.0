@@ -6,7 +6,7 @@ import math
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
 
 # --- Streamlit App Setup and CSS ---
-st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
+st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered") # Updated page title
 
 st.markdown("""
     <style>
@@ -159,7 +159,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # App Header
-st.markdown('<div class="custom-title">🔮 Oracle AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="custom-title">🔮 Oracle AI v3.0</div>', unsafe_allow_html=True) # Updated display title
 
 # --- OracleEngine Caching ---
 @st.cache_resource(ttl=None)
