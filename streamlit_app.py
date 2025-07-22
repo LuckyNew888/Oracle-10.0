@@ -596,7 +596,7 @@ if len(engine.history) >= 20:
         st.markdown(f"**🧾 คำแนะนำ:** **{prediction_data['recommendation']}**")
 
         with st.expander("🧬 Developer View"):
-            st.write(prediction_data['developer_view'])
+            st.text(prediction_data['developer_view']) # Use st.text for pre-formatted text
             st.write("--- Pattern Success Rates ---")
             st.write(engine.pattern_stats)
             st.write("--- Momentum Success Rates ---")
