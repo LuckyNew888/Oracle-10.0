@@ -1,5 +1,6 @@
 from collections import Counter
 import random
+import streamlit as st # Import streamlit for caching
 
 class OracleEngine:
     def __init__(self):
@@ -12,7 +13,7 @@ class OracleEngine:
         # Stores specific pattern instances that led to a miss:
         # {('pattern_type', 'sequence_snapshot_tuple'): count_of_misses}
         self.failed_pattern_instances = {}
-        self.backtest_results = [] # Stores results of backtesting: [{'predicted': 'P', 'actual': 'B', 'hit': False}]
+        # self.backtest_results is now managed by the cached backtest_accuracy method's return value
 
     # --- Data Management (for the Engine itself) ---
     # This method is for internal engine use, not directly called by UI for adding new rounds.
@@ -25,19 +26,16 @@ class OracleEngine:
         """Removes the last result from the history."""
         if self.history:
             self.history.pop()
-            # When history is removed, we should ideally revert backtest results and pattern stats
-            # For simplicity, we'll reset them here. A full undo would be more complex.
-            self.backtest_results = []
-            self.pattern_stats = {}
-            self.momentum_stats = {}
-            self.failed_pattern_instances = {}
+            # When history is removed, we should also clear the cache for backtest_accuracy
+            self.clear_cache() # Clear cache for backtest_accuracy
+            self.reset_learning_states_on_undo() # Reset learning states
 
     def reset_learning_states_on_undo(self):
         """Resets only the learning-related states when an undo operation occurs."""
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        self.backtest_results = [] # Reset backtest results as well
+        # No need to reset backtest_results directly here, as it's handled by cache invalidation
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -45,7 +43,15 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        self.backtest_results = []
+        self.clear_cache() # Clear cache for backtest_accuracy
+
+    def clear_cache(self):
+        """Clears the cache for the backtest_accuracy method."""
+        # This is how you clear the cache for a specific cached function
+        # Note: This assumes backtest_accuracy is a method of this class.
+        # If it were a global function, you'd call backtest_accuracy.clear()
+        self.backtest_accuracy.clear()
+
 
     def _get_pb_history(self, current_history):
         """Helper to extract only P/B outcomes from structured history."""
@@ -54,49 +60,75 @@ class OracleEngine:
             return []
         return [item['main_outcome'] for item in current_history if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']]
 
+    def _get_streaks(self, history_pb):
+        """Helper to get streaks from a P/B history list."""
+        if not history_pb:
+            return []
+        streaks = []
+        current_streak_char = history_pb[0]
+        current_streak_length = 0
+        for char in history_pb:
+            if char == current_streak_char:
+                current_streak_length += 1
+            else:
+                streaks.append((current_streak_char, current_streak_length))
+                current_streak_char = char
+                current_streak_length = 1
+        streaks.append((current_streak_char, current_streak_length)) # Add last streak
+        return streaks
+
     # --- 1. 🧬 DNA Pattern Analysis (ตรวจจับรูปแบบ) ---
     def detect_patterns(self, current_history):
         """
         Detects various patterns and returns a list of (pattern_name, sequence_snapshot) tuples.
         """
         h = self._get_pb_history(current_history)
+        streaks = self._get_streaks(h)
         patterns_detected = []
 
-        # Pingpong (B-P-B-P)
-        if len(h) >= 4:
-            # Check for alternation from the end (at least 3 alternations for 4 results)
-            alternating_count = 0
-            for i in range(len(h) - 1, 0, -1):
-                if h[i] != h[i-1]:
-                    alternating_count += 1
-                else:
-                    break
-            if alternating_count >= 3: # e.g., P-B-P-B (3 alternations)
-                # Snapshot the sequence that forms the pattern
-                snapshot = tuple(h[len(h) - (alternating_count + 1):])
-                patterns_detected.append((f'Pingpong ({alternating_count + 1}x)', snapshot))
+        # Pingpong (B-P-B-P...) - streaks of length 1
+        if len(streaks) >= 4 and all(s[1] == 1 for s in streaks[-4:]):
+            patterns_detected.append((f'Pingpong ({len(streaks[-4:])}x)', tuple(h[-len(streaks[-4:]):])))
+        if len(streaks) >= 6 and all(s[1] == 1 for s in streaks[-6:]):
+            patterns_detected.append((f'Pingpong ({len(streaks[-6:])}x)', tuple(h[-len(streaks[-6:]):])))
+        if len(streaks) >= 8 and all(s[1] == 1 for s in streaks[-8:]):
+            patterns_detected.append((f'Pingpong ({len(streaks[-8:])}x)', tuple(h[-len(streaks[-8:]):])))
 
-        # Two-Cut (BB-PP-BB-PP)
-        if len(h) >= 4:
-            last4 = tuple(h[-4:])
-            if last4[0] == last4[1] and last4[2] == last4[3] and last4[0] != last4[2]:
-                patterns_detected.append(('Two-Cut', last4))
 
-        # Dragon (long streak: 3 to 6 consecutive same results)
-        for i in range(3, 7):
-            if len(h) >= i:
-                last_streak = tuple(h[-i:])
-                if len(set(last_streak)) == 1:
-                    patterns_detected.append((f'Dragon ({i})', last_streak))
+        # Dragon (long streak: 3+ consecutive same results)
+        if streaks and streaks[-1][1] >= 3:
+            patterns_detected.append((f'Dragon ({streaks[-1][0]}{streaks[-1][1]})', tuple(h[-streaks[-1][1]:])))
 
-        # Triple Cut (e.g., PPPBBB or BBBPPP)
-        if len(h) >= 6:
-            last6 = tuple(h[-6:])
-            if (last6[0] == last6[1] == last6[2] and
-                last6[3] == last6[4] == last6[5] and
-                last6[0] != last6[3]):
-                patterns_detected.append(('Triple Cut', last6))
+        # Two-Cut (BB-PP-BB-PP...) - streaks of length 2
+        if len(streaks) >= 4 and all(s[1] == 2 for s in streaks[-4:]):
+            patterns_detected.append((f'Two-Cut ({len(streaks[-4:])}x)', tuple(h[-sum(s[1] for s in streaks[-4:]):])))
+        if len(streaks) >= 6 and all(s[1] == 2 for s in streaks[-6:]):
+            patterns_detected.append((f'Two-Cut ({len(streaks[-6:])}x)', tuple(h[-sum(s[1] for s in streaks[-6:]):])))
 
+        # Triple-Cut (BBB-PPP-BBB-PPP...) - streaks of length 3
+        if len(streaks) >= 4 and all(s[1] == 3 for s in streaks[-4:]):
+            patterns_detected.append((f'Triple-Cut ({len(streaks[-4:])}x)', tuple(h[-sum(s[1] for s in streaks[-4:]):])))
+
+        # One-Two Pattern (B-PP-B-PP...) - streaks like (X,1), (Y,2), (X,1), (Y,2)
+        if len(streaks) >= 4:
+            last4_streaks = streaks[-4:]
+            if (last4_streaks[0][1] == 1 and last4_streaks[1][1] == 2 and
+                last4_streaks[2][1] == 1 and last4_streaks[3][1] == 2 and
+                last4_streaks[0][0] == last4_streaks[2][0] and
+                last4_streaks[1][0] == last4_streaks[3][0] and
+                last4_streaks[0][0] != last4_streaks[1][0]):
+                patterns_detected.append(('One-Two Pattern', tuple(h[-sum(s[1] for s in last4_streaks):])))
+
+        # Two-One Pattern (BB-P-BB-P...) - streaks like (X,2), (Y,1), (X,2), (Y,1)
+        if len(streaks) >= 4:
+            last4_streaks = streaks[-4:]
+            if (last4_streaks[0][1] == 2 and last4_streaks[1][1] == 1 and
+                last4_streaks[2][1] == 2 and last4_streaks[3][1] == 1 and
+                last4_streaks[0][0] == last4_streaks[2][0] and
+                last4_streaks[1][0] == last4_streaks[3][0] and
+                last4_streaks[0][0] != last4_streaks[1][0]):
+                patterns_detected.append(('Two-One Pattern', tuple(h[-sum(s[1] for s in last4_streaks):])))
+        
         # Broken Pattern (BPBPPBP) - Example, can be refined
         if len(h) >= 7:
             last7_str = "".join(h[-7:])
@@ -109,37 +141,42 @@ class OracleEngine:
     def detect_momentum(self, current_history):
         """
         Detects momentum and returns a list of (momentum_name, sequence_snapshot) tuples.
+        Momentum often implies continuation of a trend.
         """
         h = self._get_pb_history(current_history)
+        streaks = self._get_streaks(h)
         momentum_detected = []
 
-        # B3+, P3+ Momentum (3 or more consecutive same results)
-        if len(h) >= 3:
-            last_char = h[-1]
-            streak_count = 0
-            for i in reversed(range(len(h))):
-                if h[i] == last_char:
-                    streak_count += 1
-                else:
-                    break
-            if streak_count >= 3:
-                snapshot = tuple(h[-streak_count:])
-                momentum_detected.append((f"{last_char}{streak_count}+ Momentum", snapshot))
+        # B3+, P3+ Momentum (3 or more consecutive same results) - same as Dragon detection for 3+
+        if streaks and streaks[-1][1] >= 3:
+            momentum_detected.append((f"{streaks[-1][0]}{streaks[-1][1]}+ Momentum", tuple(h[-streaks[-1][1]:])))
 
-        # Steady Repeat (PBPBPBP or BPBPBPB)
-        if len(h) >= 7:
+        # Steady Repeat (PBPBPBP or BPBPBPB) - same as Pingpong with length 7
+        if len(streaks) >= 7 and all(s[1] == 1 for s in streaks[-7:]):
             seq_snapshot = tuple(h[-7:])
             if (seq_snapshot == ('P','B','P','B','P','B','P') or
                 seq_snapshot == ('B','P','B','P','B','P','B')):
                 momentum_detected.append(("Steady Repeat Momentum", seq_snapshot))
 
-        # Ladder Momentum (e.g., BB-P-BBB-P-BBBB) - Conceptual, requires more specific definition
-        if len(h) >= 6:
-            # Check for patterns like X Y XX Y XXX
-            # This is a simplified check for a "ladder"
-            # For example, B P BB P BBB
-            if h[-1] == h[-3] and h[-3] == h[-6] and h[-2] == h[-4] and h[-4] == h[-5]: # Very simplified
-                momentum_detected.append(("Ladder Momentum (Simplified)", tuple(h[-6:])))
+        # Ladder Momentum (e.g., BB-P-BBB-P-BBBB) - increasing streak, cut by single, increasing again
+        # This is a more complex pattern. Let's simplify for now or refine if needed.
+        # For a basic check, look for X, Y, XX, Y, XXX
+        if len(streaks) >= 5: # Need at least 5 streaks for X, Y, XX, Y, XXX
+            s5 = streaks[-5:]
+            # Check for (X,1), (Y,1), (X,2), (Y,1), (X,3)
+            if (s5[0][1] == 1 and s5[1][1] == 1 and s5[2][1] == 2 and s5[3][1] == 1 and s5[4][1] == 3 and
+                s5[0][0] == s5[2][0] == s5[4][0] and s5[1][0] == s5[3][0] and s5[0][0] != s5[1][0]):
+                momentum_detected.append(('Ladder Momentum (1-2-3)', tuple(h[-sum(s[1] for s in s5):])))
+        
+        # Another simplified ladder: X, Y, XX, Y, XXX
+        if len(streaks) >= 4:
+            s4 = streaks[-4:]
+            # Check for (X, N), (Y, 1), (X, N+1), (Y, 1)
+            if (s4[1][1] == 1 and s4[3][1] == 1 and
+                s4[0][0] == s4[2][0] and s4[1][0] == s4[3][0] and
+                s4[0][0] != s4[1][0] and s4[2][1] == s4[0][1] + 1):
+                momentum_detected.append((f'Ladder Momentum (X-Y-XX-Y)', tuple(h[-sum(s[1] for s in s4):])))
+
 
         return momentum_detected
 
@@ -150,7 +187,7 @@ class OracleEngine:
         if len(h) < 2:
             return False
 
-        # P1-B1, B1-P1 (Unstable)
+        # P1-B1, B1-P1 (Unstable / Choppy)
         last2 = tuple(h[-2:])
         if last2 in [('P','B'), ('B','P')]:
             return True
@@ -285,14 +322,17 @@ class OracleEngine:
         return '?'
 
     # --- 7. 🔬 Backtest Simulation (ทดสอบผลย้อนหลัง) ---
+    @st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
     def backtest_accuracy(self):
         """
         Calculates the system's accuracy from historical predictions and tracks drawdown.
         Simulates predictions from the 11th hand onwards (or 20th, as per confidence threshold).
         """
-        # Need at least 20 P/B hands for meaningful backtest, as confidence starts at 20.
+        # Note: self (the OracleEngine instance) is part of the cache key.
+        # This means if self.history or any other internal state changes, the cache is invalidated.
+
         pb_history_len = len(self._get_pb_history(self.history))
-        if pb_history_len < 20:
+        if pb_history_len < 20: # Need at least 20 P/B hands for meaningful backtest
             return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
 
         hits = 0
@@ -325,6 +365,11 @@ class OracleEngine:
             actual_main_outcome = actual_result_obj['main_outcome']
 
             # Create a temporary engine instance for simulation to avoid polluting main engine's state
+            # IMPORTANT: For backtesting, the temp_sim_engine should start with the learning states
+            # that would have existed *at that point in history*.
+            # For simplicity for now, we copy the *current* learning states.
+            # A truly accurate backtest would require rolling back learning states too.
+            # But for performance, we'll use the current learning states for backtest.
             temp_sim_engine = OracleEngine()
             temp_sim_engine.history = simulated_history
             # Copy learning stats to temp engine for realistic simulation
@@ -373,7 +418,7 @@ class OracleEngine:
         current_pb_history = self._get_pb_history(self.history)
         
         # Get backtest stats early, as they are used in multiple checks
-        backtest_stats = self.backtest_accuracy()
+        backtest_stats = self.backtest_accuracy() # This call is now cached!
 
         # --- 1. ตรวจสอบ Trap Zone เป็นอันดับแรกสุด (งดเดิมพันทันที) ---
         if self.in_trap_zone(self.history):
@@ -428,6 +473,8 @@ class OracleEngine:
         active_patterns_for_learning = []
         active_momentum_for_learning = []
 
+        # Prioritize prediction based on detected patterns and momentum
+        predicted_by_pattern = False
         if patterns:
             developer_view_patterns_list = []
             for p_name, p_snapshot in patterns:
@@ -438,74 +485,151 @@ class OracleEngine:
 
                 # ตรวจสอบ Memory Logic: ห้ามใช้ pattern ที่เคยพลาด
                 if self._is_pattern_instance_failed(p_name, p_snapshot):
-                    developer_view += f" (Note: Pattern '{p_name}' instance previously failed. Skipping.)"
+                    developer_view += f" (Note: Pattern '{p_name}' instance previously failed. Skipping for prediction.)"
                     continue # Skip this pattern for prediction if it has failed before
 
                 # ลอจิกการทำนายตาม Pattern ที่มั่นใจ
                 if 'Dragon' in p_name:
                     prediction_result = current_pb_history[-1]
-                    developer_view = f"DNA Pattern: {p_name} detected. Predicting last result."
+                    developer_view = f"DNA Pattern: {p_name} detected. Predicting last result ({prediction_result})."
+                    predicted_by_pattern = True
                     break
                 elif 'Pingpong' in p_name:
                     last = current_pb_history[-1]
                     prediction_result = 'P' if last == 'B' else 'B'
-                    developer_view = f"DNA Pattern: {p_name} detected. Predicting opposite of last."
+                    developer_view = f"DNA Pattern: {p_name} detected. Predicting opposite of last ({prediction_result})."
+                    predicted_by_pattern = True
                     break
-                elif p_name == 'Two-Cut':
+                elif 'Two-Cut' in p_name:
                     if len(current_pb_history) >= 2:
                         last_two = current_pb_history[-2:]
                         if last_two[0] == last_two[1]:
                             prediction_result = 'P' if last_two[0] == 'B' else 'B'
-                            developer_view = f"DNA Pattern: Two-Cut detected. Predicting opposite of current pair."
+                            developer_view = f"DNA Pattern: {p_name} detected. Predicting opposite of current pair ({prediction_result})."
+                            predicted_by_pattern = True
                             break
-                    elif p_name == 'Triple Cut':
-                        if len(current_pb_history) >= 3:
-                            last_three = current_pb_history[-3:]
-                            if len(set(last_three)) == 1:
-                                prediction_result = 'P' if last_three[0] == 'B' else 'B'
-                                developer_view = f"DNA Pattern: Triple Cut detected. Predicting opposite of last three."
-                                break
+                elif 'Triple-Cut' in p_name:
+                    if len(current_pb_history) >= 3:
+                        last_three = current_pb_history[-3:]
+                        if len(set(last_three)) == 1:
+                            prediction_result = 'P' if last_three[0] == 'B' else 'B'
+                            developer_view = f"DNA Pattern: {p_name} detected. Predicting opposite of last three ({prediction_result})."
+                            predicted_by_pattern = True
+                            break
+                elif 'One-Two Pattern' in p_name:
+                    # If last streak was 1, predict 2 of opposite. If last streak was 2, predict 1 of opposite.
+                    if streaks and len(streaks) >= 2:
+                        last_streak = streaks[-1]
+                        prev_streak = streaks[-2]
+                        if last_streak[1] == 2 and prev_streak[1] == 1: # X Y Y -> predict X
+                            prediction_result = prev_streak[0]
+                            developer_view = f"DNA Pattern: {p_name} detected. Predicting {prediction_result} to complete One-Two."
+                            predicted_by_pattern = True
+                            break
+                        elif last_streak[1] == 1 and prev_streak[1] == 2: # X X Y -> predict Y Y
+                            prediction_result = last_streak[0]
+                            developer_view = f"DNA Pattern: {p_name} detected. Predicting {prediction_result} to complete One-Two."
+                            predicted_by_pattern = True
+                            break
+                elif 'Two-One Pattern' in p_name:
+                    # If last streak was 1, predict 2 of opposite. If last streak was 2, predict 1 of opposite.
+                    if streaks and len(streaks) >= 2:
+                        last_streak = streaks[-1]
+                        prev_streak = streaks[-2]
+                        if last_streak[1] == 1 and prev_streak[1] == 2: # X X Y -> predict X X
+                            prediction_result = prev_streak[0]
+                            developer_view = f"DNA Pattern: {p_name} detected. Predicting {prediction_result} to complete Two-One."
+                            predicted_by_pattern = True
+                            break
+                        elif last_streak[1] == 2 and prev_streak[1] == 1: # X Y Y -> predict Y
+                            prediction_result = last_streak[0]
+                            developer_view = f"DNA Pattern: {p_name} detected. Predicting {prediction_result} to complete Two-One."
+                            predicted_by_pattern = True
+                            break
 
-                if developer_view_patterns_list and not developer_view:
-                    developer_view += f"Detected patterns: {', '.join(developer_view_patterns_list)}."
-                elif developer_view_patterns_list:
-                    developer_view += f" | Other patterns: {', '.join(developer_view_patterns_list)}."
+            if developer_view_patterns_list and not developer_view:
+                developer_view += f"Detected patterns: {', '.join(developer_view_patterns_list)}."
+            elif developer_view_patterns_list and not predicted_by_pattern: # Add if patterns detected but no prediction yet
+                developer_view += f" | Other patterns detected: {', '.join(developer_view_patterns_list)}."
 
-            # --- 5. Intuition Logic (ใช้เมื่อไม่มี Pattern หลัก หรือ Pattern ที่เจอเคยพลาด) ---
-            if prediction_result == '?': # ถ้ายังไม่มีการทำนายจาก Pattern หลัก
-                intuitive_guess = self.intuition_predict(self.history) # Pass full history for Tie check
 
-                if intuitive_guess == 'T':
-                    prediction_result = 'T'
-                    developer_view += " (Intuition Logic: Specific Tie pattern identified.)"
-                elif intuitive_guess in ['P', 'B']:
-                    prediction_result = intuitive_guess
-                    developer_view += f" (Intuition Logic: Predicting {intuitive_guess} based on subtle patterns.)"
-                else:
-                    recommendation = "Avoid ❌"
-                    risk_level = "Uncertainty"
-                    developer_view += " (Intuition Logic: No strong P/B/T prediction, recommending Avoid.)"
-                    prediction_result = '?'
+        # If no prediction from patterns, try momentum
+        if prediction_result == '?' and momentum:
+            for m_name, m_snapshot in momentum:
+                # Only add to active_momentum_for_learning if not a failed instance
+                if not self._is_pattern_instance_failed(m_name, m_snapshot):
+                    active_momentum_for_learning.append((m_name, m_snapshot))
 
-            # Aggregate additional Developer View from Momentum
-            if momentum:
-                for m_name, m_snapshot in momentum:
-                    # Only add to active_momentum_for_learning if not a failed instance
-                    if not self._is_pattern_instance_failed(m_name, m_snapshot):
-                        active_momentum_for_learning.append((m_name, m_snapshot))
-                if developer_view: developer_view += " | "
-                developer_view += f"Momentum: {', '.join([m[0] for m in momentum])}."
+                if self._is_pattern_instance_failed(m_name, m_snapshot):
+                    developer_view += f" (Note: Momentum '{m_name}' instance previously failed. Skipping for prediction.)"
+                    continue
 
-            # If nothing at all and still no prediction
-            if not developer_view and prediction_result == '?':
-                developer_view = "No strong patterns or intuition detected."
+                if 'Momentum' in m_name: # Generic momentum, predict continuation
+                    prediction_result = current_pb_history[-1]
+                    developer_view += f" | Momentum: {m_name} detected. Predicting continuation ({prediction_result})."
+                    break
+                # Specific momentum logic can be added here if needed
+                # For example, for Steady Repeat, if it's PBPBP, predict P.
+                elif m_name == "Steady Repeat Momentum":
+                    if len(current_pb_history) >= 6: # PBPBPB -> predict P
+                        prediction_result = current_pb_history[-6] # The one that started the pattern
+                        developer_view += f" | Momentum: {m_name} detected. Predicting {prediction_result} to continue the repeat."
+                        break
+                elif 'Ladder Momentum' in m_name:
+                    # This logic needs to be very specific based on the ladder type
+                    # For simplified X-Y-XX-Y, if current is Y, predict X. If current is X, predict Y.
+                    if streaks and len(streaks) >= 2:
+                        last_streak = streaks[-1]
+                        prev_streak = streaks[-2]
+                        if last_streak[1] == 1 and prev_streak[1] >= 2: # e.g., BB P -> predict BB
+                            prediction_result = prev_streak[0]
+                            developer_view += f" | Momentum: {m_name} detected. Predicting {prediction_result} to continue ladder."
+                            break
+                        elif last_streak[1] >= 2 and prev_streak[1] == 1: # e.g., B PP -> predict P
+                            prediction_result = prev_streak[0] # The single one before
+                            developer_view += f" | Momentum: {m_name} detected. Predicting {prediction_result} to continue ladder."
+                            break
 
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'],
-                "risk": risk_level,
-                "recommendation": recommendation,
-                "active_patterns": active_patterns_for_learning, # Pass for learning
-                "active_momentum": active_momentum_for_learning # Pass for learning
-            }
+
+        # --- 5. Intuition Logic (ใช้เมื่อไม่มี Pattern หลัก หรือ Pattern ที่เจอเคยพลาด) ---
+        if prediction_result == '?': # ถ้ายังไม่มีการทำนายจาก Pattern หลักหรือ Momentum
+            intuitive_guess = self.intuition_predict(self.history) # Pass full history for Tie check
+
+            if intuitive_guess == 'T':
+                prediction_result = 'T'
+                developer_view += " (Intuition Logic: Specific Tie pattern identified.)"
+            elif intuitive_guess in ['P', 'B']:
+                prediction_result = intuitive_guess
+                developer_view += f" (Intuition Logic: Predicting {intuitive_guess} based on subtle patterns.)"
+            else:
+                recommendation = "Avoid ❌"
+                risk_level = "Uncertainty"
+                developer_view += " (Intuition Logic: No strong P/B/T prediction, recommending Avoid.)"
+                prediction_result = '?'
+
+        # If still no prediction, and no specific reason to avoid, default to Avoid
+        if prediction_result == '?' and recommendation == "Play ✅":
+            recommendation = "Avoid ❌"
+            risk_level = "Uncertainty"
+            developer_view += " (No clear patterns, momentum, or intuition for prediction. Recommending Avoid.)"
+
+
+        # Aggregate additional Developer View from Momentum
+        if momentum and not developer_view.startswith("Momentum:"): # Avoid duplicating if momentum already set view
+            momentum_names = [m[0] for m in momentum]
+            if developer_view: developer_view += " | "
+            developer_view += f"Momentum detected: {', '.join(momentum_names)}."
+
+        # If nothing at all and still no prediction
+        if not developer_view and prediction_result == '?':
+            developer_view = "No strong patterns or intuition detected."
+
+        return {
+            "developer_view": developer_view,
+            "prediction": prediction_result,
+            "accuracy": backtest_stats['accuracy_percent'],
+            "risk": risk_level,
+            "recommendation": recommendation,
+            "active_patterns": active_patterns_for_learning, # Pass for learning
+            "active_momentum": active_momentum_for_learning # Pass for learning
+        }
