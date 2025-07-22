@@ -98,9 +98,9 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
     """
     hits = 0
     misses = 0
-    current_drawdown_tracker = 0 # Renamed to avoid confusion with the return value
-    max_drawdown = 0
-    total_bets_counted = 0
+    current_drawdown_tracker = 0 # This tracks consecutive misses for the current streak
+    max_drawdown = 0 # This tracks the maximum drawdown observed
+    total_bets_counted = 0 # This counts total bets where a 'Play' recommendation was given
 
     # Find the starting index for backtest. It should be where the engine can first make a prediction.
     pb_count = 0
@@ -115,11 +115,13 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
     if start_index_for_backtest == 0:
         return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0, "current_drawdown": 0}
 
+    # Iterate through the history from the point where predictions can start
     for i in range(start_index_for_backtest, len(history)):
-        simulated_history = history[:i]
-        actual_result_obj = history[i]
+        simulated_history = history[:i] # History up to the current point (excluding current result)
+        actual_result_obj = history[i] # The actual result of the current hand
         actual_main_outcome = actual_result_obj['main_outcome']
 
+        # Create a temporary engine to get the prediction for this historical point
         temp_sim_engine = OracleEngine(
             initial_pattern_stats=pattern_stats,
             initial_momentum_stats=momentum_stats,
@@ -133,7 +135,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         simulated_recommendation = simulated_prediction_data['recommendation'] 
 
         # --- Logic for overall accuracy (hits/misses/total_bets_counted) ---
-        # This still respects the "Play ✅" recommendation for the overall accuracy percentage
+        # This counts bets only when the system would have recommended "Play ✅"
         if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
             total_bets_counted += 1
             if simulated_predicted_outcome == actual_main_outcome:
@@ -142,19 +144,18 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
                 misses += 1
         
         # --- Separate logic for current_drawdown_tracker (consecutive misses) ---
-        # This tracker should count consecutive losses *whenever a prediction was made (not '?')*,
-        # regardless of the 'recommendation' (Play/Avoid).
-        # It resets only on a hit or if no prediction was made.
+        # This tracker counts consecutive losses *only when a prediction was made (not '?')*.
+        # It resets only on a hit. It does NOT reset if no prediction was made ('?').
         if simulated_predicted_outcome in ['P', 'B', 'T']: # A prediction was made (P, B, or T)
             if simulated_predicted_outcome == actual_main_outcome:
                 current_drawdown_tracker = 0 # Reset on hit
             else:
                 current_drawdown_tracker += 1 # Increment on miss
-                max_drawdown = max(max_drawdown, current_drawdown_tracker) # Update max drawdown based on this tracker
-        else:
-            # If no prediction was made ('?'), reset the consecutive miss tracker.
-            # This covers cases where confidence is too low or history is insufficient for a prediction.
-            current_drawdown_tracker = 0 
+        # If simulated_predicted_outcome is '?', the current_drawdown_tracker remains unchanged.
+        # This is the key change: no 'else' to reset to 0 if it's '?'.
+
+        # Update max_drawdown always after updating current_drawdown_tracker
+        max_drawdown = max(max_drawdown, current_drawdown_tracker) 
     
     accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
 
@@ -164,7 +165,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         "hits": hits,
         "misses": misses,
         "total_bets": total_bets_counted,
-        "current_drawdown": current_drawdown_tracker # Return the value from the forward pass
+        "current_drawdown": current_drawdown_tracker # Return the final value of the tracker
     }
 
 
