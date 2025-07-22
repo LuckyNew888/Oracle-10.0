@@ -1,7 +1,36 @@
 import streamlit as st
 import pandas as pd
-import math # For floor function in Fibonacci
-from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data # Import new helper
+import math
+import asyncio # For async Firestore operations
+
+# Firebase imports
+from firebase_admin import credentials, firestore, auth, initialize_app
+import firebase_admin
+
+# Import OracleEngine and helper functions
+from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
+
+# --- Firebase Initialization (Global, only once) ---
+# Check if Firebase app is already initialized
+if not firebase_admin._apps:
+    try:
+        # Use the global __firebase_config variable
+        firebase_config = json.loads(st.secrets["firebase_config"])
+        cred = credentials.Certificate(firebase_config)
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        auth_app = auth.Client(firebase_admin.get_app()) # Get auth client
+        st.session_state.firebase_initialized = True
+        st.session_state.db = db
+        st.session_state.auth_app = auth_app
+    except Exception as e:
+        st.error(f"Error initializing Firebase: {e}. Please ensure firebase_config is correctly set in secrets.toml.")
+        st.session_state.firebase_initialized = False
+else:
+    st.session_state.firebase_initialized = True
+    st.session_state.db = firestore.client()
+    st.session_state.auth_app = auth.Client(firebase_admin.get_app())
+
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
@@ -11,7 +40,7 @@ st.markdown("""
     /* CSS for the main title */
     .custom-title {
         font-family: 'Georgia', serif;
-        font-size: 2.5rem; /* Adjusted from 3rem */
+        font-size: 2.5rem;
         text-align: center;
         color: #FFD700;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
@@ -20,13 +49,13 @@ st.markdown("""
     }
     /* Reduce overall spacing of Streamlit elements */
     .stApp > header {
-        display: none; /* Hide Streamlit Header */
+        display: none;
     }
     .stApp {
-        padding-top: 1rem; /* Reduce top padding of the screen */
-        padding-bottom: 1rem; /* Reduce bottom padding of the screen */
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
-    .st-emotion-cache-z5fcl4 { /* Target specific class for block container */
+    .st-emotion-cache-z5fcl4 {
         padding-top: 1rem;
         padding-bottom: 1rem;
     }
@@ -35,7 +64,7 @@ st.markdown("""
     .stNumberInput > label, .stSelectbox > label, .stTextInput > label {
         font-size: 0.95rem;
         font-weight: bold;
-        margin-bottom: 0.1rem; /* Reduce bottom margin of label */
+        margin-bottom: 0.1rem;
     }
     /* CSS for numbers in st.number_input fields */
     .stNumberInput div[data-baseweb="input"] input {
@@ -51,7 +80,7 @@ st.markdown("""
     .prediction-text {
         font-size: 2rem;
         font-weight: bold;
-        color: #4CAF50; /* Green color */
+        color: #4CAF50;
         text-align: center;
         margin-top: 0.5rem;
         margin-bottom: 0.5rem;
@@ -74,85 +103,84 @@ st.markdown("""
 
     /* --- Big Road Specific CSS --- */
     .big-road-container {
-        display: flex; /* Use flex to arrange columns */
-        overflow-x: auto; /* Enable horizontal scrolling if content overflows */
+        display: flex;
+        overflow-x: auto;
         padding: 10px;
-        background-color: #1a1a1a; /* Dark background for the road */
+        background-color: #1a1a1a;
         border-radius: 8px;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        min-height: 180px; /* Adjusted minimum height for 6 rows of smaller cells */
-        align-items: flex-start; /* Align columns to the top */
-        border: 1px solid #333; /* Subtle border */
+        min-height: 180px;
+        align-items: flex-start;
+        border: 1px solid #333;
     }
 
     .big-road-column {
         display: flex;
-        flex-direction: column; /* Stack cells vertically */
-        min-width: 26px; /* Adjusted minimum width for each column */
-        margin-right: 1px; /* Smaller gap between columns */
+        flex-direction: column;
+        min-width: 26px;
+        margin-right: 1px;
     }
 
     .big-road-cell {
-        width: 24px; /* Adjusted fixed width for circles */
-        height: 24px; /* Adjusted fixed height for circles */
+        width: 24px;
+        height: 24px;
         display: flex;
         justify-content: center;
         align-items: center;
         position: relative;
-        margin-bottom: 1px; /* Smaller gap between cells in a column */
-        box-sizing: border-box; /* Include padding and border in element's total width and height */
+        margin-bottom: 1px;
+        box-sizing: border-box;
     }
 
     .big-road-circle {
-        width: 20px; /* Adjusted circle size */
-        height: 20px; /* Adjusted circle size */
+        width: 20px;
+        height: 20px;
         border-radius: 50%;
         display: flex;
         justify-content: center;
         align-items: center;
-        font-size: 0.6em; /* Smaller font inside circle */
+        font-size: 0.6em;
         font-weight: bold;
         color: white;
         border: 1px solid rgba(255,255,255,0.2);
         box-sizing: border-box;
-        /* Modern look: subtle shadow */
         box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.4);
     }
 
     .player-circle {
-        background-color: #007bff; /* Blue */
+        background-color: #007bff;
     }
 
     .banker-circle {
-        background-color: #dc3545; /* Red */
+        background-color: #dc3545;
     }
 
     .tie-oval {
         position: absolute;
-        top: -4px; /* Position above the circle */
-        right: -4px; /* Position to the right of the circle */
-        background-color: #28a745; /* Green */
+        top: -4px;
+        right: -4px;
+        background-color: #28a745;
         color: white;
-        font-size: 0.55em; /* Smaller font for tie count */
+        font-size: 0.55em;
         font-weight: bold;
-        padding: 0px 3px; /* Smaller padding */
-        border-radius: 6px; /* Oval shape */
-        line-height: 1; /* Ensure text fits */
-        z-index: 3; /* Ensure it's on top */
-        border: 1px solid rgba(255,255,255,0.3); /* Subtle white border */
-        box-shadow: 0px 0px 2px rgba(0, 0, 0, 0.5); /* Small shadow for pop */
+        padding: 0px 3px;
+        border-radius: 6px;
+        line-height: 1;
+        z-index: 3;
+        border: 1px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 0px 2px rgba(0, 0, 0, 0.5);
     }
 
     .natural-indicator {
         position: absolute;
-        bottom: 0px; /* Position at the bottom of the cell */
-        right: 0px; /* Position at the right of the cell */
-        font-size: 0.55em; /* Smaller font for natural indicator */
-        color: #FFD700; /* Gold color for natural */
+        bottom: 0px;
+        right: 0px;
+        font-size: 0.55em;
+        color: #FFD700;
         font-weight: bold;
-        line-height: 1; /* Remove extra line height */
-        z-index: 2; /* Ensure natural indicator is on top */
+        line-height: 1;
+        z-index: 2;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -178,10 +206,9 @@ if "bet_amount" not in st.session_state:
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
 
-# --- Session State for Money Management Systems ---
+# Money Management Systems
 if "money_management_system" not in st.session_state:
     st.session_state.money_management_system = "Fixed Bet"
-
 if "martingale_current_step" not in st.session_state:
     st.session_state.martingale_current_step = 0
 if "martingale_base_bet" not in st.session_state:
@@ -190,7 +217,6 @@ if "martingale_multiplier" not in st.session_state:
     st.session_state.martingale_multiplier = 2.0
 if "martingale_max_steps" not in st.session_state:
     st.session_state.martingale_max_steps = 5
-
 if "fibonacci_sequence" not in st.session_state:
     st.session_state.fibonacci_sequence = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181]
 if "fibonacci_current_index" not in st.session_state:
@@ -199,13 +225,71 @@ if "fibonacci_unit_bet" not in st.session_state:
     st.session_state.fibonacci_unit_bet = 100.0
 if "fibonacci_max_steps_input" not in st.session_state:
     st.session_state.fibonacci_max_steps_input = len(st.session_state.fibonacci_sequence) - 1
-
 if "labouchere_original_sequence" not in st.session_state:
     st.session_state.labouchere_original_sequence = [1.0, 2.0, 3.0, 4.0]
 if "labouchere_current_sequence" not in st.session_state:
     st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
 if "labouchere_unit_bet" not in st.session_state:
     st.session_state.labouchere_unit_bet = 100.0
+
+# Firebase related session states
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+if "room_id" not in st.session_state:
+    st.session_state.room_id = "default_room" # Default room ID
+if "auth_status" not in st.session_state:
+    st.session_state.auth_status = "Authenticating..."
+if "learning_data_loaded" not in st.session_state:
+    st.session_state.learning_data_loaded = False
+if "save_learning_trigger" not in st.session_state:
+    st.session_state.save_learning_trigger = False
+
+# --- Firebase Authentication and Data Loading ---
+async def authenticate_and_load_data():
+    if not st.session_state.firebase_initialized:
+        return
+
+    if st.session_state.user_id is None:
+        try:
+            # Use __initial_auth_token if available, otherwise sign in anonymously
+            if hasattr(st.secrets, "__initial_auth_token") and st.secrets.__initial_auth_token"]:
+                custom_token = st.secrets.__initial_auth_token__
+                decoded_token = st.session_state.auth_app.verify_id_token(custom_token)
+                st.session_state.user_id = decoded_token['uid']
+                st.session_state.auth_status = f"Authenticated (User ID: {st.session_state.user_id})"
+            else:
+                # For anonymous sign-in, Firebase Admin SDK doesn't directly support it.
+                # In a real deployed app, you'd use client-side Firebase JS SDK for anonymous auth.
+                # For this Canvas environment, we'll just generate a UUID if no initial token.
+                st.session_state.user_id = f"anon-{uuid.uuid4()}"
+                st.session_state.auth_status = f"Anonymous User (ID: {st.session_state.user_id})"
+
+            # Set Firestore context for the OracleEngine instance
+            engine = st.session_state.oracle_engine
+            app_id = st.secrets.get("__app_id", "default-app-id") # Get app_id from secrets
+            engine.set_firestore_context(st.session_state.db, st.session_state.user_id, st.session_state.room_id, app_id)
+
+            # Load learning data after successful authentication
+            if not st.session_state.learning_data_loaded:
+                await engine.load_learning_states_from_firestore()
+                st.session_state.learning_data_loaded = True
+
+        except Exception as e:
+            st.error(f"Authentication or data loading error: {e}")
+            st.session_state.auth_status = "Authentication Failed"
+            st.session_state.user_id = None
+
+# Run authentication and data loading only once at startup
+if not st.session_state.get('auth_and_load_done', False):
+    import uuid # Import uuid for anonymous user ID
+    asyncio.run(authenticate_and_load_data())
+    st.session_state.auth_and_load_done = True
+
+# Trigger saving learning data if needed
+if st.session_state.save_learning_trigger:
+    asyncio.run(st.session_state.oracle_engine.save_learning_states_to_firestore())
+    st.session_state.save_learning_trigger = False
+
 
 # --- Function to Calculate Next Bet Amount ---
 def calculate_next_bet():
@@ -261,16 +345,17 @@ def remove_last_from_history():
     if st.session_state.history:
         st.session_state.history.pop()
         _cached_backtest_accuracy.clear()
-        st.session_state.oracle_engine.reset_learning_states_on_undo()
-    reset_money_management_state_on_undo()
+        st.session_state.oracle_engine.reset_learning_states_on_undo() # This will trigger Firestore save
+    st.rerun()
 
 def reset_all_history():
     st.session_state.history = []
     st.session_state.money_balance = 1000.0
     st.session_state.bet_log = []
-    st.session_state.oracle_engine.reset_history()
+    st.session_state.oracle_engine.reset_history() # This will trigger Firestore save
     _cached_backtest_accuracy.clear()
     reset_money_management_state()
+    st.rerun()
 
 def reset_money_management_state():
     st.session_state.martingale_current_step = 0
@@ -377,7 +462,7 @@ def record_bet_result(predicted_side, actual_result):
     patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result, big_road_data_before)
     momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result, big_road_data_before)
 
-    if predicted_side in ['P', 'B', 'T']:
+    if predicted_side in ['P', 'B', 'T']: # Only update learning if a prediction was made
         st.session_state.oracle_engine._update_learning(
             predicted_outcome=predicted_side,
             actual_outcome=actual_result,
@@ -386,91 +471,115 @@ def record_bet_result(predicted_side, actual_result):
         )
     
     _cached_backtest_accuracy.clear()
+    st.rerun()
 
 
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
 
+# --- User/Room ID Input ---
+st.sidebar.markdown("### ⚙️ การตั้งค่า")
+st.sidebar.write(f"สถานะการยืนยันตัวตน: {st.session_state.auth_status}")
+if st.session_state.user_id:
+    st.sidebar.write(f"User ID: `{st.session_state.user_id}`")
+
+new_room_id = st.sidebar.text_input(
+    "รหัสห้อง (Room ID) สำหรับการเรียนรู้เฉพาะห้อง:",
+    value=st.session_state.room_id,
+    key="room_id_input",
+    help="ใช้สำหรับบันทึกและโหลดข้อมูลการเรียนรู้ของห้องนั้นๆ"
+)
+
+if new_room_id != st.session_state.room_id:
+    st.session_state.room_id = new_room_id
+    st.session_state.learning_data_loaded = False # Force reload for new room
+    st.session_state.oracle_engine.set_firestore_context(
+        st.session_state.db, st.session_state.user_id, st.session_state.room_id, st.secrets.get("__app_id", "default-app-id")
+    )
+    # Rerun to trigger async load_learning_states_from_firestore
+    st.rerun()
+
+
 # --- Capital Balance and Bet Amount ---
 st.session_state.money_balance = st.number_input(
-    "💰 Current Capital:",
+    "💰 เงินทุนปัจจุบัน:",
     min_value=0.0,
     value=st.session_state.money_balance,
     step=100.0,
     format="%.2f",
-    help="Define your starting capital."
+    help="กำหนดจำนวนเงินทุนเริ่มต้นของคุณ"
 )
 
 # --- Select and Configure Money Management System ---
 st.session_state.money_management_system = st.selectbox(
-    "📊 Select Money Management System:",
+    "📊 เลือกระบบเดินเงิน:",
     ("Fixed Bet", "Martingale", "Fibonacci", "Labouchere"),
     key="select_money_system"
 )
 
 if st.session_state.money_management_system == "Fixed Bet":
     st.session_state.bet_amount = st.number_input(
-        "💸 Bet Amount (Fixed Bet):",
+        "💸 เงินเดิมพันต่อตา (Fixed Bet):",
         min_value=1.0,
         value=st.session_state.bet_amount,
         step=10.0,
         format="%.2f",
-        help="Define the amount you will bet each round."
+        help="กำหนดจำนวนเงินที่คุณจะเดิมพันในแต่ละตา"
     )
 
 elif st.session_state.money_management_system == "Martingale":
     st.session_state.martingale_base_bet = st.number_input(
-        "💰 Martingale Starting Bet:",
+        "💰 เงินเดิมพันเริ่มต้น Martingale:",
         min_value=1.0,
         value=st.session_state.martingale_base_bet,
         step=10.0,
         format="%.2f",
-        help="Starting bet for the Martingale system."
+        help="เงินเดิมพันเริ่มต้นของระบบ Martingale"
     )
     st.session_state.martingale_multiplier = st.number_input(
-        "✖️ Martingale Multiplier (e.g., 2.0):",
+        "✖️ ตัวคูณ Martingale (เช่น 2.0):",
         min_value=1.1,
         value=st.session_state.martingale_multiplier,
         step=0.1,
         format="%.1f",
-        help="Bet multiplier when losing in Martingale system."
+        help="ตัวคูณเงินเดิมพันเมื่อแพ้ในระบบ Martingale"
     )
     st.session_state.martingale_max_steps = st.number_input(
-        "🪜 Martingale Max Steps (Risk Control):",
+        "🪜 จำนวนไม้สูงสุด Martingale (ป้องกันความเสี่ยง):",
         min_value=1,
         value=st.session_state.martingale_max_steps,
         step=1,
         format="%d",
-        help="Maximum number of times to double bet after a loss."
+        help="จำนวนครั้งสูงสุดที่จะทบเงินเมื่อแพ้"
     )
-    st.info(f"Martingale: Currently at step {st.session_state.martingale_current_step}")
+    st.info(f"Martingale: ปัจจุบันอยู่ที่ไม้ที่ {st.session_state.martingale_current_step}")
 
 elif st.session_state.money_management_system == "Fibonacci":
     st.session_state.fibonacci_unit_bet = st.number_input(
-        "💸 Fibonacci Unit Bet:",
+        "💸 เงินเดิมพันหน่วย Fibonacci:",
         min_value=1.0,
         value=st.session_state.fibonacci_unit_bet,
         step=10.0,
         format="%.2f",
-        help="What 1 unit in the Fibonacci sequence equals in money."
+        help="1 หน่วยในลำดับ Fibonacci จะเท่ากับเงินเท่าไหร่"
     )
     st.session_state.fibonacci_max_steps_input = st.number_input(
-        "🪜 Fibonacci Max Steps (Risk Control):",
+        "🪜 จำนวนไม้สูงสุด Fibonacci (ป้องกันความเสี่ยง):",
         min_value=1,
         value=st.session_state.fibonacci_max_steps_input,
         step=1,
         format="%d",
-        help="Maximum number of steps to follow in the Fibonacci sequence."
+        help="จำนวนครั้งสูงสุดที่จะทบตามลำดับ Fibonacci"
     )
-    st.info(f"Fibonacci: Currently at index {st.session_state.fibonacci_current_index} (value {st.session_state.fibonacci_sequence[st.session_state.fibonacci_current_index]})")
+    st.info(f"Fibonacci: ปัจจุบันอยู่ที่ลำดับที่ {st.session_state.fibonacci_current_index} (ค่า {st.session_state.fibonacci_sequence[st.session_state.fibonacci_current_index]})")
 
 elif st.session_state.money_management_system == "Labouchere":
     original_seq_str = ",".join([f"{s:.1f}" if s % 1 != 0 else f"{int(s)}" for s in st.session_state.labouchere_original_sequence])
 
     new_original_seq_str = st.text_input(
-        "🔢 Labouchere Sequence (comma-separated, e.g., 1,2,3,4):",
+        "🔢 ลำดับ Labouchere (คั่นด้วย , เช่น 1,2,3,4):",
         value=original_seq_str,
-        help="Define the starting number sequence for Labouchere."
+        help="กำหนดลำดับตัวเลขเริ่มต้นของ Labouchere"
     )
     try:
         parsed_seq = [float(x.strip()) for x in new_original_seq_str.split(',') if x.strip()]
@@ -485,24 +594,24 @@ elif st.session_state.money_management_system == "Labouchere":
         st.error("Invalid Labouchere sequence format. Please use numbers separated by commas.")
 
     st.session_state.labouchere_unit_bet = st.number_input(
-        "💸 Labouchere Unit Bet:",
+        "💸 เงินเดิมพันหน่วย Labouchere:",
         min_value=1.0,
         value=st.session_state.labouchere_unit_bet,
         step=10.0,
         format="%.2f",
-        help="What 1 unit in the Labouchere sequence equals in money."
+        help="1 หน่วยในลำดับ Labouchere จะเท่ากับเงินเท่าไหร่"
     )
-    st.info(f"Labouchere: Current sequence: {', '.join([f'{x:.1f}' if x % 1 != 0 else f'{int(x)}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'Empty (Target Achieved!)'}")
+    st.info(f"Labouchere: ลำดับปัจจุบัน: {', '.join([f'{x:.1f}' if x % 1 != 0 else f'{int(x)}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'ว่างเปล่า (เป้าหมายสำเร็จ!)'}")
 
 
 st.session_state.bet_amount_calculated = calculate_next_bet()
-st.info(f"**Next Bet Amount:** {st.session_state.bet_amount_calculated:.2f} Baht")
+st.info(f"**จำนวนเงินที่ต้องเดิมพันตาถัดไป:** {st.session_state.bet_amount_calculated:.2f} บาท")
 
 
 if len(st.session_state.history) < 20:
-    st.warning(f"⚠️ Please record at least 20 hands for accurate analysis.\n(Currently **{len(st.session_state.history)}** hands recorded)")
+    st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(st.session_state.history)}** ตา)")
 
-st.markdown("#### 🔮 Predict Next Hand:")
+st.markdown("#### 🔮 ทำนายตาถัดไป:")
 prediction_data = None
 next_pred_side = '?'
 conf = 0
@@ -517,11 +626,11 @@ if len(engine.history) >= 20:
         next_pred_side = prediction_data['prediction']
         conf = engine.confidence_score(engine.history, _build_big_road_data(engine.history))
 
-        emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— No Recommendation'}
+        emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
 
         st.markdown(f'<div class="prediction-text">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
-        st.markdown(f"**📍 Risk:** {prediction_data['risk']}")
-        st.markdown(f"**🧾 Recommendation:** **{prediction_data['recommendation']}**")
+        st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}")
+        st.markdown(f"**🧾 คำแนะนำ:** **{prediction_data['recommendation']}**")
 
         with st.expander("🧬 Developer View"):
             st.text(prediction_data['developer_view'])
@@ -530,7 +639,11 @@ if len(engine.history) >= 20:
             st.write("--- Momentum Success Rates ---")
             st.write(engine.momentum_stats)
             st.write("--- Failed Pattern Instances ---")
-            st.write(engine.failed_pattern_instances)
+            # Convert keys back to tuples for display
+            display_failed_instances = {
+                tuple(json.loads(k)): v for k, v in engine.get_current_learning_states()[2].items()
+            }
+            st.write(display_failed_instances)
             st.write("--- Backtest Results ---")
             backtest_summary = _cached_backtest_accuracy(
                 engine.history,
@@ -541,10 +654,10 @@ if len(engine.history) >= 20:
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
     else:
-        st.error("❌ Error retrieving prediction from OracleEngine. Please check 'oracle_engine.py'")
-        st.markdown("— (Cannot predict)")
+        st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
+        st.markdown("— (ไม่สามารถทำนายได้)")
 else:
-    st.markdown("— (Insufficient history)")
+    st.markdown("— (ประวัติไม่ครบ)")
 
 # --- Big Road Display ---
 st.markdown("<b>🛣️ Big Road:</b>", unsafe_allow_html=True)
@@ -592,7 +705,7 @@ if big_road_display_data:
     st.markdown("".join(big_road_html_parts), unsafe_allow_html=True)
 
 else:
-    st.info("🔄 No data yet")
+    st.info("🔄 ยังไม่มีข้อมูล")
 
 
 col_p_b_t = st.columns(3)
@@ -613,44 +726,44 @@ if prediction_data and isinstance(prediction_data, dict) and 'recommendation' in
                 st.rerun()
     elif prediction_data['recommendation'] == "Avoid ❌":
         with col_p_b_t[0]:
-            if st.button(f"Record: 🔵 P", key="no_bet_P", use_container_width=True):
+            if st.button(f"บันทึก: 🔵 P", key="no_bet_P", use_container_width=True):
                 record_bet_result('?', 'P')
                 st.rerun()
         with col_p_b_t[1]:
-            if st.button(f"Record: 🔴 B", key="no_bet_B", use_container_width=True):
+            if st.button(f"บันทึก: 🔴 B", key="no_bet_B", use_container_width=True):
                 record_bet_result('?', 'B')
                 st.rerun()
         with col_p_b_t[2]:
-            if st.button(f"Record: 🟢 T", key="no_bet_T", use_container_width=True):
+            if st.button(f"บันทึก: 🟢 T", key="no_bet_T", use_container_width=True):
                 record_bet_result('?', 'T')
                 st.rerun()
 else:
     with col_p_b_t[0]:
-        if st.button(f"Record: 🔵 P", key="init_P", use_container_width=True):
+        if st.button(f"บันทึก: 🔵 P", key="init_P", use_container_width=True):
             record_bet_result('?', 'P')
             st.rerun()
     with col_p_b_t[1]:
-        if st.button(f"Record: 🔴 B", key="init_B", use_container_width=True):
+        if st.button(f"บันทึก: 🔴 B", key="init_B", use_container_width=True):
             record_bet_result('?', 'B')
             st.rerun()
     with col_p_b_t[2]:
-        if st.button(f"Record: 🟢 T", key="init_T", use_container_width=True):
+        if st.button(f"บันทึก: 🟢 T", key="init_T", use_container_width=True):
             record_bet_result('?', 'T')
             st.rerun()
 
 col_hist1, col_hist2 = st.columns(2)
 with col_hist1:
-    if st.button("↩️ Undo Last", key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
-        st.rerun()
+    if st.button("↩️ ลบล่าสุด", key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
+        pass # Action handled by on_click
 with col_hist2:
-    if st.button("🧹 Reset All", key="resetAllHist", use_container_width=True, on_click=reset_all_history):
-        st.rerun()
+    if st.button("🧹 รีเซ็ตทั้งหมด", key="resetAllHist", use_container_width=True, on_click=reset_all_history):
+        pass # Action handled by on_click
 
-st.markdown("### 📊 Bet Log")
+st.markdown("### 📊 บันทึกการเดิมพัน")
 if st.session_state.bet_log:
     df_log = pd.DataFrame(st.session_state.bet_log)
     st.dataframe(df_log, use_container_width=True, hide_index=True)
 else:
-    st.info("No bets recorded yet.")
+    st.info("ยังไม่มีการเดิมพันบันทึกไว้")
 
-st.caption("Oracle AI Analysis System by You")
+st.caption("ระบบวิเคราะห์ Oracle AI โดยคุณ")
