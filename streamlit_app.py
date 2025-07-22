@@ -611,7 +611,15 @@ history_results = st.session_state.history
 big_road_display_data = _build_big_road_data(history_results)
 
 if big_road_display_data:
-    max_row = 6
+    # Calculate max_row dynamically based on the tallest column, with a reasonable cap
+    max_row = 6 # Default minimum rows to display
+    if big_road_display_data:
+        # Get the maximum height among all columns
+        max_row = max(max_row, max(len(col) for col in big_road_display_data))
+    
+    # Ensure a reasonable upper limit for display, e.g., 15-20 rows, to prevent excessively tall columns
+    max_row = min(max_row, 15) # Cap at 15 rows for display purposes, adjust as needed.
+
     columns = big_road_display_data
 
     MAX_DISPLAY_COLUMNS = 12
@@ -622,7 +630,7 @@ if big_road_display_data:
     big_road_html_parts.append(f"<div class='big-road-container' id='big-road-container-unique'>")
     for col in columns:
         big_road_html_parts.append("<div class='big-road-column'>")
-        for row_idx in range(max_row):
+        for row_idx in range(max_row): # This loop will now go up to the tallest column's height
             cell_content = ""
             if row_idx < len(col):
                 cell_result, tie_count, natural_flag = col[row_idx]
