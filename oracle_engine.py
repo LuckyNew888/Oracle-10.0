@@ -2,21 +2,113 @@ from collections import Counter
 import random
 import streamlit as st # Import streamlit for caching
 
+# --- Helper Functions (outside OracleEngine class) ---
+def _get_pb_history(current_history):
+    """Helper to extract only P/B outcomes from structured history."""
+    if not current_history:
+        return []
+    return [item['main_outcome'] for item in current_history if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']]
+
+def _get_streaks(history_pb):
+    """Helper to get streaks from a P/B history list."""
+    if not history_pb:
+        return []
+    streaks = []
+    current_streak_char = history_pb[0]
+    current_streak_length = 0
+    for char in history_pb:
+        if char == current_streak_char:
+            current_streak_length += 1
+        else:
+            streaks.append((current_streak_char, current_streak_length))
+            current_streak_char = char
+            current_streak_length = 1
+    streaks.append((current_streak_char, current_streak_length)) # Add last streak
+    return streaks
+
+@st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
+def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances):
+    """
+    Calculates the system's accuracy from historical predictions and tracks drawdown.
+    This is a global cached function to improve performance.
+    """
+    # Create a temporary OracleEngine instance for simulation purposes
+    # This instance will use the provided pattern_stats, momentum_stats, etc.
+    # It's important that this function does NOT modify the original OracleEngine instance.
+
+    pb_history_len = len(_get_pb_history(history))
+    if pb_history_len < 20: # Need at least 20 P/B hands for meaningful backtest
+        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
+
+    hits = 0
+    misses = 0
+    current_drawdown = 0
+    max_drawdown = 0
+    total_bets_counted = 0 # Only count bets where recommendation was 'Play' and prediction was P/B/T
+
+    # Find the starting index for backtest. It should be where the engine can first make a prediction.
+    pb_count = 0
+    start_index_for_backtest = 0
+    for i, item in enumerate(history):
+        if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']:
+            pb_count += 1
+        if pb_count >= 20:
+            start_index_for_backtest = i + 1 # Start predicting from the next hand
+            break
+    
+    if start_index_for_backtest == 0: # Not enough P/B history even after iterating all
+        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
+
+
+    # Simulate predictions for each hand from start_index_for_backtest to the end
+    for i in range(start_index_for_backtest, len(history)):
+        simulated_history = history[:i]
+        actual_result_obj = history[i]
+        actual_main_outcome = actual_result_obj['main_outcome']
+
+        # Create a temporary engine instance for simulation
+        temp_sim_engine = OracleEngine(
+            initial_pattern_stats=pattern_stats,
+            initial_momentum_stats=momentum_stats,
+            initial_failed_pattern_instances=failed_pattern_instances
+        )
+        temp_sim_engine.history = simulated_history # Set history for this simulation step
+
+        # Get prediction for this simulated hand
+        simulated_prediction_data = temp_sim_engine.predict_next_for_backtest() # Use a special method for backtest
+        simulated_predicted_outcome = simulated_prediction_data['prediction']
+        simulated_recommendation = simulated_prediction_data['recommendation']
+
+        # Only count hit/miss if a 'Play' recommendation was given and a P/B/T prediction was made
+        if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
+            total_bets_counted += 1
+            if simulated_predicted_outcome == actual_main_outcome:
+                hits += 1
+                current_drawdown = 0 # Reset drawdown on a hit
+            else:
+                misses += 1
+                current_drawdown += 1
+                max_drawdown = max(max_drawdown, current_drawdown) # Update max drawdown
+
+    accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
+
+    return {
+        "accuracy_percent": accuracy_percent,
+        "max_drawdown": max_drawdown,
+        "hits": hits,
+        "misses": misses,
+        "total_bets": total_bets_counted
+    }
+
+
 class OracleEngine:
-    def __init__(self):
-        # History will now store richer objects:
-        # {'main_outcome': 'P'/'B'/'T', 'ties': int, 'is_any_natural': bool}
+    def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None):
         self.history = []
-        # Stores success rates of patterns and momentum: {'pattern_name': {'hits': int, 'misses': int}}
-        self.pattern_stats = {}
-        self.momentum_stats = {}
-        # Stores specific pattern instances that led to a miss:
-        # {('pattern_type', 'sequence_snapshot_tuple'): count_of_misses}
-        self.failed_pattern_instances = {}
-        # self.backtest_results is now managed by the cached backtest_accuracy method's return value
+        self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
+        self.momentum_stats = initial_momentum_stats if initial_momentum_stats is not None else {}
+        self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
 
     # --- Data Management (for the Engine itself) ---
-    # This method is for internal engine use, not directly called by UI for adding new rounds.
     def update_history(self, result_obj):
         """Adds a new result object to the history (for internal engine use)."""
         if isinstance(result_obj, dict) and 'main_outcome' in result_obj:
@@ -26,8 +118,6 @@ class OracleEngine:
         """Removes the last result from the history."""
         if self.history:
             self.history.pop()
-            # When history is removed, we should also clear the cache for backtest_accuracy
-            self.clear_cache() # Clear cache for backtest_accuracy
             self.reset_learning_states_on_undo() # Reset learning states
 
     def reset_learning_states_on_undo(self):
@@ -35,7 +125,6 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        # No need to reset backtest_results directly here, as it's handled by cache invalidation
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -43,56 +132,27 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        self.clear_cache() # Clear cache for backtest_accuracy
 
-    def clear_cache(self):
-        """Clears the cache for the backtest_accuracy method."""
-        # This is how you clear the cache for a specific cached function
-        # Note: This assumes backtest_accuracy is a method of this class.
-        # If it were a global function, you'd call backtest_accuracy.clear()
-        self.backtest_accuracy.clear()
-
-
-    def _get_pb_history(self, current_history):
-        """Helper to extract only P/B outcomes from structured history."""
-        # Ensure current_history is not None or empty before processing
-        if not current_history:
-            return []
-        return [item['main_outcome'] for item in current_history if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']]
-
-    def _get_streaks(self, history_pb):
-        """Helper to get streaks from a P/B history list."""
-        if not history_pb:
-            return []
-        streaks = []
-        current_streak_char = history_pb[0]
-        current_streak_length = 0
-        for char in history_pb:
-            if char == current_streak_char:
-                current_streak_length += 1
-            else:
-                streaks.append((current_streak_char, current_streak_length))
-                current_streak_char = char
-                current_streak_length = 1
-        streaks.append((current_streak_char, current_streak_length)) # Add last streak
-        return streaks
+    def get_current_learning_states(self):
+        """Returns the current learning states for caching purposes."""
+        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances
 
     # --- 1. 🧬 DNA Pattern Analysis (ตรวจจับรูปแบบ) ---
     def detect_patterns(self, current_history):
         """
         Detects various patterns and returns a list of (pattern_name, sequence_snapshot) tuples.
         """
-        h = self._get_pb_history(current_history)
-        streaks = self._get_streaks(h)
+        h = _get_pb_history(current_history)
+        streaks = _get_streaks(h)
         patterns_detected = []
 
         # Pingpong (B-P-B-P...) - streaks of length 1
         if len(streaks) >= 4 and all(s[1] == 1 for s in streaks[-4:]):
-            patterns_detected.append((f'Pingpong ({len(streaks[-4:])}x)', tuple(h[-len(streaks[-4:]):])))
+            patterns_detected.append((f'Pingpong ({len(streaks[-4:])}x)', tuple(h[-sum(s[1] for s in streaks[-4:]):])))
         if len(streaks) >= 6 and all(s[1] == 1 for s in streaks[-6:]):
-            patterns_detected.append((f'Pingpong ({len(streaks[-6:])}x)', tuple(h[-len(streaks[-6:]):])))
+            patterns_detected.append((f'Pingpong ({len(streaks[-6:])}x)', tuple(h[-sum(s[1] for s in streaks[-6:]):])))
         if len(streaks) >= 8 and all(s[1] == 1 for s in streaks[-8:]):
-            patterns_detected.append((f'Pingpong ({len(streaks[-8:])}x)', tuple(h[-len(streaks[-8:]):])))
+            patterns_detected.append((f'Pingpong ({len(streaks[-8:])}x)', tuple(h[-sum(s[1] for s in streaks[-8:]):])))
 
 
         # Dragon (long streak: 3+ consecutive same results)
@@ -143,8 +203,8 @@ class OracleEngine:
         Detects momentum and returns a list of (momentum_name, sequence_snapshot) tuples.
         Momentum often implies continuation of a trend.
         """
-        h = self._get_pb_history(current_history)
-        streaks = self._get_streaks(h)
+        h = _get_pb_history(current_history)
+        streaks = _get_streaks(h)
         momentum_detected = []
 
         # B3+, P3+ Momentum (3 or more consecutive same results) - same as Dragon detection for 3+
@@ -183,7 +243,7 @@ class OracleEngine:
     # --- 3. ⚠️ Trap Zone Detection (ตรวจจับโซนอันตราย) ---
     def in_trap_zone(self, current_history):
         """Detects zones where changes are rapid and dangerous. Uses main_outcome."""
-        h = self._get_pb_history(current_history)
+        h = _get_pb_history(current_history)
         if len(h) < 2:
             return False
 
@@ -203,7 +263,7 @@ class OracleEngine:
     def confidence_score(self, current_history):
         """Calculates the system's confidence score for prediction."""
         # Ensure enough P/B history for meaningful score
-        pb_history_len = len(self._get_pb_history(current_history))
+        pb_history_len = len(_get_pb_history(current_history))
         if pb_history_len < 10: # Minimum 10 P/B results for confidence
             return 0
 
@@ -282,7 +342,7 @@ class OracleEngine:
     def intuition_predict(self, current_history):
         """Uses deep logic to predict when no clear pattern is present."""
         # Use only P/B for most intuition, but full_h for Tie detection
-        h = self._get_pb_history(current_history)
+        h = _get_pb_history(current_history)
         full_h = current_history
 
         if len(h) < 3: # Need at least 3 P/B results for most intuition
@@ -321,93 +381,10 @@ class OracleEngine:
 
         return '?'
 
-    # --- 7. 🔬 Backtest Simulation (ทดสอบผลย้อนหลัง) ---
-    @st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
-    def backtest_accuracy(self):
-        """
-        Calculates the system's accuracy from historical predictions and tracks drawdown.
-        Simulates predictions from the 11th hand onwards (or 20th, as per confidence threshold).
-        """
-        # Note: self (the OracleEngine instance) is part of the cache key.
-        # This means if self.history or any other internal state changes, the cache is invalidated.
-
-        pb_history_len = len(self._get_pb_history(self.history))
-        if pb_history_len < 20: # Need at least 20 P/B hands for meaningful backtest
-            return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
-
-        hits = 0
-        misses = 0
-        current_drawdown = 0
-        max_drawdown = 0
-        total_bets_counted = 0 # Only count bets where recommendation was 'Play' and prediction was P/B/T
-
-        # Find the starting index for backtest. It should be where the engine can first make a prediction.
-        # This is typically after enough history for confidence score (e.g., 20 P/B results).
-        # We need to iterate through the full history to find the actual index corresponding to 20 P/B results.
-        pb_count = 0
-        start_index_for_backtest = 0
-        for i, item in enumerate(self.history):
-            if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']:
-                pb_count += 1
-            if pb_count >= 20:
-                start_index_for_backtest = i + 1 # Start predicting from the next hand
-                break
-        
-        if start_index_for_backtest == 0: # Not enough P/B history even after iterating all
-            return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
-
-
-        # Simulate predictions for each hand from start_index_for_backtest to the end
-        for i in range(start_index_for_backtest, len(self.history)):
-            # Get the history up to the current hand (excluding the current hand itself)
-            simulated_history = self.history[:i]
-            actual_result_obj = self.history[i]
-            actual_main_outcome = actual_result_obj['main_outcome']
-
-            # Create a temporary engine instance for simulation to avoid polluting main engine's state
-            # IMPORTANT: For backtesting, the temp_sim_engine should start with the learning states
-            # that would have existed *at that point in history*.
-            # For simplicity for now, we copy the *current* learning states.
-            # A truly accurate backtest would require rolling back learning states too.
-            # But for performance, we'll use the current learning states for backtest.
-            temp_sim_engine = OracleEngine()
-            temp_sim_engine.history = simulated_history
-            # Copy learning stats to temp engine for realistic simulation
-            temp_sim_engine.pattern_stats = self.pattern_stats.copy()
-            temp_sim_engine.momentum_stats = self.momentum_stats.copy()
-            temp_sim_engine.failed_pattern_instances = self.failed_pattern_instances.copy()
-
-
-            # Get prediction for this simulated hand
-            simulated_prediction_data = temp_sim_engine.predict_next()
-            simulated_predicted_outcome = simulated_prediction_data['prediction']
-            simulated_recommendation = simulated_prediction_data['recommendation']
-
-            # Only count hit/miss if a 'Play' recommendation was given and a P/B/T prediction was made
-            if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
-                total_bets_counted += 1
-                if simulated_predicted_outcome == actual_main_outcome:
-                    hits += 1
-                    current_drawdown = 0 # Reset drawdown on a hit
-                else:
-                    misses += 1
-                    current_drawdown += 1
-                    max_drawdown = max(max_drawdown, current_drawdown) # Update max drawdown
-
-        accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
-
-        return {
-            "accuracy_percent": accuracy_percent,
-            "max_drawdown": max_drawdown,
-            "hits": hits,
-            "misses": misses,
-            "total_bets": total_bets_counted
-        }
-
-    # --- Main function for predicting the next result ---
+    # --- Main function for predicting the next result (for UI display) ---
     def predict_next(self):
         """
-        Main function for analyzing and predicting the next outcome.
+        Main function for analyzing and predicting the next outcome for UI display.
         Returns a dictionary with prediction, risk, recommendation, developer_view.
         """
         prediction_result = '?'
@@ -415,10 +392,15 @@ class OracleEngine:
         recommendation = "Play ✅"
         developer_view = ""
 
-        current_pb_history = self._get_pb_history(self.history)
+        current_pb_history = _get_pb_history(self.history)
         
-        # Get backtest stats early, as they are used in multiple checks
-        backtest_stats = self.backtest_accuracy() # This call is now cached!
+        # Get backtest stats using the cached global function
+        backtest_stats = _cached_backtest_accuracy(
+            self.history,
+            self.pattern_stats,
+            self.momentum_stats,
+            self.failed_pattern_instances
+        )
 
         # --- 1. ตรวจสอบ Trap Zone เป็นอันดับแรกสุด (งดเดิมพันทันที) ---
         if self.in_trap_zone(self.history):
@@ -428,11 +410,11 @@ class OracleEngine:
             return {
                 "developer_view": developer_view,
                 "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'], # Use real accuracy
+                "accuracy": backtest_stats['accuracy_percent'],
                 "risk": risk_level,
                 "recommendation": recommendation,
-                "active_patterns": [], # No patterns considered if avoiding
-                "active_momentum": [] # No momentum considered if avoiding
+                "active_patterns": [],
+                "active_momentum": []
             }
 
         # --- 2. ตรวจสอบ Confidence Score (งดเดิมพันหากต่ำกว่าเกณฑ์) ---
@@ -567,6 +549,7 @@ class OracleEngine:
                 if 'Momentum' in m_name: # Generic momentum, predict continuation
                     prediction_result = current_pb_history[-1]
                     developer_view += f" | Momentum: {m_name} detected. Predicting continuation ({prediction_result})."
+                    predicted_by_pattern = True # Mark as predicted by a rule
                     break
                 # Specific momentum logic can be added here if needed
                 # For example, for Steady Repeat, if it's PBPBP, predict P.
@@ -574,6 +557,7 @@ class OracleEngine:
                     if len(current_pb_history) >= 6: # PBPBPB -> predict P
                         prediction_result = current_pb_history[-6] # The one that started the pattern
                         developer_view += f" | Momentum: {m_name} detected. Predicting {prediction_result} to continue the repeat."
+                        predicted_by_pattern = True
                         break
                 elif 'Ladder Momentum' in m_name:
                     # This logic needs to be very specific based on the ladder type
@@ -584,10 +568,12 @@ class OracleEngine:
                         if last_streak[1] == 1 and prev_streak[1] >= 2: # e.g., BB P -> predict BB
                             prediction_result = prev_streak[0]
                             developer_view += f" | Momentum: {m_name} detected. Predicting {prediction_result} to continue ladder."
+                            predicted_by_pattern = True
                             break
                         elif last_streak[1] >= 2 and prev_streak[1] == 1: # e.g., B PP -> predict P
                             prediction_result = prev_streak[0] # The single one before
                             developer_view += f" | Momentum: {m_name} detected. Predicting {prediction_result} to continue ladder."
+                            predicted_by_pattern = True
                             break
 
 
@@ -613,17 +599,6 @@ class OracleEngine:
             risk_level = "Uncertainty"
             developer_view += " (No clear patterns, momentum, or intuition for prediction. Recommending Avoid.)"
 
-
-        # Aggregate additional Developer View from Momentum
-        if momentum and not developer_view.startswith("Momentum:"): # Avoid duplicating if momentum already set view
-            momentum_names = [m[0] for m in momentum]
-            if developer_view: developer_view += " | "
-            developer_view += f"Momentum detected: {', '.join(momentum_names)}."
-
-        # If nothing at all and still no prediction
-        if not developer_view and prediction_result == '?':
-            developer_view = "No strong patterns or intuition detected."
-
         return {
             "developer_view": developer_view,
             "prediction": prediction_result,
@@ -633,3 +608,107 @@ class OracleEngine:
             "active_patterns": active_patterns_for_learning, # Pass for learning
             "active_momentum": active_momentum_for_learning # Pass for learning
         }
+
+    # Special predict method for backtesting to avoid infinite recursion with predict_next
+    def predict_next_for_backtest(self):
+        """
+        Simplified prediction for backtesting, without calling backtest_accuracy recursively.
+        """
+        prediction_result = '?'
+        recommendation = "Play ✅" # Assume play for backtest unless a strong avoid rule
+        
+        current_pb_history = _get_pb_history(self.history)
+
+        if self.in_trap_zone(self.history):
+            recommendation = "Avoid ❌"
+            return {"prediction": prediction_result, "recommendation": recommendation}
+
+        score = self.confidence_score(self.history)
+        if score < 60:
+            recommendation = "Avoid ❌"
+            return {"prediction": prediction_result, "recommendation": recommendation}
+        
+        # In backtest, we don't use the max_drawdown from the backtest_accuracy itself
+        # as that would be circular. We rely on confidence and trap zone.
+
+        patterns = self.detect_patterns(self.history)
+        momentum = self.detect_momentum(self.history)
+
+        # Prioritize prediction based on detected patterns
+        if patterns:
+            for p_name, p_snapshot in patterns:
+                if self._is_pattern_instance_failed(p_name, p_snapshot):
+                    continue
+
+                if 'Dragon' in p_name:
+                    prediction_result = current_pb_history[-1]
+                    break
+                elif 'Pingpong' in p_name:
+                    last = current_pb_history[-1]
+                    prediction_result = 'P' if last == 'B' else 'B'
+                    break
+                elif 'Two-Cut' in p_name:
+                    if len(current_pb_history) >= 2:
+                        last_two = current_pb_history[-2:]
+                        if last_two[0] == last_two[1]:
+                            prediction_result = 'P' if last_two[0] == 'B' else 'B'
+                            break
+                elif 'Triple-Cut' in p_name:
+                    if len(current_pb_history) >= 3:
+                        last_three = current_pb_history[-3:]
+                        if len(set(last_three)) == 1:
+                            prediction_result = 'P' if last_three[0] == 'B' else 'B'
+                            break
+                elif 'One-Two Pattern' in p_name:
+                    if _get_streaks(self.history) and len(_get_streaks(self.history)) >= 2:
+                        last_streak = _get_streaks(self.history)[-1]
+                        prev_streak = _get_streaks(self.history)[-2]
+                        if last_streak[1] == 2 and prev_streak[1] == 1:
+                            prediction_result = prev_streak[0]
+                            break
+                        elif last_streak[1] == 1 and prev_streak[1] == 2:
+                            prediction_result = last_streak[0]
+                            break
+                elif 'Two-One Pattern' in p_name:
+                    if _get_streaks(self.history) and len(_get_streaks(self.history)) >= 2:
+                        last_streak = _get_streaks(self.history)[-1]
+                        prev_streak = _get_streaks(self.history)[-2]
+                        if last_streak[1] == 1 and prev_streak[1] == 2:
+                            prediction_result = prev_streak[0]
+                            break
+                        elif last_streak[1] == 2 and prev_streak[1] == 1:
+                            prediction_result = last_streak[0]
+                            break
+
+        # If no prediction from patterns, try momentum
+        if prediction_result == '?' and momentum:
+            for m_name, m_snapshot in momentum:
+                if self._is_pattern_instance_failed(m_name, m_snapshot):
+                    continue
+                if 'Momentum' in m_name:
+                    prediction_result = current_pb_history[-1]
+                    break
+                elif m_name == "Steady Repeat Momentum":
+                    if len(current_pb_history) >= 6:
+                        prediction_result = current_pb_history[-6]
+                        break
+                elif 'Ladder Momentum' in m_name:
+                    if _get_streaks(self.history) and len(_get_streaks(self.history)) >= 2:
+                        last_streak = _get_streaks(self.history)[-1]
+                        prev_streak = _get_streaks(self.history)[-2]
+                        if last_streak[1] == 1 and prev_streak[1] >= 2:
+                            prediction_result = prev_streak[0]
+                            break
+                        elif last_streak[1] >= 2 and prev_streak[1] == 1:
+                            prediction_result = prev_streak[0]
+                            break
+
+        # If still no prediction from patterns or momentum, use intuition
+        if prediction_result == '?':
+            intuitive_guess = self.intuition_predict(self.history)
+            if intuitive_guess in ['P', 'B', 'T']:
+                prediction_result = intuitive_guess
+            else:
+                recommendation = "Avoid ❌" # If intuition also fails, avoid
+        
+        return {"prediction": prediction_result, "recommendation": recommendation}
