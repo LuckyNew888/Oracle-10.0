@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import math
 import asyncio # For async Firestore operations
+import json # <--- ADDED THIS IMPORT
+import uuid # For anonymous user ID generation
 
 # Firebase imports
 from firebase_admin import credentials, firestore, auth, initialize_app
@@ -15,6 +17,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 if not firebase_admin._apps:
     try:
         # Use the global __firebase_config variable
+        # st.secrets is used to access secrets.toml in Streamlit Cloud
         firebase_config = json.loads(st.secrets["firebase_config"])
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
@@ -252,7 +255,8 @@ async def authenticate_and_load_data():
     if st.session_state.user_id is None:
         try:
             # Use __initial_auth_token if available, otherwise sign in anonymously
-            if hasattr(st.secrets, "__initial_auth_token") and st.secrets.__initial_auth_token"]:
+            # Corrected line 255: removed extra ']'
+            if hasattr(st.secrets, "__initial_auth_token") and st.secrets.__initial_auth_token__:
                 custom_token = st.secrets.__initial_auth_token__
                 decoded_token = st.session_state.auth_app.verify_id_token(custom_token)
                 st.session_state.user_id = decoded_token['uid']
@@ -281,7 +285,6 @@ async def authenticate_and_load_data():
 
 # Run authentication and data loading only once at startup
 if not st.session_state.get('auth_and_load_done', False):
-    import uuid # Import uuid for anonymous user ID
     asyncio.run(authenticate_and_load_data())
     st.session_state.auth_and_load_done = True
 
