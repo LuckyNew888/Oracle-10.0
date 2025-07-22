@@ -210,18 +210,8 @@ else:
 # --- Session State Initialization (other variables) ---
 if "history" not in st.session_state:
     st.session_state.history = []
-# Removed money_balance, bet_amount from session_state init
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
-
-# Removed all money management system related session state initializations
-# if "money_management_system" not in st.session_state:
-#     st.session_state.money_management_system = "Fixed Bet"
-# ... and so on for martingale, fibonacci, labouchere
-
-# --- Removed Function to Calculate Next Bet Amount ---
-# def calculate_next_bet():
-#     ...
 
 # --- Callback Functions for History and Betting Management ---
 def remove_last_from_history():
@@ -233,32 +223,26 @@ def remove_last_from_history():
 
 def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.history = []
-    # Removed money_balance reset
     st.session_state.bet_log = []
     st.session_state.oracle_engine.reset_history() # Resets all learning states
     _cached_backtest_accuracy.clear()
-    # Removed reset_money_management_state()
 
 
-def record_bet_result(predicted_side, actual_result, recommendation_status):
+def record_bet_result(actual_result, current_prediction_data):
     # Simplified logic: no money management, just record the outcome and update learning
-    # We'll use a placeholder bet amount of 1.0 for logging consistency if needed,
-    # but actual money balance is not tracked.
     
-    # The recommendation_status will now be "Play ✅" if a prediction was made,
-    # or "Avoid ❌" if no prediction could be made (e.g., low confidence, insufficient history).
+    # Extract predicted_side and recommendation_status from current_prediction_data
+    predicted_side = current_prediction_data['prediction'] if current_prediction_data and 'prediction' in current_prediction_data else '?'
+    recommendation_status = current_prediction_data['recommendation'] if current_prediction_data and 'recommendation' in current_prediction_data else "Avoid ❌"
     
-    # For logging purposes, we can assume a "bet" happened if it was a "Play ✅" recommendation
-    # and a prediction was made.
-    
-    outcome = "Recorded" # Default outcome
-    
+    outcome_status = "Recorded" # Default outcome status for log
+
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "Predict": predicted_side,
         "Actual": actual_result,
         "Recommendation": recommendation_status, # Log the recommendation
-        "Outcome": outcome # Simplified outcome
+        "Outcome": outcome_status # Simplified outcome
     })
 
     # --- Update History for Oracle Engine ---
@@ -301,11 +285,7 @@ engine.history = st.session_state.history
 
 # --- Removed Money Management UI ---
 st.sidebar.markdown("### ⚙️ การตั้งค่า")
-# Removed st.session_state.money_balance input
-# Removed st.selectbox for money_management_system
-# Removed all conditional inputs for Martingale, Fibonacci, Labouchere
-# Removed st.session_state.bet_amount input
-# Removed st.info(f"**จำนวนเงินที่ต้องเดิมพันตาถัดไป:** ...")
+# All money management UI elements removed as per user request.
 
 
 if len(st.session_state.history) < 20:
@@ -421,30 +401,16 @@ else:
 
 col_p_b_t = st.columns(3)
 
-# The buttons will now always record the actual result,
-# and the prediction_data['recommendation'] will be passed.
-# If prediction_data['prediction'] is '?', then recommendation will be 'Avoid ❌'
-# If prediction_data['prediction'] is P/B/T, then recommendation will be 'Play ✅'
-if prediction_data: # If prediction_data is available (history >= 20)
-    with col_p_b_t[0]:
-        if st.button(f"บันทึก: 🔵 P", key="result_P", use_container_width=True):
-            record_bet_result(prediction_data['prediction'], 'P', prediction_data['recommendation'])
-    with col_p_b_t[1]:
-        if st.button(f"บันทึก: 🔴 B", key="result_B", use_container_width=True):
-            record_bet_result(prediction_data['prediction'], 'B', prediction_data['recommendation'])
-    with col_p_b_t[2]:
-        if st.button(f"บันทึก: 🟢 T", key="result_T", use_container_width=True):
-            record_bet_result(prediction_data['prediction'], 'T', prediction_data['recommendation'])
-else: # Initial state or insufficient history (prediction_data is None)
-    with col_p_b_t[0]:
-        if st.button(f"บันทึก: 🔵 P", key="init_P", use_container_width=True):
-            record_bet_result('?', 'P', "Avoid ❌") # No prediction yet, so '?' and 'Avoid'
-    with col_p_b_t[1]:
-        if st.button(f"บันทึก: 🔴 B", key="init_B", use_container_width=True):
-            record_bet_result('?', 'B', "Avoid ❌")
-    with col_p_b_t[2]:
-        if st.button(f"บันทึก: 🟢 T", key="init_T", use_container_width=True):
-            record_bet_result('?', 'T', "Avoid ❌")
+# Use static keys for buttons to prevent "mixed up" issue
+with col_p_b_t[0]:
+    if st.button(f"บันทึก: 🔵 P", key="record_P", use_container_width=True):
+        record_bet_result('P', prediction_data) # Pass actual result and current prediction_data
+with col_p_b_t[1]:
+    if st.button(f"บันทึก: 🔴 B", key="record_B", use_container_width=True):
+        record_bet_result('B', prediction_data) # Pass actual result and current prediction_data
+with col_p_b_t[2]:
+    if st.button(f"บันทึก: 🟢 T", key="record_T", use_container_width=True):
+        record_bet_result('T', prediction_data) # Pass actual result and current prediction_data
 
 
 col_hist1, col_hist2 = st.columns(2)
