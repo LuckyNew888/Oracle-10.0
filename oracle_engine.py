@@ -1,7 +1,7 @@
 from collections import Counter
 import random
 import streamlit as st # Import streamlit for caching
-import json # For serializing/deserializing failed_pattern_instances keys
+# Removed import json as it's no longer needed for failed_pattern_instances serialization
 
 # --- Helper Functions (outside OracleEngine class) ---
 def _get_pb_history(current_history):
@@ -137,15 +137,10 @@ class OracleEngine:
         self.history = []
         self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
         self.momentum_stats = initial_momentum_stats if initial_momentum_stats is not None else {}
-        # Failed pattern instances keys are (pattern_name, sequence_snapshot_tuple)
-        # For Firestore, we need to convert tuple keys to string for storage.
+        # failed_pattern_instances keys are (pattern_name, sequence_snapshot_tuple)
         self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
         
-        # Firestore context (will be set by Streamlit app)
-        self.db = None
-        self.user_id = None
-        self.room_id = None
-        self.app_id = None # __app_id from global context
+        # Removed Firebase context attributes (self.db, self.user_id, self.room_id, self.app_id)
 
         # Weighted Pattern Scoring: Define weights for each pattern and momentum
         self.pattern_weights = {
@@ -170,12 +165,7 @@ class OracleEngine:
             'Ladder Momentum (X-Y-XX-Y)': 0.6,
         }
 
-    def set_firestore_context(self, db_instance, user_id, room_id, app_id):
-        """Sets the Firestore database context for the engine."""
-        self.db = db_instance
-        self.user_id = user_id
-        self.room_id = room_id
-        self.app_id = app_id
+    # Removed set_firestore_context method
 
     # --- Data Management (for the Engine itself) ---
     def update_history(self, result_obj):
@@ -194,10 +184,7 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        # Also clear Firestore cache if applicable
-        if self.db and self.user_id and self.room_id and self.app_id:
-            self.save_learning_states_to_firestore()
-
+        # Removed Firestore save trigger
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -205,68 +192,15 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        # Also clear Firestore cache if applicable
-        if self.db and self.user_id and self.room_id and self.app_id:
-            self.save_learning_states_to_firestore() # Save empty states to clear Firestore
+        # Removed Firestore save trigger
 
     def get_current_learning_states(self):
         """Returns the current learning states for caching purposes."""
-        # Convert tuple keys in failed_pattern_instances to string for consistent storage/retrieval
-        serializable_failed_instances = {json.dumps(k): v for k, v in self.failed_pattern_instances.items()}
-        return self.pattern_stats, self.momentum_stats, serializable_failed_instances
+        # No longer need to serialize/deserialize keys for Firestore
+        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances
 
-    async def load_learning_states_from_firestore(self):
-        """Loads learning states from Firestore for the current room and user."""
-        if not (self.db and self.user_id and self.room_id and self.app_id):
-            return
-
-        try:
-            doc_ref = self.db.collection(f"artifacts/{self.app_id}/users/{self.user_id}/rooms").document(self.room_id)
-            doc_snapshot = await doc_ref.get()
-
-            if doc_snapshot.exists:
-                data = doc_snapshot.to_dict()
-                self.pattern_stats = data.get('pattern_stats', {})
-                self.momentum_stats = data.get('momentum_stats', {})
-                
-                # Deserialize failed_pattern_instances keys back to tuples
-                loaded_failed_instances_raw = data.get('failed_pattern_instances', {})
-                self.failed_pattern_instances = {
-                    tuple(json.loads(k)): v for k, v in loaded_failed_instances_raw.items()
-                }
-                st.success(f"Loaded learning data for room '{self.room_id}'.")
-            else:
-                st.info(f"No existing learning data for room '{self.room_id}'. Starting fresh.")
-                self.pattern_stats = {}
-                self.momentum_stats = {}
-                self.failed_pattern_instances = {}
-        except Exception as e:
-            st.error(f"Error loading learning data from Firestore: {e}")
-            # Fallback to empty states on error
-            self.pattern_stats = {}
-            self.momentum_stats = {}
-            self.failed_pattern_instances = {}
-
-
-    async def save_learning_states_to_firestore(self):
-        """Saves current learning states to Firestore for the current room and user."""
-        if not (self.db and self.user_id and self.room_id and self.app_id):
-            return
-
-        try:
-            doc_ref = self.db.collection(f"artifacts/{self.app_id}/users/{self.user_id}/rooms").document(self.room_id)
-            
-            # Convert tuple keys in failed_pattern_instances to string for storage
-            serializable_failed_instances = {json.dumps(k): v for k, v in self.failed_pattern_instances.items()}
-
-            await doc_ref.set({
-                'pattern_stats': self.pattern_stats,
-                'momentum_stats': self.momentum_stats,
-                'failed_pattern_instances': serializable_failed_instances
-            })
-            st.success(f"Saved learning data for room '{self.room_id}' to Firestore.")
-        except Exception as e:
-            st.error(f"Error saving learning data to Firestore: {e}")
+    # Removed load_learning_states_from_firestore method
+    # Removed save_learning_states_to_firestore method
 
 
     # --- 1. 🧬 DNA Pattern Analysis (Pattern Detection) ---
@@ -494,11 +428,8 @@ class OracleEngine:
     # --- 5. 🔁 Memory Logic (Remembering Failed Patterns) ---
     def _is_pattern_instance_failed(self, pattern_type, sequence_snapshot):
         """Checks if this specific pattern instance has previously led to a miss."""
-        # Convert tuple key to string for lookup if stored as string
-        key_to_check = json.dumps((pattern_type, sequence_snapshot))
-        # Check if the string key exists, or if the tuple key exists (for in-memory)
-        return self.failed_pattern_instances.get(key_to_check, 0) > 0 or \
-               self.failed_pattern_instances.get((pattern_type, sequence_snapshot), 0) > 0
+        # No longer need to convert key to string for lookup
+        return self.failed_pattern_instances.get((pattern_type, sequence_snapshot), 0) > 0
 
 
     def _update_learning(self, predicted_outcome, actual_outcome, patterns_detected, momentum_detected):
@@ -528,9 +459,7 @@ class OracleEngine:
                 failed_key = (m_name, m_snapshot)
                 self.failed_pattern_instances[failed_key] = self.failed_pattern_instances.get(failed_key, 0) + 1
         
-        # Save to Firestore after every update if context is available
-        if self.db and self.user_id and self.room_id and self.app_id:
-            st.session_state.save_learning_trigger = True # Use a trigger for async save
+        # Removed Firestore save trigger (st.session_state.save_learning_trigger = True)
 
     # --- 6. 🧠 Adaptive Intuition Logic (Deep Logic when no clear Pattern) ---
     def intuition_predict(self, current_history):
