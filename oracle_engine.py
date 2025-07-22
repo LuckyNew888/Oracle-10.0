@@ -1,62 +1,778 @@
-# oracle_engine.py
-# OracleEngine v1.0 – วิเคราะห์แนวโน้มเบื้องต้นจากผลย้อนหลังโดยไม่ใช้ระบบ Pattern
-# พร้อมฟังก์ชันเสริมให้ใช้งานกับ Streamlit ได้
+from collections import Counter
+import random
+import streamlit as st # Import streamlit for caching
+
+# --- Helper Functions (outside OracleEngine class) ---
+def _get_pb_history(current_history):
+    """Helper to extract only P/B outcomes from structured history."""
+    if not current_history:
+        return []
+    return [item['main_outcome'] for item in current_history if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']]
+
+def _get_streaks(history_pb):
+    """Helper to get streaks from a P/B history list. Returns list of (char, length)."""
+    if not history_pb:
+        return []
+    streaks = []
+    current_streak_char = history_pb[0]
+    current_streak_length = 0
+    for char in history_pb:
+        if char == current_streak_char:
+            current_streak_length += 1
+        else:
+            streaks.append((current_streak_char, current_streak_length))
+            current_streak_char = char
+            current_streak_length = 1
+    streaks.append((current_streak_char, current_streak_length)) # Add last streak
+    return streaks
+
+def _build_big_road_data(full_history_list):
+    """
+    Builds the Big Road data structure from the full history list.
+    Each column is a list of results (P, B). Ties are counted on the P/B cell.
+    Returns a list of columns, where each column is a list of (outcome, ties, is_natural).
+    """
+    big_road = []
+    if not full_history_list:
+        return big_road
+
+    current_column = []
+    last_main_outcome = None
+
+    for entry in full_history_list:
+        main_outcome = entry['main_outcome']
+        ties = entry.get('ties', 0) # Get ties count, default to 0
+        is_natural = entry.get('is_any_natural', False) # Get natural flag, default to False
+
+        if main_outcome == 'T':
+            # Ties are attached to the last P/B entry.
+            if big_road and big_road[-1] and big_road[-1][-1][0] in ['P', 'B']:
+                last_pb_entry = list(big_road[-1][-1])
+                last_pb_entry[1] += 1
+                big_road[-1][-1] = tuple(last_pb_entry)
+            continue # Skip to next entry, as ties don't form new columns
+
+        if not current_column: # First entry or starting a new column
+            current_column.append((main_outcome, ties, is_natural))
+            last_main_outcome = main_outcome
+        elif main_outcome == last_main_outcome: # Continue current column
+            current_column.append((main_outcome, ties, is_natural))
+        else: # New main outcome, start a new column
+            big_road.append(current_column)
+            current_column = [(main_outcome, ties, is_natural)]
+            last_main_outcome = main_outcome
+    
+    if current_column: # Add the last column if not empty
+        big_road.append(current_column)
+    
+    return big_road
+
+
+@st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
+def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances):
+    """
+    Calculates the system's accuracy from historical predictions and tracks drawdown.
+    This is a global cached function to improve performance.
+    """
+    hits = 0
+    misses = 0
+    current_drawdown = 0
+    max_drawdown = 0
+    total_bets_counted = 0
+
+    # Find the starting index for backtest. It should be where the engine can first make a prediction.
+    pb_count = 0
+    start_index_for_backtest = 0
+    for i, item in enumerate(history):
+        if item and 'main_outcome' in item and item['main_outcome'] in ['P', 'B']:
+            pb_count += 1
+        if pb_count >= 20: # Need at least 20 P/B hands for meaningful backtest
+            start_index_for_backtest = i + 1
+            break
+    
+    if start_index_for_backtest == 0:
+        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
+
+
+    for i in range(start_index_for_backtest, len(history)):
+        simulated_history = history[:i]
+        actual_result_obj = history[i]
+        actual_main_outcome = actual_result_obj['main_outcome']
+
+        temp_sim_engine = OracleEngine(
+            initial_pattern_stats=pattern_stats,
+            initial_momentum_stats=momentum_stats,
+            initial_failed_pattern_instances=failed_pattern_instances
+        )
+        temp_sim_engine.history = simulated_history
+
+        simulated_prediction_data = temp_sim_engine.predict_next_for_backtest()
+        simulated_predicted_outcome = simulated_prediction_data['prediction']
+        simulated_recommendation = simulated_prediction_data['recommendation']
+
+        if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
+            total_bets_counted += 1
+            if simulated_predicted_outcome == actual_main_outcome:
+                hits += 1
+                current_drawdown = 0
+            else:
+                misses += 1
+                current_drawdown += 1
+                max_drawdown = max(max_drawdown, current_drawdown)
+
+    accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
+
+    return {
+        "accuracy_percent": accuracy_percent,
+        "max_drawdown": max_drawdown,
+        "hits": hits,
+        "misses": misses,
+        "total_bets": total_bets_counted
+    }
+
 
 class OracleEngine:
-    def __init__(self):
-        self.history = []  # เก็บผลย้อนหลัง เช่น ['P', 'B', 'B', 'P', 'T']
-
-    def add_result(self, result):
-        if result in ['P', 'B', 'T']:
-            self.history.append(result)
-
-    def reset(self):
+    def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None):
         self.history = []
+        self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
+        self.momentum_stats = initial_momentum_stats if initial_momentum_stats is not None else {}
+        self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
 
-    def analyze(self):
-        if len(self.history) < 20:
-            return "🔄 รอสะสมข้อมูลอย่างน้อย 20 ตา"
+    # --- Data Management (for the Engine itself) ---
+    def update_history(self, result_obj):
+        """Adds a new result object to the history (for internal engine use)."""
+        if isinstance(result_obj, dict) and 'main_outcome' in result_obj:
+            self.history.append(result_obj)
 
-        last_5 = self.history[-5:]
-        p_count = last_5.count('P')
-        b_count = last_5.count('B')
-        t_count = last_5.count('T')
+    def remove_last(self):
+        """Removes the last result from the history."""
+        if self.history:
+            self.history.pop()
+            self.reset_learning_states_on_undo()
 
-        if p_count >= 4:
-            return "🔵 แนวโน้ม: ผู้เล่น (Player)"
-        elif b_count >= 4:
-            return "🔴 แนวโน้ม: เจ้ามือ (Banker)"
-        elif t_count >= 3:
-            return "🟢 แนวโน้ม: เสมอ (Tie)"
-        else:
-            return "⚪ แนวโน้มไม่ชัดเจน"
+    def reset_learning_states_on_undo(self):
+        """Resets only the learning-related states when an undo operation occurs."""
+        self.pattern_stats = {}
+        self.momentum_stats = {}
+        self.failed_pattern_instances = {}
 
-# -------------------------------
-# ฟังก์ชันจำลองไว้ให้ระบบ Streamlit ใช้งานได้ (Placeholder)
+    def reset_history(self):
+        """Resets the entire history and all learning/backtest data."""
+        self.history = []
+        self.pattern_stats = {}
+        self.momentum_stats = {}
+        self.failed_pattern_instances = {}
 
-def _cached_backtest_accuracy():
-    # ยังไม่มีระบบ Backtest เต็มใน v1.0
-    return "ยังไม่เปิดใช้ระบบ Backtest ในเวอร์ชันนี้"
+    def get_current_learning_states(self):
+        """Returns the current learning states for caching purposes."""
+        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances
 
-def _build_big_road_data(history):
-    """
-    สร้าง Big Road ขนาดเล็กจากประวัติ เช่น [['P', 'P'], ['B'], ['P']]
-    เพื่อใช้แสดงใน Streamlit (แบบง่าย)
-    """
-    if not history:
-        return []
+    # --- 1. 🧬 DNA Pattern Analysis (Pattern Detection) ---
+    def detect_patterns(self, current_history, big_road_data):
+        """
+        Detects various patterns using both linear history and Big Road data.
+        Returns a list of (pattern_name, sequence_snapshot) tuples.
+        """
+        h = _get_pb_history(current_history)
+        streaks = _get_streaks(h)
+        patterns_detected = []
 
-    grid = []
-    col = []
+        # --- Linear Patterns ---
+        # Pingpong (B-P-B-P...) - streaks of length 1
+        for length in [4, 6, 8, 10]:
+            if len(streaks) >= length and all(s[1] == 1 for s in streaks[-length:]):
+                patterns_detected.append((f'Pingpong ({length}x)', tuple(h[-sum(s[1] for s in streaks[-length:]):])))
 
-    prev = history[0]
-    for res in history:
-        if res == prev:
-            col.append(res)
-        else:
-            grid.append(col)
-            col = [res]
-            prev = res
-    if col:
-        grid.append(col)
-    return grid
+        # Dragon (long streak: 3+ consecutive same results)
+        if streaks and streaks[-1][1] >= 3:
+            patterns_detected.append((f'Dragon ({streaks[-1][0]}{streaks[-1][1]})', tuple(h[-streaks[-1][1]:])))
+
+        # Two-Cut (BB-PP-BB-PP...) - streaks of length 2
+        for length in [4, 6, 8]:
+            if len(streaks) >= length and all(s[1] == 2 for s in streaks[-length:]):
+                patterns_detected.append((f'Two-Cut ({length}x)', tuple(h[-sum(s[1] for s in streaks[-length:]):])))
+
+        # Triple-Cut (BBB-PPP-BBB-PPP...) - streaks of length 3
+        for length in [4, 6]:
+            if len(streaks) >= length and all(s[1] == 3 for s in streaks[-length:]):
+                patterns_detected.append((f'Triple-Cut ({length}x)', tuple(h[-sum(s[1] for s in streaks[-length:]):])))
+
+        # One-Two Pattern (B-PP-B-PP...)
+        if len(streaks) >= 4:
+            last4_streaks = streaks[-4:]
+            if (last4_streaks[0][1] == 1 and last4_streaks[1][1] == 2 and
+                last4_streaks[2][1] == 1 and last4_streaks[3][1] == 2 and
+                last4_streaks[0][0] == last4_streaks[2][0] and
+                last4_streaks[1][0] == last4_streaks[3][0] and
+                last4_streaks[0][0] != last4_streaks[1][0]):
+                patterns_detected.append(('One-Two Pattern', tuple(h[-sum(s[1] for s in last4_streaks):])))
+
+        # Two-One Pattern (BB-P-BB-P...)
+        if len(streaks) >= 4:
+            last4_streaks = streaks[-4:]
+            if (last4_streaks[0][1] == 2 and last4_streaks[1][1] == 1 and
+                last4_streaks[2][1] == 2 and last4_streaks[3][1] == 1 and
+                last4_streaks[0][0] == last4_streaks[2][0] and
+                last4_streaks[1][0] == last4_streaks[3][0] and
+                last4_streaks[0][0] != last4_streaks[1][0]):
+                patterns_detected.append(('Two-One Pattern', tuple(h[-sum(s[1] for s in last4_streaks):])))
+        
+        # Broken Pattern
+        if len(h) >= 7:
+            last7_str = "".join(h[-7:])
+            if "BPBPPBP" in last7_str or "PBPBBBP" in last7_str:
+                patterns_detected.append(('Broken Pattern', tuple(h[-7:])))
+
+        # FollowStreak (if the last streak is 3 or more, it's a strong trend)
+        if streaks and streaks[-1][1] >= 3:
+            patterns_detected.append((f'FollowStreak ({streaks[-1][0]}{streaks[-1][1]})', tuple(h[-streaks[-1][1]:])))
+
+        # --- 2D Big Road Patterns (Improved Simplified) ---
+        num_cols = len(big_road_data)
+        if num_cols >= 3: # Need at least 3 columns for meaningful 2D patterns
+            last_col = big_road_data[-1]
+            prev_col = big_road_data[-2]
+            prev_prev_col = big_road_data[-3]
+
+            # Big Eye Boy (Simplified): Check if the pattern "follows the previous column's trend"
+            # If the current column's depth is similar to the previous column's depth, it's a "follow"
+            # This is a key characteristic of Big Eye Boy.
+            if len(last_col) == len(prev_col) and last_col[0][0] == prev_col[0][0]: # Same depth, same outcome (implies follow)
+                patterns_detected.append(('Big Eye Boy (2D Simple - Follow)', tuple(h[-sum(len(c) for c in big_road_data[-2:]):])))
+            elif len(last_col) == 1 and len(prev_col) > 1 and last_col[0][0] != prev_col[0][0]: # Single cut after a streak (implies break)
+                patterns_detected.append(('Big Eye Boy (2D Simple - Break)', tuple(h[-sum(len(c) for c in big_road_data[-2:]):])))
+
+            # Small Road (Simplified): Check if the current column is the same as the column two columns back (alternating)
+            # This implies a "chop" or "alternating" pattern in the 2D view.
+            if len(last_col) == len(prev_prev_col) and last_col[0][0] == prev_prev_col[0][0]:
+                patterns_detected.append(('Small Road (2D Simple - Chop)', tuple(h[-sum(len(c) for c in big_road_data[-3:]):])))
+
+            # Cockroach Pig (Simplified): Similar to Small Road, but looking at 3 columns back
+            if num_cols >= 4:
+                prev_prev_prev_col = big_road_data[-4]
+                if len(last_col) == len(prev_prev_prev_col) and last_col[0][0] == prev_prev_prev_col[0][0]:
+                    patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len(c) for c in big_road_data[-4:]):])))
+
+
+        return patterns_detected
+
+    # --- 2. 🚀 Momentum Tracker (Momentum Detection) ---
+    def detect_momentum(self, current_history, big_road_data):
+        """
+        Detects momentum and returns a list of (momentum_name, sequence_snapshot) tuples.
+        Momentum often implies continuation of a trend.
+        """
+        h = _get_pb_history(current_history)
+        streaks = _get_streaks(h)
+        momentum_detected = []
+
+        # B3+, P3+ Momentum (3 or more consecutive same results)
+        if streaks and streaks[-1][1] >= 3:
+            momentum_detected.append((f"{streaks[-1][0]}{streaks[-1][1]}+ Momentum", tuple(h[-streaks[-1][1]:])))
+
+        # Steady Repeat (PBPBPBP or BPBPBPB) - Pingpong of length 7 or more
+        for length in [7, 9]:
+            if len(streaks) >= length and all(s[1] == 1 for s in streaks[-length:]):
+                seq_snapshot = tuple(h[-sum(s[1] for s in streaks[-length:]):])
+                momentum_detected.append((f"Steady Repeat Momentum ({length}x)", seq_snapshot))
+
+        # Ladder Momentum (e.g., B-P-BB-P-BBB) - increasing streak, cut by single, increasing again
+        if len(streaks) >= 5:
+            s5 = streaks[-5:]
+            if (s5[0][1] == 1 and s5[1][1] == 1 and s5[2][1] == 2 and s5[3][1] == 1 and s5[4][1] == 3 and
+                s5[0][0] == s5[2][0] == s5[4][0] and s5[1][0] == s5[3][0] and s5[0][0] != s5[1][0]):
+                momentum_detected.append(('Ladder Momentum (1-2-3)', tuple(h[-sum(s[1] for s in s5):])))
+        
+        if len(streaks) >= 4:
+            s4 = streaks[-4:]
+            if (s4[1][1] == 1 and s4[3][1] == 1 and
+                s4[0][0] == s4[2][0] and s4[1][0] == s4[3][0] and
+                s4[0][0] != s4[1][0] and s4[2][1] == s4[0][1] + 1):
+                momentum_detected.append((f'Ladder Momentum (X-Y-XX-Y)', tuple(h[-sum(s[1] for s in s4):])))
+
+        return momentum_detected
+
+    # --- 3. ⚠️ Trap Zone Detection (Detecting Dangerous Zones) ---
+    def in_trap_zone(self, current_history):
+        """
+        Detects zones where changes are rapid and truly unpredictable,
+        explicitly avoiding flagging common, predictable patterns like Pingpong or long Dragons as traps.
+        """
+        h = _get_pb_history(current_history)
+        if len(h) < 4:
+            return False
+
+        streaks = _get_streaks(h)
+
+        # Trap 1: Very short, chaotic, unpredictable sequence (not Pingpong or Dragon)
+        # This occurs when there's no clear streak or alternating pattern.
+        # Check for high frequency of changes without a clear pattern.
+        if len(h) >= 6:
+            last6 = h[-6:]
+            # If the last 3 results are all different from each other (e.g., P, B, T or P, B, P, but not P, P, B)
+            # This is a strong indicator of chaos.
+            if len(set(last6[-3:])) >= 2 and last6[-1] != last6[-2] and last6[-2] != last6[-3]: # Ensures alternating, but not necessarily strict pingpong
+                # Further check: if the number of distinct results in last 4 is high (e.g., 3 or 4)
+                if len(set(h[-4:])) >= 3:
+                    return True
+
+        # Trap 2: Streak broken immediately after a long streak and then immediately reverts
+        # Example: BBBBB P B (B was broken by P, then B immediately came back)
+        if len(streaks) >= 3:
+            last_streak = streaks[-1]
+            prev_streak = streaks[-2]
+            if prev_streak[1] >= 5 and last_streak[1] == 1 and (len(streaks) >= 3 and streaks[-3][0] == last_streak[0]):
+                return True
+        
+        # Trap 3: Sudden reversal after a medium streak (e.g., BBB PP)
+        if len(streaks) >= 2:
+            last_streak = streaks[-1]
+            prev_streak = streaks[-2]
+            if prev_streak[1] >= 3 and last_streak[1] >= 2 and prev_streak[0] != last_streak[0]:
+                return True
+
+        return False
+
+    # --- 4. 🎯 Confidence Engine (Confidence Score 0-100%) ---
+    def confidence_score(self, current_history, big_road_data):
+        """Calculates the system's confidence score for prediction."""
+        pb_history_len = len(_get_pb_history(current_history))
+        if pb_history_len < 10:
+            return 0
+
+        patterns = self.detect_patterns(current_history, big_road_data)
+        momentum = self.detect_momentum(current_history, big_road_data)
+        trap = self.in_trap_zone(current_history)
+
+        score = 70 # Increased base confidence to be even more proactive
+
+        # Factor in pattern and momentum success rates
+        for p_name, p_snapshot in patterns:
+            stats = self.pattern_stats.get(p_name, {'hits': 0, 'misses': 0})
+            total = stats['hits'] + stats['misses']
+            if total > 0:
+                success_rate = stats['hits'] / total
+                score += success_rate * 70 # Significantly increased weight for patterns
+            else: # If no data, still give a significant boost for detection
+                score += 40 # Increased boost for new patterns
+
+        for m_name, m_snapshot in momentum:
+            stats = self.momentum_stats.get(m_name, {'hits': 0, 'misses': 0})
+            total = stats['hits'] + stats['misses']
+            if total > 0:
+                success_rate = stats['hits'] / total
+                score += success_rate * 60 # Significantly increased weight for momentum
+            else: # If no data, still give a significant boost for detection
+                score += 35 # Increased boost for new momentum
+
+        if trap:
+            score -= 100 # Maximum penalty for real trap zone
+
+        score = max(0, min(100, score))
+        return int(score)
+
+    # --- 5. 🔁 Memory Logic (Remembering Failed Patterns) ---
+    def _is_pattern_instance_failed(self, pattern_type, sequence_snapshot):
+        """Checks if this specific pattern instance has previously led to a miss."""
+        return self.failed_pattern_instances.get((pattern_type, sequence_snapshot), 0) > 0
+
+    def _update_learning(self, predicted_outcome, actual_outcome, patterns_detected, momentum_detected):
+        """
+        Updates pattern/momentum success statistics and failed pattern instances.
+        Called after each actual result is recorded.
+        """
+        is_hit = (predicted_outcome == actual_outcome)
+
+        for p_name, p_snapshot in patterns_detected:
+            if p_name not in self.pattern_stats:
+                self.pattern_stats[p_name] = {'hits': 0, 'misses': 0}
+            if is_hit:
+                self.pattern_stats[p_name]['hits'] += 1
+            else:
+                self.pattern_stats[p_name]['misses'] += 1
+                failed_key = (p_name, p_snapshot)
+                self.failed_pattern_instances[failed_key] = self.failed_pattern_instances.get(failed_key, 0) + 1
+
+        for m_name, m_snapshot in momentum_detected:
+            if m_name not in self.momentum_stats:
+                self.momentum_stats[m_name] = {'hits': 0, 'misses': 0}
+            if is_hit:
+                self.momentum_stats[m_name]['hits'] += 1
+            else:
+                self.momentum_stats[m_name]['misses'] += 1
+                failed_key = (m_name, m_snapshot)
+                self.failed_pattern_instances[failed_key] = self.failed_pattern_instances.get(failed_key, 0) + 1
+
+
+    # --- 6. 🧠 Intuition Logic (Deep Logic when no clear Pattern) ---
+    def intuition_predict(self, current_history):
+        """Uses deep logic to predict when no clear pattern is present."""
+        h = _get_pb_history(current_history)
+        full_h = current_history
+        streaks = _get_streaks(h)
+
+        if len(h) < 3:
+            return '?'
+
+        last3_pb = tuple(h[-3:])
+        
+        # Specific Tie patterns (check full history for 'T' presence)
+        last3_full = [item['main_outcome'] for item in full_h[-3:] if item and 'main_outcome' in item]
+        if 'T' in last3_full and last3_full.count('T') == 1 and last3_full[0] != last3_full[1] and last3_full[1] != last3_full[2]:
+            return 'T'
+        if len(full_h) >= 4:
+            last4_full = [item['main_outcome'] for item in full_h[-4:] if item and 'main_outcome' in item]
+            if Counter(last4_full)['T'] >= 2:
+                return 'T'
+
+        # Specific P/B patterns
+        if last3_pb == ('P','B','P'):
+            return 'P'
+        if last3_pb == ('B','B','P'):
+            return 'P'
+        if last3_pb == ('P','P','B'):
+            return 'B'
+        if len(h) >= 5 and tuple(h[-5:]) == ('B','P','B','P','P'):
+            return 'B'
+        
+        # Repeat Cut (BBPBB -> B)
+        if len(h) >= 5 and h[-1] == h[-2] and h[-2] != h[-3] and h[-3] != h[-4] and h[-4] == h[-5]:
+            return h[-1]
+
+        # Alternating streaks (e.g., B P BB PP BBB PPP)
+        if len(streaks) >= 2:
+            last_streak = streaks[-1]
+            prev_streak = streaks[-2]
+            if last_streak[1] == prev_streak[1]:
+                return 'P' if last_streak[0] == 'B' else 'B'
+            
+        # Follow the long streak if it's 4+ and then cut
+        if len(streaks) >= 2:
+            last_streak = streaks[-1]
+            prev_streak = streaks[-2]
+            if prev_streak[1] >= 4 and last_streak[1] == 1:
+                return prev_streak[0]
+
+        # If last two are same, predict opposite to break streak (common in choppy)
+        if len(h) >= 2 and h[-1] == h[-2]:
+            return 'P' if h[-1] == 'B' else 'B'
+
+        # If last two are opposite, predict same as last (common in pingpong)
+        if len(h) >= 2 and h[-1] != h[-2]:
+            return h[-1]
+
+        return '?'
+
+    # --- Main function for predicting the next result (for UI display) ---
+    def predict_next(self):
+        """
+        Main function for analyzing and predicting the next outcome for UI display.
+        Returns a dictionary with prediction, risk, recommendation, developer_view.
+        """
+        prediction_result = '?'
+        risk_level = "Normal"
+        recommendation = "Play ✅"
+        developer_view = ""
+
+        current_pb_history = _get_pb_history(self.history)
+        big_road_data = _build_big_road_data(self.history)
+
+        backtest_stats = _cached_backtest_accuracy(
+            self.history,
+            self.pattern_stats,
+            self.momentum_stats,
+            self.failed_pattern_instances
+        )
+
+        # --- Debugging Info for Developer View ---
+        debug_info = {
+            "Current PB History Length": len(current_pb_history),
+            "Big Road Columns (P/B only)": [[item[0] for item in col] for col in big_road_data],
+            "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
+            "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
+            "Is in Trap Zone": self.in_trap_zone(self.history),
+            "Calculated Confidence Score": self.confidence_score(self.history, big_road_data),
+            "Backtest Max Drawdown": backtest_stats['max_drawdown']
+        }
+        developer_view_parts = []
+        for key, value in debug_info.items():
+            developer_view_parts.append(f"{key}: {value}")
+        developer_view = "\n".join(developer_view_parts) + "\n--- Prediction Logic ---\n"
+
+
+        # --- 1. Check Trap Zone (Avoid if truly dangerous) ---
+        if self.in_trap_zone(self.history):
+            risk_level = "Trap"
+            recommendation = "Avoid ❌"
+            developer_view += f"Decision: Trap Zone detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance."
+            return {
+                "developer_view": developer_view,
+                "prediction": prediction_result,
+                "accuracy": backtest_stats['accuracy_percent'],
+                "risk": risk_level,
+                "recommendation": recommendation,
+                "active_patterns": [],
+                "active_momentum": []
+            }
+
+        # --- 2. Check Confidence Score (Avoid if too low) ---
+        score = self.confidence_score(self.history, big_road_data)
+        if score < 50:
+            recommendation = "Avoid ❌"
+            risk_level = "Low Confidence"
+            developer_view += f"Decision: Confidence Score ({score}%) is below threshold (50%). Recommending avoidance."
+            return {
+                "developer_view": developer_view,
+                "prediction": prediction_result,
+                "accuracy": backtest_stats['accuracy_percent'],
+                "risk": risk_level,
+                "recommendation": recommendation,
+                "active_patterns": [],
+                "active_momentum": []
+            }
+
+        # --- 3. Check Drawdown (Avoid if too many consecutive misses) ---
+        if backtest_stats['max_drawdown'] >= 3:
+            risk_level = "High Drawdown"
+            recommendation = "Avoid ❌"
+            developer_view += f"Decision: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Recommending avoidance."
+            return {
+                "developer_view": developer_view,
+                "prediction": prediction_result,
+                "accuracy": backtest_stats['accuracy_percent'],
+                "risk": risk_level,
+                "recommendation": recommendation,
+                "active_patterns": [],
+                "active_momentum": []
+            }
+
+        # --- 4. Use Primary Patterns for Prediction (if available) ---
+        patterns = self.detect_patterns(self.history, big_road_data)
+        momentum = self.detect_momentum(self.history, big_road_data)
+
+        active_patterns_for_learning = []
+        active_momentum_for_learning = []
+
+        predicted_by_rule = False
+        prediction_source_detail = ""
+
+        if patterns:
+            for p_name, p_snapshot in patterns:
+                active_patterns_for_learning.append((p_name, p_snapshot))
+
+                if self._is_pattern_instance_failed(p_name, p_snapshot):
+                    developer_view += f" (Note: Pattern '{p_name}' instance previously failed. Skipping for prediction.)"
+                    continue
+
+                if 'Dragon' in p_name or 'FollowStreak' in p_name:
+                    prediction_result = current_pb_history[-1]
+                    prediction_source_detail = f"Pattern: {p_name}. Predicting continuation ({prediction_result})."
+                    predicted_by_rule = True
+                    break
+                elif 'Pingpong' in p_name:
+                    last = current_pb_history[-1]
+                    prediction_result = 'P' if last == 'B' else 'B'
+                    prediction_source_detail = f"Pattern: {p_name}. Predicting opposite ({prediction_result})."
+                    predicted_by_rule = True
+                    break
+                elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
+                    if len(current_pb_history) >= 2:
+                        last_block_char = _get_streaks(current_pb_history)[-1][0]
+                        prediction_result = 'P' if last_block_char == 'B' else 'B'
+                        prediction_source_detail = f"Pattern: {p_name}. Predicting opposite of block ({prediction_result})."
+                        predicted_by_rule = True
+                        break
+                elif 'One-Two Pattern' in p_name:
+                    if len(current_pb_history) >= 3:
+                        if current_pb_history[-1] == current_pb_history[-3] and current_pb_history[-1] != current_pb_history[-2]:
+                            prediction_result = current_pb_history[-2]
+                            prediction_source_detail = f"Pattern: {p_name}. Predicting {prediction_result} to complete One-Two."
+                            predicted_by_rule = True
+                            break
+                elif 'Two-One Pattern' in p_name:
+                    if len(current_pb_history) >= 3:
+                        if current_pb_history[-1] == current_pb_history[-2] and current_pb_history[-1] != current_pb_history[-3]:
+                            prediction_result = current_pb_history[-3]
+                            prediction_source_detail = f"Pattern: {p_name}. Predicting {prediction_result} to complete Two-One."
+                            predicted_by_rule = True
+                            break
+                elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
+                    prediction_result = current_pb_history[-1] # For simplicity, these 2D patterns often imply continuation of main road trend
+                    prediction_source_detail = f"2D Pattern: {p_name}. Predicting continuation ({prediction_result})."
+                    predicted_by_rule = True
+                    break
+            
+            if predicted_by_rule:
+                developer_view += f"Decision: Predicted by Pattern. {prediction_source_detail}"
+            else:
+                developer_view += f"Decision: Patterns detected but no prediction made (or failed instances). Raw patterns: {[p[0] for p in patterns]}"
+
+
+        # If no prediction from patterns, try momentum
+        if not predicted_by_rule and momentum:
+            for m_name, m_snapshot in momentum:
+                active_momentum_for_learning.append((m_name, m_snapshot))
+
+                if self._is_pattern_instance_failed(m_name, m_snapshot):
+                    developer_view += f" (Note: Momentum '{m_name}' instance previously failed. Skipping for prediction.)"
+                    continue
+
+                if 'Momentum' in m_name:
+                    prediction_result = current_pb_history[-1]
+                    prediction_source_detail = f"Momentum: {m_name}. Predicting continuation ({prediction_result})."
+                    predicted_by_rule = True
+                    break
+                elif m_name == "Steady Repeat Momentum":
+                    if len(current_pb_history) >= 6:
+                        prediction_result = current_pb_history[-6]
+                        prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue repeat."
+                        predicted_by_rule = True
+                        break
+                elif 'Ladder Momentum' in m_name:
+                    streaks = _get_streaks(self.history)
+                    if streaks and len(streaks) >= 2:
+                        last_streak = streaks[-1]
+                        prev_streak = streaks[-2]
+                        if last_streak[1] == 1 and prev_streak[1] >= 2:
+                            prediction_result = prev_streak[0]
+                            prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue ladder."
+                            predicted_by_rule = True
+                            break
+                        elif last_streak[1] >= 2 and prev_streak[1] == 1:
+                            prediction_result = prev_streak[0]
+                            prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue ladder."
+                            predicted_by_rule = True
+                            break
+            
+            if not predicted_by_rule:
+                developer_view += f"Decision: Momentum detected but no prediction made (or failed instances). Raw momentum: {[m[0] for m in momentum]}"
+
+
+        # --- 5. Intuition Logic (Used when no clear Primary Pattern or Momentum) ---
+        if not predicted_by_rule:
+            intuitive_guess = self.intuition_predict(self.history)
+            if intuitive_guess == 'T':
+                prediction_result = 'T'
+                developer_view += "Decision: Intuition Logic: Specific Tie pattern identified."
+            elif intuitive_guess in ['P', 'B']:
+                prediction_result = intuitive_guess
+                developer_view += f"Decision: Intuition Logic: Predicting {intuitive_guess} based on subtle patterns."
+            else:
+                recommendation = "Avoid ❌"
+                risk_level = "Uncertainty"
+                developer_view += "Decision: Intuition Logic: No strong P/B/T prediction, recommending Avoid."
+                prediction_result = '?'
+        
+        # Final check: If still no prediction, and no specific reason to avoid, default to Avoid
+        if prediction_result == '?' and recommendation == "Play ✅":
+            recommendation = "Avoid ❌"
+            risk_level = "Uncertainty"
+            developer_view += "Final Decision: No clear patterns, momentum, or intuition for prediction. Recommending Avoid."
+
+        return {
+            "developer_view": developer_view,
+            "prediction": prediction_result,
+            "accuracy": backtest_stats['accuracy_percent'],
+            "risk": risk_level,
+            "recommendation": recommendation,
+            "active_patterns": active_patterns_for_learning,
+            "active_momentum": active_momentum_for_learning
+        }
+
+    # Special predict method for backtesting to avoid infinite recursion with predict_next
+    def predict_next_for_backtest(self):
+        """
+        Simplified prediction for backtesting, without calling backtest_accuracy recursively.
+        """
+        prediction_result = '?'
+        recommendation = "Play ✅"
+        
+        current_pb_history = _get_pb_history(self.history)
+        big_road_data = _build_big_road_data(self.history)
+        streaks = _get_streaks(current_pb_history)
+
+        if self.in_trap_zone(self.history):
+            recommendation = "Avoid ❌"
+            return {"prediction": prediction_result, "recommendation": recommendation}
+
+        score = self.confidence_score(self.history, big_road_data)
+        if score < 50:
+            recommendation = "Avoid ❌"
+            return {"prediction": prediction_result, "recommendation": recommendation}
+        
+        patterns = self.detect_patterns(self.history, big_road_data)
+        momentum = self.detect_momentum(self.history, big_road_data)
+
+        predicted_by_rule_for_backtest = False
+        if patterns:
+            for p_name, p_snapshot in patterns:
+                if self._is_pattern_instance_failed(p_name, p_snapshot):
+                    continue
+
+                if 'Dragon' in p_name or 'FollowStreak' in p_name:
+                    prediction_result = current_pb_history[-1]
+                    predicted_by_rule_for_backtest = True
+                    break
+                elif 'Pingpong' in p_name:
+                    last = current_pb_history[-1]
+                    prediction_result = 'P' if last == 'B' else 'B'
+                    predicted_by_rule_for_backtest = True
+                    break
+                elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
+                    if len(current_pb_history) >= 2:
+                        last_block_char = _get_streaks(current_pb_history)[-1][0]
+                        prediction_result = 'P' if last_block_char == 'B' else 'B'
+                        predicted_by_rule_for_backtest = True
+                        break
+                elif 'One-Two Pattern' in p_name:
+                    if len(current_pb_history) >= 3:
+                        if current_pb_history[-1] == current_pb_history[-3] and current_pb_history[-1] != current_pb_history[-2]:
+                            prediction_result = current_pb_history[-2]
+                            predicted_by_rule_for_backtest = True
+                            break
+                elif 'Two-One Pattern' in p_name:
+                    if len(current_pb_history) >= 3:
+                        if current_pb_history[-1] == current_pb_history[-2] and current_pb_history[-1] != current_pb_history[-3]:
+                            prediction_result = current_pb_history[-3]
+                            predicted_by_rule_for_backtest = True
+                            break
+                elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
+                    prediction_result = current_pb_history[-1]
+                    predicted_by_rule_for_backtest = True
+                    break
+
+
+        if not predicted_by_rule_for_backtest and momentum:
+            for m_name, m_snapshot in momentum:
+                if self._is_pattern_instance_failed(m_name, m_snapshot):
+                    continue
+                if 'Momentum' in m_name:
+                    prediction_result = current_pb_history[-1]
+                    predicted_by_rule_for_backtest = True
+                    break
+                elif m_name == "Steady Repeat Momentum":
+                    if len(current_pb_history) >= 6:
+                        prediction_result = current_pb_history[-6]
+                        predicted_by_rule_for_backtest = True
+                        break
+                elif 'Ladder Momentum' in m_name:
+                    if streaks and len(streaks) >= 2:
+                        last_streak = streaks[-1]
+                        prev_streak = streaks[-2]
+                        if last_streak[1] == 1 and prev_streak[1] >= 2:
+                            prediction_result = prev_streak[0]
+                            predicted_by_rule_for_backtest = True
+                            break
+                        elif last_streak[1] >= 2 and prev_streak[1] == 1:
+                            prediction_result = prev_streak[0]
+                            predicted_by_rule_for_backtest = True
+                            break
+
+        if not predicted_by_rule_for_backtest:
+            intuitive_guess = self.intuition_predict(self.history)
+            if intuitive_guess in ['P', 'B', 'T']:
+                prediction_result = intuitive_guess
+            else:
+                recommendation = "Avoid ❌"
+        
+        return {"prediction": prediction_result, "recommendation": recommendation}
