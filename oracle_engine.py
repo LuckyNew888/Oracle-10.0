@@ -255,7 +255,29 @@ class OracleEngine:
             if len(streaks) >= length and all(s[1] == 3 for s in streaks[-length:]):
                 patterns_detected.append((f'Triple-Cut ({length}x)', tuple(h[-sum(s[1] for s in streaks[-length:]):])))
 
-        # One-Two Pattern (B-PP-B-PP...)
+        # Improved One-Two Pattern (1-2-1) and Two-One Pattern (2-1-2)
+        # Look for alternating short and medium streaks
+        if len(streaks) >= 4:
+            s_last_4 = streaks[-4:]
+            # Example: B(1) P(2) B(1) P(2) or B(2) P(1) B(2) P(1)
+            # Check for alternating characters
+            if s_last_4[0][0] != s_last_4[1][0] and \
+               s_last_4[1][0] != s_last_4[2][0] and \
+               s_last_4[2][0] != s_last_4[3][0]:
+                
+                # Check for 1-2-1-2 like pattern (short-long-short-long)
+                # Allowing some flexibility in streak lengths (e.g., 1-2-1-3 or 1-3-1-2)
+                if (s_last_4[0][1] <= 2 and s_last_4[1][1] >= 2 and s_last_4[1][1] <= 3 and \
+                    s_last_4[2][1] <= 2 and s_last_4[3][1] >= 2 and s_last_4[3][1] <= 3):
+                    patterns_detected.append(('One-Two Pattern (Flexible)', tuple(h[-sum(s[1] for s in s_last_4):])))
+                
+                # Check for 2-1-2-1 like pattern (long-short-long-short)
+                # Allowing some flexibility in streak lengths (e.g., 2-1-3-1 or 3-1-2-1)
+                elif (s_last_4[0][1] >= 2 and s_last_4[0][1] <= 3 and s_last_4[1][1] <= 2 and \
+                      s_last_4[2][1] >= 2 and s_last_4[2][1] <= 3 and s_last_4[3][1] <= 2):
+                    patterns_detected.append(('Two-One Pattern (Flexible)', tuple(h[-sum(s[1] for s in s_last_4):])))
+
+        # Original strict One-Two Pattern (B-PP-B-PP...)
         if len(streaks) >= 4:
             last4_streaks = streaks[-4:]
             if (last4_streaks[0][1] == 1 and last4_streaks[1][1] == 2 and
@@ -263,9 +285,9 @@ class OracleEngine:
                 last4_streaks[0][0] == last4_streaks[2][0] and
                 last4_streaks[1][0] == last4_streaks[3][0] and
                 last4_streaks[0][0] != last4_streaks[1][0]):
-                patterns_detected.append(('One-Two Pattern', tuple(h[-sum(s[1] for s in last4_streaks):])))
+                patterns_detected.append(('One-Two Pattern (Strict)', tuple(h[-sum(s[1] for s in last4_streaks):])))
 
-        # Two-One Pattern (BB-P-BB-P...)
+        # Original strict Two-One Pattern (BB-P-BB-P...)
         if len(streaks) >= 4:
             last4_streaks = streaks[-4:]
             if (last4_streaks[0][1] == 2 and last4_streaks[1][1] == 1 and
@@ -273,7 +295,7 @@ class OracleEngine:
                 last4_streaks[0][0] == last4_streaks[2][0] and
                 last4_streaks[1][0] == last4_streaks[3][0] and
                 last4_streaks[0][0] != last4_streaks[1][0]):
-                patterns_detected.append(('Two-One Pattern', tuple(h[-sum(s[1] for s in last4_streaks):])))
+                patterns_detected.append(('Two-One Pattern (Strict)', tuple(h[-sum(s[1] for s in last4_streaks):])))
         
         # Broken Pattern
         if len(h) >= 7:
@@ -720,20 +742,38 @@ class OracleEngine:
                             predicted_by_rule = True
                             decision_path.append(f"  - Matched {p_name}. Predicting opposite of block ({prediction_result}).")
                             break
-                    elif 'One-Two Pattern' in p_name:
-                        if len(current_pb_history) >= 3:
-                            if current_pb_history[-1] == current_pb_history[-3] and current_pb_history[-1] != current_pb_history[-2]:
-                                prediction_result = current_pb_history[-2]
-                                predicted_by_rule = True
-                                decision_path.append(f"  - Matched {p_name}. Predicting {prediction_result} to complete One-Two.")
-                                break
-                    elif 'Two-One Pattern' in p_name:
-                        if len(current_pb_history) >= 3:
-                            if current_pb_history[-1] == current_pb_history[-2] and current_pb_history[-1] != current_pb_history[-3]:
-                                prediction_result = current_pb_history[-3]
-                                predicted_by_rule = True
-                                decision_path.append(f"  - Matched {p_name}. Predicting {prediction_result} to complete Two-One.")
-                                break
+                    elif 'One-Two Pattern' in p_name: # Covers both strict and flexible
+                        if len(current_pb_history) >= 3: # Need at least 3 results for 1-2-1 or 2-1-2 logic
+                            last_outcome = current_pb_history[-1]
+                            # If the last outcome is the same as the outcome two steps back (e.g., P B P) -> predict B
+                            # Or if the last outcome is different from the outcome two steps back (e.g., P P B) -> predict P
+                            # This is a simplified logic for 1-2-1 / 2-1-2 type patterns
+                            if len(current_pb_history) >= 3:
+                                if current_pb_history[-1] == current_pb_history[-3]: # P B P -> predict B
+                                    prediction_result = 'P' if last_outcome == 'B' else 'B'
+                                else: # P P B -> predict P
+                                    prediction_result = current_pb_history[-3]
+                            else: # Fallback if not enough history for specific 1-2-1/2-1-2 logic
+                                prediction_result = 'P' if last_outcome == 'B' else 'B' # Assume alternation
+                            predicted_by_rule = True
+                            decision_path.append(f"  - Matched {p_name}. Predicting {prediction_result} to complete pattern.")
+                            break
+                    elif 'Two-One Pattern' in p_name: # Covers both strict and flexible
+                        if len(current_pb_history) >= 3: # Need at least 3 results for 1-2-1 or 2-1-2 logic
+                            last_outcome = current_pb_history[-1]
+                            # If the last outcome is the same as the outcome two steps back (e.g., B P B) -> predict P
+                            # Or if the last outcome is different from the outcome two steps back (e.g., B B P) -> predict B
+                            # This is a simplified logic for 1-2-1 / 2-1-2 type patterns
+                            if len(current_pb_history) >= 3:
+                                if current_pb_history[-1] == current_pb_history[-3]: # B P B -> predict P
+                                    prediction_result = 'P' if last_outcome == 'B' else 'B'
+                                else: # B B P -> predict B
+                                    prediction_result = current_pb_history[-3]
+                            else: # Fallback if not enough history for specific 1-2-1/2-1-2 logic
+                                prediction_result = current_pb_history[-1] # Assume continuation
+                            predicted_by_rule = True
+                            decision_path.append(f"  - Matched {p_name}. Predicting {prediction_result} to complete pattern.")
+                            break
                     elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
                         prediction_result = current_pb_history[-1] # For simplicity, these 2D patterns often imply continuation of main road trend
                         predicted_by_rule = True
@@ -882,9 +922,6 @@ class OracleEngine:
         big_road_data = _build_big_road_data(self.history)
         streaks = _get_streaks(current_pb_history)
 
-        # For backtest, we still want to simulate the "Avoid" logic as closely as possible
-        # to reflect the real-time behavior.
-        
         score = self.confidence_score(self.history, big_road_data)
         
         if score < 60:
@@ -919,18 +956,28 @@ class OracleEngine:
                         prediction_result = 'P' if last_block_char == 'B' else 'B'
                         predicted_by_rule_for_backtest = True
                         break
-                elif 'One-Two Pattern' in p_name:
+                elif 'One-Two Pattern' in p_name: # Covers both strict and flexible
                     if len(current_pb_history) >= 3:
-                        if current_pb_history[-1] == current_pb_history[-3] and current_pb_history[-1] != current_pb_history[-2]:
-                            prediction_result = current_pb_history[-2]
-                            predicted_by_rule_for_backtest = True
-                            break
-                elif 'Two-One Pattern' in p_name:
-                    if len(current_pb_history) >= 3:
-                        if current_pb_history[-1] == current_pb_history[-2] and current_pb_history[-1] != current_pb_history[-3]:
+                        last_outcome = current_pb_history[-1]
+                        if current_pb_history[-1] == current_pb_history[-3]:
+                            prediction_result = 'P' if last_outcome == 'B' else 'B'
+                        else:
                             prediction_result = current_pb_history[-3]
-                            predicted_by_rule_for_backtest = True
-                            break
+                    else:
+                        prediction_result = 'P' if current_pb_history[-1] == 'B' else 'B'
+                    predicted_by_rule_for_backtest = True
+                    break
+                elif 'Two-One Pattern' in p_name: # Covers both strict and flexible
+                    if len(current_pb_history) >= 3:
+                        last_outcome = current_pb_history[-1]
+                        if current_pb_history[-1] == current_pb_history[-3]:
+                            prediction_result = 'P' if last_outcome == 'B' else 'B'
+                        else:
+                            prediction_result = current_pb_history[-3]
+                    else:
+                        prediction_result = current_pb_history[-1]
+                    predicted_by_rule_for_backtest = True
+                    break
                 elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
                     prediction_result = current_pb_history[-1]
                     predicted_by_rule_for_backtest = True
@@ -994,9 +1041,5 @@ class OracleEngine:
             recommendation = "Avoid ❌"
         elif self.is_choppy(self.history):
             recommendation = "Avoid ❌"
-        # Backtest's max_drawdown is handled by the _cached_backtest_accuracy function,
-        # which is called at the beginning of the main predict_next.
-        # For predict_next_for_backtest, we assume the main loop will handle the overall drawdown check.
-        # So, no need to re-check backtest_stats['max_drawdown'] here.
 
         return {"prediction": prediction_result, "recommendation": recommendation}
