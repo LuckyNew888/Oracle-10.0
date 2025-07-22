@@ -98,7 +98,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
     """
     hits = 0
     misses = 0
-    current_drawdown = 0 # Track current consecutive misses for backtest
+    current_drawdown_tracker = 0 # Renamed to avoid confusion with the return value
     max_drawdown = 0
     total_bets_counted = 0
 
@@ -115,7 +115,6 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
     if start_index_for_backtest == 0:
         return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0, "current_drawdown": 0}
 
-
     for i in range(start_index_for_backtest, len(history)):
         simulated_history = history[:i]
         actual_result_obj = history[i]
@@ -125,80 +124,36 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
             initial_pattern_stats=pattern_stats,
             initial_momentum_stats=momentum_stats,
             initial_failed_pattern_instances=failed_pattern_instances,
-            initial_sequence_memory_stats=sequence_memory_stats # Pass sequence memory for backtest
+            initial_sequence_memory_stats=sequence_memory_stats
         )
         temp_sim_engine.history = simulated_history
 
         simulated_prediction_data = temp_sim_engine.predict_next_for_backtest()
         simulated_predicted_outcome = simulated_prediction_data['prediction']
-        simulated_recommendation = simulated_prediction_data['recommendation'] # This will now always be 'Play ✅' if confidence is high enough
+        simulated_recommendation = simulated_prediction_data['recommendation']
 
-        # We only count bets if the system would have recommended "Play" based on confidence
-        # Since protection systems are removed, 'Play' is based solely on confidence >= 60%
         if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
             total_bets_counted += 1
             if simulated_predicted_outcome == actual_main_outcome:
                 hits += 1
-                current_drawdown = 0
+                current_drawdown_tracker = 0 # Reset on hit
             else:
                 misses += 1
-                current_drawdown += 1
-                max_drawdown = max(max_drawdown, current_drawdown)
+                current_drawdown_tracker += 1 # Increment on miss
+                max_drawdown = max(max_drawdown, current_drawdown_tracker)
         else:
-            # If the system avoided (due to low confidence), reset current_drawdown for this specific path
-            # This ensures current_drawdown accurately reflects consecutive misses when playing.
-            current_drawdown = 0 # If not playing, it's not a 'miss' in the drawdown sense.
-
-
+            # If the system avoided (due to low confidence), reset current_drawdown_tracker for this specific path
+            current_drawdown_tracker = 0 # Reset if not playing (no prediction or avoid)
+    
     accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
 
-    # Calculate current_drawdown for the *very end* of the history
-    final_current_drawdown = 0
-    if total_bets_counted > 0:
-        # Re-calculate current_drawdown for the actual end of the history
-        # Only count misses if the system would have predicted 'Play'
-        temp_engine_for_final_drawdown = OracleEngine(
-            initial_pattern_stats=pattern_stats,
-            initial_momentum_stats=momentum_stats,
-            initial_failed_pattern_instances=failed_pattern_instances,
-            initial_sequence_memory_stats=sequence_memory_stats
-        )
-        temp_engine_for_final_drawdown.history = history # Use full history
-        
-        # Iterate backwards from the end of the history to find consecutive misses
-        # only when the system would have recommended to play.
-        for i in reversed(range(start_index_for_backtest, len(history))):
-            simulated_history_for_check = history[:i]
-            actual_result_obj_for_check = history[i]
-            actual_main_outcome_for_check = actual_result_obj_for_check['main_outcome']
-
-            temp_sim_engine_for_check = OracleEngine(
-                initial_pattern_stats=pattern_stats,
-                initial_momentum_stats=momentum_stats,
-                initial_failed_pattern_instances=failed_pattern_instances,
-                initial_sequence_memory_stats=sequence_memory_stats
-            )
-            temp_sim_engine_for_check.history = simulated_history_for_check
-
-            simulated_prediction_data_for_check = temp_sim_engine_for_check.predict_next_for_backtest()
-            simulated_predicted_outcome_for_check = simulated_prediction_data_for_check['prediction']
-            simulated_recommendation_for_check = simulated_prediction_data_for_check['recommendation']
-
-            if simulated_recommendation_for_check == "Play ✅" and simulated_predicted_outcome_for_check in ['P', 'B', 'T']:
-                if simulated_predicted_outcome_for_check != actual_main_outcome_for_check:
-                    final_current_drawdown += 1
-                else:
-                    break # A hit breaks the consecutive miss streak
-            else:
-                break # If not playing, it's not a miss in the drawdown sense.
-    
     return {
         "accuracy_percent": accuracy_percent,
         "max_drawdown": max_drawdown,
         "hits": hits,
         "misses": misses,
         "total_bets": total_bets_counted,
-        "current_drawdown": final_current_drawdown # Return the calculated current drawdown
+        "current_drawdown": current_drawdown_tracker # Return the value from the forward pass
     }
 
 
@@ -441,34 +396,6 @@ class OracleEngine:
 
         return momentum_detected
 
-    # --- 3. ⚠️ Trap Zone Detection (Detecting Dangerous Zones & False Patterns) ---
-    # REMOVED: in_trap_zone function is no longer used for recommendation logic
-    # def in_trap_zone(self, current_history):
-    #     """
-    #     Detects zones where changes are rapid and truly unpredictable,
-    #     including "false patterns" that break expected sequences.
-    #     """
-    #     h = _get_pb_history(current_history)
-    #     if len(h) < 4:
-    #         return False
-    #     streaks = _get_streaks(h)
-    #     # ... (rest of the in_trap_zone logic) ...
-    #     return False
-
-    # --- New: Trend Analysis (Choppy Detector) ---
-    # REMOVED: is_choppy function is no longer used for recommendation logic
-    # def is_choppy(self, current_history):
-    #     """
-    #     Detects if the current history exhibits choppy (rapidly alternating) behavior.
-    #     A high number of outcome changes in a short period.
-    #     """
-    #     h = _get_pb_history(current_history)
-    #     if len(h) < 10: # Need enough history to detect choppiness
-    #         return False
-    #     # ... (rest of the is_choppy logic) ...
-    #     return False
-
-
     # --- 4. 🎯 Confidence Engine (2-Layer Confidence Score 0-100%) ---
     def confidence_score(self, current_history, big_road_data):
         """
@@ -675,7 +602,6 @@ class OracleEngine:
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
             "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)], # New debug info
-            # Removed Trap Zone and Choppy from debug info as they are no longer part of recommendation logic
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown'],
             "Current Consecutive Misses": backtest_stats['current_drawdown'] # New: Add current consecutive misses
@@ -862,26 +788,6 @@ class OracleEngine:
         # Risk_level is now purely informational, and recommendation is based solely on prediction availability.
         
         # Determine risk_level for display (informational only)
-        # Re-introduce simplified risk checks for informational display only, not for recommendation override
-        current_risk_info = []
-        # Re-adding back the functions for informational purposes.
-        # Note: These functions are *not* called to override recommendation.
-        # They are just used to set the 'risk_level' string.
-        # To do this, I need to re-add the functions `in_trap_zone` and `is_choppy` to the class,
-        # but ensure they are only used for informational `risk_level` and not for `recommendation`.
-
-        # Temporarily re-add `in_trap_zone` and `is_choppy` for informational `risk_level` calculation
-        # It's better to keep these functions as part of the class if they are used, even for info.
-        # Let's assume they are still defined in the class for this part.
-        
-        # NOTE: Since I'm removing the functions, I can't call them here.
-        # If the user wants the risk *text* to appear, but not affect prediction,
-        # I need to keep the functions. The request was to "ยกเลิกส่วนนี้ออกทั้งหมด" for protection.
-        # This implies removing the functions and their effects.
-        # So, the `risk_level` will now be "Normal" by default, or "Low Confidence" / "Uncertainty"
-        # if no prediction is made. The specific "Trap / False Pattern" or "High Volatility (Choppy)"
-        # risk levels will no longer be displayed.
-
         # Simplified risk level based on whether a prediction was made.
         if prediction_result == '?':
             risk_level = "Uncertainty"
