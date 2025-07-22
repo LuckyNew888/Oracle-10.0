@@ -1,20 +1,9 @@
 import streamlit as st
 import pandas as pd
 import math
-# Removed asyncio as it's no longer needed for Firestore operations
-# Removed json as it's no longer needed for Firebase config or failed_pattern_instances serialization
-# Removed uuid as it's no longer needed for anonymous user ID generation
-
-# Removed Firebase imports
-# from firebase_admin import credentials, firestore, auth, initialize_app
-# import firebase_admin
 
 # Import OracleEngine and helper functions
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
-
-# --- Firebase Initialization (Removed) ---
-# All Firebase initialization logic has been removed.
-# st.session_state.firebase_initialized = False # Ensure this is false if no Firebase
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
@@ -273,11 +262,11 @@ def remove_last_from_history():
         st.session_state.oracle_engine.reset_learning_states_on_undo()
     st.rerun()
 
-def reset_all_history():
+def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.history = []
-    st.session_state.money_balance = 1000.0
+    st.session_state.money_balance = 1000.0 # Reset balance for new shoe simulation
     st.session_state.bet_log = []
-    st.session_state.oracle_engine.reset_history()
+    st.session_state.oracle_engine.reset_history() # Resets all learning states
     _cached_backtest_accuracy.clear()
     reset_money_management_state()
     st.rerun()
@@ -296,16 +285,17 @@ def reset_money_management_state_on_undo():
         st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
 
 
-def record_bet_result(predicted_side, actual_result):
-    bet_amt_for_log = st.session_state.bet_amount_calculated # This is the bet amount that *would* have been placed
+def record_bet_result(predicted_side, actual_result, recommendation_status):
+    # Only calculate bet amount if the recommendation was "Play"
+    bet_amt_for_log = st.session_state.bet_amount_calculated if recommendation_status == "Play ✅" else 0.0
     win_loss = 0.0
-    outcome = "Avoided" # Default outcome if no prediction was made
+    outcome = "Avoided" # Default outcome if no prediction was made or avoided
 
     current_system = st.session_state.money_management_system
 
     # --- Core Logic for Win/Loss and Money Management ---
-    # ONLY process win/loss and money management if a prediction was actually made (not 'Avoid')
-    if predicted_side in ['P', 'B', 'T']:
+    # ONLY process win/loss and money management if the system recommended "Play"
+    if recommendation_status == "Play ✅" and predicted_side in ['P', 'B', 'T']:
         if predicted_side == actual_result: # Direct Hit
             outcome = "Hit"
             if actual_result == 'P':
@@ -356,17 +346,14 @@ def record_bet_result(predicted_side, actual_result):
                     st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
                 else:
                     st.session_state.labouchere_current_sequence.append(1.0) # Fallback if unit bet is zero/invalid
-    # else: # If predicted_side is '?', it means "Avoid".
-    #     # Money balance does not change.
-    #     # Money management system state does not change.
-    #     # win_loss remains 0.0 (initialized)
-    #     outcome remains "Avoided" (initialized)
+    # else: If recommendation_status is "Avoid ❌", money balance and money management state do not change.
+    #      win_loss remains 0.0, outcome remains "Avoided".
 
 
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "System": current_system,
-        "Bet Amount": f"{bet_amt_for_log:.2f}" if predicted_side in ['P', 'B', 'T'] else "0.00", # Show 0.00 if avoided
+        "Bet Amount": f"{bet_amt_for_log:.2f}",
         "Predict": predicted_side,
         "Actual": actual_result,
         "Win/Loss": f"{win_loss:+.2f}",
@@ -389,19 +376,21 @@ def record_bet_result(predicted_side, actual_result):
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
     # --- Update Oracle Engine's Learning States ---
-    # This condition is already correct as it only updates learning if a prediction was made and it wasn't a push.
-    if predicted_side in ['P', 'B', 'T'] and not (actual_result == 'T' and predicted_side in ['P', 'B']):
+    # Only update learning if the system recommended "Play" and it wasn't a push.
+    if recommendation_status == "Play ✅" and predicted_side in ['P', 'B', 'T'] and not (actual_result == 'T' and predicted_side in ['P', 'B']):
         history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
         big_road_data_before = _build_big_road_data(history_before_current_result)
         
         patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result, big_road_data_before)
         momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result, big_road_data_before)
+        sequences_before = st.session_state.oracle_engine._detect_sequences(history_before_current_result) # New: Get sequences
 
         st.session_state.oracle_engine._update_learning(
             predicted_outcome=predicted_side,
             actual_outcome=actual_result,
             patterns_detected=patterns_before,
-            momentum_detected=momentum_before
+            momentum_detected=momentum_before,
+            sequences_detected=sequences_before # New: Pass sequences to update learning
         )
     
     _cached_backtest_accuracy.clear()
@@ -411,7 +400,7 @@ def record_bet_result(predicted_side, actual_result):
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
 
-# --- User/Room ID Input (Removed) ---
+# --- User/Room ID Input (Removed as Firebase is removed) ---
 st.sidebar.markdown("### ⚙️ การตั้งค่า")
 # Removed Firebase authentication status and User ID display
 # Removed Room ID input
@@ -531,6 +520,7 @@ st.markdown("#### 🔮 ทำนายตาถัดไป:")
 prediction_data = None
 next_pred_side = '?'
 conf = 0
+recommendation_status = "—" # Initialize recommendation status
 
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
@@ -541,12 +531,13 @@ if len(engine.history) >= 20:
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
         next_pred_side = prediction_data['prediction']
         conf = engine.confidence_score(engine.history, _build_big_road_data(engine.history))
+        recommendation_status = prediction_data['recommendation'] # Get the recommendation status
 
         emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
 
         st.markdown(f'<div class="prediction-text">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}")
-        st.markdown(f"**🧾 คำแนะนำ:** **{prediction_data['recommendation']}**")
+        st.markdown(f"**🧾 คำแนะนำ:** **{recommendation_status}**")
 
         with st.expander("🧬 Developer View"):
             st.text(prediction_data['developer_view'])
@@ -554,6 +545,8 @@ if len(engine.history) >= 20:
             st.write(engine.pattern_stats)
             st.write("--- Momentum Success Rates ---")
             st.write(engine.momentum_stats)
+            st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
+            st.write(engine.sequence_memory_stats)
             st.write("--- Failed Pattern Instances ---")
             st.write(engine.failed_pattern_instances)
             st.write("--- Backtest Results ---")
@@ -561,7 +554,8 @@ if len(engine.history) >= 20:
                 engine.history,
                 engine.pattern_stats,
                 engine.momentum_stats,
-                engine.failed_pattern_instances
+                engine.failed_pattern_instances,
+                engine.sequence_memory_stats # Pass sequence memory to backtest cache
             )
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
@@ -622,53 +616,54 @@ else:
 
 col_p_b_t = st.columns(3)
 
+# Pass the recommendation_status to record_bet_result
 if prediction_data and isinstance(prediction_data, dict) and 'recommendation' in prediction_data:
     if prediction_data['recommendation'] == "Play ✅":
         with col_p_b_t[0]:
             if st.button(f"🔵 P", key="result_P_play", use_container_width=True):
-                record_bet_result(prediction_data['prediction'], 'P')
-                st.rerun()
+                record_bet_result(prediction_data['prediction'], 'P', recommendation_status)
+                # st.rerun() # Rerun is called inside record_bet_result
         with col_p_b_t[1]:
             if st.button(f"🔴 B", key="result_B_play", use_container_width=True):
-                record_bet_result(prediction_data['prediction'], 'B')
-                st.rerun()
+                record_bet_result(prediction_data['prediction'], 'B', recommendation_status)
+                # st.rerun()
         with col_p_b_t[2]:
             if st.button(f"🟢 T", key="result_T_play", use_container_width=True):
-                record_bet_result(prediction_data['prediction'], 'T')
-                st.rerun()
+                record_bet_result(prediction_data['prediction'], 'T', recommendation_status)
+                # st.rerun()
     elif prediction_data['recommendation'] == "Avoid ❌":
         with col_p_b_t[0]:
             if st.button(f"บันทึก: 🔵 P", key="no_bet_P", use_container_width=True):
-                record_bet_result('?', 'P')
-                st.rerun()
+                record_bet_result('?', 'P', recommendation_status) # predicted_side is '?' for avoided bets
+                # st.rerun()
         with col_p_b_t[1]:
             if st.button(f"บันทึก: 🔴 B", key="no_bet_B", use_container_width=True):
-                record_bet_result('?', 'B')
-                st.rerun()
+                record_bet_result('?', 'B', recommendation_status)
+                # st.rerun()
         with col_p_b_t[2]:
             if st.button(f"บันทึก: 🟢 T", key="no_bet_T", use_container_width=True):
-                record_bet_result('?', 'T')
-                st.rerun()
-else:
+                record_bet_result('?', 'T', recommendation_status)
+                # st.rerun()
+else: # Initial state or insufficient history
     with col_p_b_t[0]:
         if st.button(f"บันทึก: 🔵 P", key="init_P", use_container_width=True):
-            record_bet_result('?', 'P')
-            st.rerun()
+            record_bet_result('?', 'P', "—") # No prediction yet, so no recommendation status
+            # st.rerun()
     with col_p_b_t[1]:
         if st.button(f"บันทึก: 🔴 B", key="init_B", use_container_width=True):
-            record_bet_result('?', 'B')
-            st.rerun()
+            record_bet_result('?', 'B', "—")
+            # st.rerun()
     with col_p_b_t[2]:
         if st.button(f"บันทึก: 🟢 T", key="init_T", use_container_width=True):
-            record_bet_result('?', 'T')
-            st.rerun()
+            record_bet_result('?', 'T', "—")
+            # st.rerun()
 
 col_hist1, col_hist2 = st.columns(2)
 with col_hist1:
     if st.button("↩️ ลบล่าสุด", key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
         pass # Action handled by on_click
 with col_hist2:
-    if st.button("🧹 รีเซ็ตทั้งหมด", key="resetAllHist", use_container_width=True, on_click=reset_all_history):
+    if st.button("🧹 เริ่มขอนใหม่", key="resetAllHist", use_container_width=True, on_click=reset_all_history): # Renamed button
         pass # Action handled by on_click
 
 st.markdown("### 📊 บันทึกการเดิมพัน")
