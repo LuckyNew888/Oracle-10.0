@@ -1,6 +1,7 @@
 from collections import Counter
 import random
 import streamlit as st # Import streamlit for caching
+import json # For serializing/deserializing failed_pattern_instances keys
 
 # --- Helper Functions (outside OracleEngine class) ---
 def _get_pb_history(current_history):
@@ -136,7 +137,45 @@ class OracleEngine:
         self.history = []
         self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
         self.momentum_stats = initial_momentum_stats if initial_momentum_stats is not None else {}
+        # Failed pattern instances keys are (pattern_name, sequence_snapshot_tuple)
+        # For Firestore, we need to convert tuple keys to string for storage.
         self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
+        
+        # Firestore context (will be set by Streamlit app)
+        self.db = None
+        self.user_id = None
+        self.room_id = None
+        self.app_id = None # __app_id from global context
+
+        # Weighted Pattern Scoring: Define weights for each pattern and momentum
+        self.pattern_weights = {
+            'Dragon': 1.0,
+            'FollowStreak': 0.95,
+            'Pingpong': 0.9,
+            'Two-Cut': 0.8,
+            'Triple-Cut': 0.8,
+            'One-Two Pattern': 0.7,
+            'Two-One Pattern': 0.7,
+            'Big Eye Boy (2D Simple - Follow)': 0.9, # High weight for following 2D trends
+            'Big Eye Boy (2D Simple - Break)': 0.8, # Slightly lower for breaking
+            'Small Road (2D Simple - Chop)': 0.75,
+            'Cockroach Pig (2D Simple - Chop)': 0.7,
+            'Broken Pattern': 0.3, # Low weight for chaotic patterns
+        }
+        self.momentum_weights = {
+            'B3+ Momentum': 0.9,
+            'P3+ Momentum': 0.9,
+            'Steady Repeat Momentum': 0.85,
+            'Ladder Momentum (1-2-3)': 0.7,
+            'Ladder Momentum (X-Y-XX-Y)': 0.6,
+        }
+
+    def set_firestore_context(self, db_instance, user_id, room_id, app_id):
+        """Sets the Firestore database context for the engine."""
+        self.db = db_instance
+        self.user_id = user_id
+        self.room_id = room_id
+        self.app_id = app_id
 
     # --- Data Management (for the Engine itself) ---
     def update_history(self, result_obj):
@@ -155,6 +194,10 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
+        # Also clear Firestore cache if applicable
+        if self.db and self.user_id and self.room_id and self.app_id:
+            self.save_learning_states_to_firestore()
+
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -162,10 +205,69 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
+        # Also clear Firestore cache if applicable
+        if self.db and self.user_id and self.room_id and self.app_id:
+            self.save_learning_states_to_firestore() # Save empty states to clear Firestore
 
     def get_current_learning_states(self):
         """Returns the current learning states for caching purposes."""
-        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances
+        # Convert tuple keys in failed_pattern_instances to string for consistent storage/retrieval
+        serializable_failed_instances = {json.dumps(k): v for k, v in self.failed_pattern_instances.items()}
+        return self.pattern_stats, self.momentum_stats, serializable_failed_instances
+
+    async def load_learning_states_from_firestore(self):
+        """Loads learning states from Firestore for the current room and user."""
+        if not (self.db and self.user_id and self.room_id and self.app_id):
+            return
+
+        try:
+            doc_ref = self.db.collection(f"artifacts/{self.app_id}/users/{self.user_id}/rooms").document(self.room_id)
+            doc_snapshot = await doc_ref.get()
+
+            if doc_snapshot.exists:
+                data = doc_snapshot.to_dict()
+                self.pattern_stats = data.get('pattern_stats', {})
+                self.momentum_stats = data.get('momentum_stats', {})
+                
+                # Deserialize failed_pattern_instances keys back to tuples
+                loaded_failed_instances_raw = data.get('failed_pattern_instances', {})
+                self.failed_pattern_instances = {
+                    tuple(json.loads(k)): v for k, v in loaded_failed_instances_raw.items()
+                }
+                st.success(f"Loaded learning data for room '{self.room_id}'.")
+            else:
+                st.info(f"No existing learning data for room '{self.room_id}'. Starting fresh.")
+                self.pattern_stats = {}
+                self.momentum_stats = {}
+                self.failed_pattern_instances = {}
+        except Exception as e:
+            st.error(f"Error loading learning data from Firestore: {e}")
+            # Fallback to empty states on error
+            self.pattern_stats = {}
+            self.momentum_stats = {}
+            self.failed_pattern_instances = {}
+
+
+    async def save_learning_states_to_firestore(self):
+        """Saves current learning states to Firestore for the current room and user."""
+        if not (self.db and self.user_id and self.room_id and self.app_id):
+            return
+
+        try:
+            doc_ref = self.db.collection(f"artifacts/{self.app_id}/users/{self.user_id}/rooms").document(self.room_id)
+            
+            # Convert tuple keys in failed_pattern_instances to string for storage
+            serializable_failed_instances = {json.dumps(k): v for k, v in self.failed_pattern_instances.items()}
+
+            await doc_ref.set({
+                'pattern_stats': self.pattern_stats,
+                'momentum_stats': self.momentum_stats,
+                'failed_pattern_instances': serializable_failed_instances
+            })
+            st.success(f"Saved learning data for room '{self.room_id}' to Firestore.")
+        except Exception as e:
+            st.error(f"Error saving learning data to Firestore: {e}")
+
 
     # --- 1. 🧬 DNA Pattern Analysis (Pattern Detection) ---
     def detect_patterns(self, current_history, big_road_data):
@@ -292,11 +394,11 @@ class OracleEngine:
 
         return momentum_detected
 
-    # --- 3. ⚠️ Trap Zone Detection (Detecting Dangerous Zones) ---
+    # --- 3. ⚠️ Trap Zone Detection (Detecting Dangerous Zones & False Patterns) ---
     def in_trap_zone(self, current_history):
         """
         Detects zones where changes are rapid and truly unpredictable,
-        explicitly avoiding flagging common, predictable patterns like Pingpong or long Dragons as traps.
+        including "false patterns" that break expected sequences.
         """
         h = _get_pb_history(current_history)
         if len(h) < 4:
@@ -305,15 +407,13 @@ class OracleEngine:
         streaks = _get_streaks(h)
 
         # Trap 1: Very short, chaotic, unpredictable sequence (not Pingpong or Dragon)
-        # This occurs when there's no clear streak or alternating pattern.
         # Check for high frequency of changes without a clear pattern.
+        # This is a stronger indicator of chaos than just alternating.
         if len(h) >= 6:
             last6 = h[-6:]
             # If the last 3 results are all different from each other (e.g., P, B, T or P, B, P, but not P, P, B)
-            # This is a strong indicator of chaos.
-            if len(set(last6[-3:])) >= 2 and last6[-1] != last6[-2] and last6[-2] != last6[-3]: # Ensures alternating, but not necessarily strict pingpong
-                # Further check: if the number of distinct results in last 4 is high (e.g., 3 or 4)
-                if len(set(h[-4:])) >= 3:
+            if len(set(last6[-3:])) >= 2 and last6[-1] != last6[-2] and last6[-2] != last6[-3]:
+                if len(set(h[-4:])) >= 3: # If last 4 also show high diversity
                     return True
 
         # Trap 2: Streak broken immediately after a long streak and then immediately reverts
@@ -331,42 +431,62 @@ class OracleEngine:
             if prev_streak[1] >= 3 and last_streak[1] >= 2 and prev_streak[0] != last_streak[0]:
                 return True
 
+        # --- False Pattern Detector ---
+        # False Pingpong (e.g., PBPBPBBP) - Pingpong pattern breaks with a repeat
+        if len(streaks) >= 7: # Need at least 7 streaks for PBPBPB + 1 break
+            # Check if last 6 streaks were all length 1 (PBPBPB)
+            if all(s[1] == 1 for s in streaks[-6:-1]):
+                # And the last streak is a repeat of the one before it (breaking the pingpong)
+                if streaks[-1][1] >= 2 and streaks[-1][0] == streaks[-2][0]:
+                    return True # This is a false pingpong
+
+        # False Dragon (e.g., BBBBB PBB) - Dragon pattern breaks then immediately tries to resume
+        if len(streaks) >= 3:
+            last_streak = streaks[-1]
+            middle_streak = streaks[-2]
+            first_streak = streaks[-3]
+            # If first streak was long (e.g., >=4), then cut by a single, then tries to resume but short
+            if first_streak[1] >= 4 and middle_streak[1] == 1 and last_streak[1] >= 2 and first_streak[0] == last_streak[0]:
+                return True # This is a false dragon
+
         return False
 
-    # --- 4. 🎯 Confidence Engine (Confidence Score 0-100%) ---
+    # --- 4. 🎯 Confidence Engine (2-Layer Confidence Score 0-100%) ---
     def confidence_score(self, current_history, big_road_data):
-        """Calculates the system's confidence score for prediction."""
+        """
+        Calculates the system's confidence score for prediction (Layer 1: Pattern Stability).
+        """
         pb_history_len = len(_get_pb_history(current_history))
         if pb_history_len < 10:
             return 0
 
         patterns = self.detect_patterns(current_history, big_road_data)
         momentum = self.detect_momentum(current_history, big_road_data)
-        trap = self.in_trap_zone(current_history)
+        
+        score = 75 # Increased base confidence to be even more proactive
 
-        score = 70 # Increased base confidence to be even more proactive
-
-        # Factor in pattern and momentum success rates
+        # Layer 1: Weighted Pattern Scoring based on frequency and stability
         for p_name, p_snapshot in patterns:
             stats = self.pattern_stats.get(p_name, {'hits': 0, 'misses': 0})
             total = stats['hits'] + stats['misses']
+            weight = self.pattern_weights.get(p_name, 0.5) # Default weight if not defined
+
             if total > 0:
                 success_rate = stats['hits'] / total
-                score += success_rate * 70 # Significantly increased weight for patterns
+                score += success_rate * weight * 100 # Multiply by 100 to scale
             else: # If no data, still give a significant boost for detection
-                score += 40 # Increased boost for new patterns
+                score += weight * 50 # Boost for new patterns, scaled by weight
 
         for m_name, m_snapshot in momentum:
             stats = self.momentum_stats.get(m_name, {'hits': 0, 'misses': 0})
             total = stats['hits'] + stats['misses']
+            weight = self.momentum_weights.get(m_name, 0.5) # Default weight if not defined
+
             if total > 0:
                 success_rate = stats['hits'] / total
-                score += success_rate * 60 # Significantly increased weight for momentum
+                score += success_rate * weight * 80 # Multiply by 80 to scale
             else: # If no data, still give a significant boost for detection
-                score += 35 # Increased boost for new momentum
-
-        if trap:
-            score -= 100 # Maximum penalty for real trap zone
+                score += weight * 40 # Boost for new momentum, scaled by weight
 
         score = max(0, min(100, score))
         return int(score)
@@ -374,7 +494,12 @@ class OracleEngine:
     # --- 5. 🔁 Memory Logic (Remembering Failed Patterns) ---
     def _is_pattern_instance_failed(self, pattern_type, sequence_snapshot):
         """Checks if this specific pattern instance has previously led to a miss."""
-        return self.failed_pattern_instances.get((pattern_type, sequence_snapshot), 0) > 0
+        # Convert tuple key to string for lookup if stored as string
+        key_to_check = json.dumps((pattern_type, sequence_snapshot))
+        # Check if the string key exists, or if the tuple key exists (for in-memory)
+        return self.failed_pattern_instances.get(key_to_check, 0) > 0 or \
+               self.failed_pattern_instances.get((pattern_type, sequence_snapshot), 0) > 0
+
 
     def _update_learning(self, predicted_outcome, actual_outcome, patterns_detected, momentum_detected):
         """
@@ -402,11 +527,17 @@ class OracleEngine:
                 self.momentum_stats[m_name]['misses'] += 1
                 failed_key = (m_name, m_snapshot)
                 self.failed_pattern_instances[failed_key] = self.failed_pattern_instances.get(failed_key, 0) + 1
+        
+        # Save to Firestore after every update if context is available
+        if self.db and self.user_id and self.room_id and self.app_id:
+            st.session_state.save_learning_trigger = True # Use a trigger for async save
 
-
-    # --- 6. 🧠 Intuition Logic (Deep Logic when no clear Pattern) ---
+    # --- 6. 🧠 Adaptive Intuition Logic (Deep Logic when no clear Pattern) ---
     def intuition_predict(self, current_history):
-        """Uses deep logic to predict when no clear pattern is present."""
+        """
+        Uses deep logic to predict when no clear pattern is present,
+        adapting based on the context of the current streak/history.
+        """
         h = _get_pb_history(current_history)
         full_h = current_history
         streaks = _get_streaks(h)
@@ -425,7 +556,24 @@ class OracleEngine:
             if Counter(last4_full)['T'] >= 2:
                 return 'T'
 
-        # Specific P/B patterns
+        # Adaptive Logic based on streak length and recent history
+        if streaks:
+            last_streak = streaks[-1]
+            # If current streak is very long (e.g., 5+), lean towards continuation
+            if last_streak[1] >= 5:
+                return last_streak[0]
+            
+            # If pingpong (alternating) is dominant in recent history (e.g., last 4 results are PBPB or BPBP)
+            if len(h) >= 4 and h[-1] != h[-2] and h[-2] != h[-3] and h[-3] != h[-4]:
+                return 'P' if h[-1] == 'B' else 'B' # Predict opposite for pingpong
+
+            # If the last two are same, but previous streak was long and cut (e.g., BBB P B)
+            if len(streaks) >= 2:
+                prev_streak = streaks[-2]
+                if prev_streak[1] >= 4 and last_streak[1] == 1: # Long streak cut by one
+                    return prev_streak[0] # Predict continuation of the long streak (often seen after a single cut)
+
+        # General P/B patterns (fallback if no adaptive logic applies)
         if last3_pb == ('P','B','P'):
             return 'P'
         if last3_pb == ('B','B','P'):
@@ -446,13 +594,6 @@ class OracleEngine:
             if last_streak[1] == prev_streak[1]:
                 return 'P' if last_streak[0] == 'B' else 'B'
             
-        # Follow the long streak if it's 4+ and then cut
-        if len(streaks) >= 2:
-            last_streak = streaks[-1]
-            prev_streak = streaks[-2]
-            if prev_streak[1] >= 4 and last_streak[1] == 1:
-                return prev_streak[0]
-
         # If last two are same, predict opposite to break streak (common in choppy)
         if len(h) >= 2 and h[-1] == h[-2]:
             return 'P' if h[-1] == 'B' else 'B'
@@ -473,6 +614,7 @@ class OracleEngine:
         risk_level = "Normal"
         recommendation = "Play ✅"
         developer_view = ""
+        decision_path = [] # To log the decision making process
 
         current_pb_history = _get_pb_history(self.history)
         big_road_data = _build_big_road_data(self.history)
@@ -491,7 +633,7 @@ class OracleEngine:
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
             "Is in Trap Zone": self.in_trap_zone(self.history),
-            "Calculated Confidence Score": self.confidence_score(self.history, big_road_data),
+            "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown']
         }
         developer_view_parts = []
@@ -500,11 +642,14 @@ class OracleEngine:
         developer_view = "\n".join(developer_view_parts) + "\n--- Prediction Logic ---\n"
 
 
-        # --- 1. Check Trap Zone (Avoid if truly dangerous) ---
+        # --- Layer 2 Confidence: Early Exit Conditions (Risk Management) ---
+
+        # 1. Check Trap Zone (Avoid if truly dangerous)
         if self.in_trap_zone(self.history):
             risk_level = "Trap"
             recommendation = "Avoid ❌"
-            developer_view += f"Decision: Trap Zone detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance."
+            decision_path.append(f"Decision: Trap Zone detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance.")
+            developer_view += "\n".join(decision_path)
             return {
                 "developer_view": developer_view,
                 "prediction": prediction_result,
@@ -515,12 +660,13 @@ class OracleEngine:
                 "active_momentum": []
             }
 
-        # --- 2. Check Confidence Score (Avoid if too low) ---
+        # 2. Check Confidence Score (Layer 1) - Avoid if too low
         score = self.confidence_score(self.history, big_road_data)
-        if score < 50:
+        if score < 50: # Keep threshold at 50 for initial 'Play' consideration
             recommendation = "Avoid ❌"
             risk_level = "Low Confidence"
-            developer_view += f"Decision: Confidence Score ({score}%) is below threshold (50%). Recommending avoidance."
+            decision_path.append(f"Decision: Confidence Score (Layer 1: {score}%) is below threshold (50%). Recommending avoidance.")
+            developer_view += "\n".join(decision_path)
             return {
                 "developer_view": developer_view,
                 "prediction": prediction_result,
@@ -531,11 +677,12 @@ class OracleEngine:
                 "active_momentum": []
             }
 
-        # --- 3. Check Drawdown (Avoid if too many consecutive misses) ---
+        # 3. Check Drawdown (Avoid if too many consecutive misses)
         if backtest_stats['max_drawdown'] >= 3:
             risk_level = "High Drawdown"
             recommendation = "Avoid ❌"
-            developer_view += f"Decision: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Recommending avoidance."
+            decision_path.append(f"Decision: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Recommending avoidance.")
+            developer_view += "\n".join(decision_path)
             return {
                 "developer_view": developer_view,
                 "prediction": prediction_result,
@@ -546,7 +693,7 @@ class OracleEngine:
                 "active_momentum": []
             }
 
-        # --- 4. Use Primary Patterns for Prediction (if available) ---
+        # --- Primary Prediction Logic ---
         patterns = self.detect_patterns(self.history, big_road_data)
         momentum = self.detect_momentum(self.history, big_road_data)
 
@@ -556,24 +703,29 @@ class OracleEngine:
         predicted_by_rule = False
         prediction_source_detail = ""
 
+        # Prioritize patterns
         if patterns:
+            decision_path.append("Evaluating Patterns:")
             for p_name, p_snapshot in patterns:
                 active_patterns_for_learning.append((p_name, p_snapshot))
 
                 if self._is_pattern_instance_failed(p_name, p_snapshot):
-                    developer_view += f" (Note: Pattern '{p_name}' instance previously failed. Skipping for prediction.)"
+                    decision_path.append(f"  - Pattern '{p_name}' instance previously failed. Skipping for prediction.")
                     continue
 
+                # Prediction logic for patterns
                 if 'Dragon' in p_name or 'FollowStreak' in p_name:
                     prediction_result = current_pb_history[-1]
                     prediction_source_detail = f"Pattern: {p_name}. Predicting continuation ({prediction_result})."
                     predicted_by_rule = True
+                    decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
                     break
                 elif 'Pingpong' in p_name:
                     last = current_pb_history[-1]
                     prediction_result = 'P' if last == 'B' else 'B'
                     prediction_source_detail = f"Pattern: {p_name}. Predicting opposite ({prediction_result})."
                     predicted_by_rule = True
+                    decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
                     break
                 elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
                     if len(current_pb_history) >= 2:
@@ -581,6 +733,7 @@ class OracleEngine:
                         prediction_result = 'P' if last_block_char == 'B' else 'B'
                         prediction_source_detail = f"Pattern: {p_name}. Predicting opposite of block ({prediction_result})."
                         predicted_by_rule = True
+                        decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
                         break
                 elif 'One-Two Pattern' in p_name:
                     if len(current_pb_history) >= 3:
@@ -588,6 +741,7 @@ class OracleEngine:
                             prediction_result = current_pb_history[-2]
                             prediction_source_detail = f"Pattern: {p_name}. Predicting {prediction_result} to complete One-Two."
                             predicted_by_rule = True
+                            decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
                             break
                 elif 'Two-One Pattern' in p_name:
                     if len(current_pb_history) >= 3:
@@ -595,38 +749,41 @@ class OracleEngine:
                             prediction_result = current_pb_history[-3]
                             prediction_source_detail = f"Pattern: {p_name}. Predicting {prediction_result} to complete Two-One."
                             predicted_by_rule = True
+                            decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
                             break
                 elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
                     prediction_result = current_pb_history[-1] # For simplicity, these 2D patterns often imply continuation of main road trend
                     prediction_source_detail = f"2D Pattern: {p_name}. Predicting continuation ({prediction_result})."
                     predicted_by_rule = True
+                    decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
                     break
             
-            if predicted_by_rule:
-                developer_view += f"Decision: Predicted by Pattern. {prediction_source_detail}"
-            else:
-                developer_view += f"Decision: Patterns detected but no prediction made (or failed instances). Raw patterns: {[p[0] for p in patterns]}"
+            if not predicted_by_rule:
+                decision_path.append(f"  - Patterns detected but no prediction made (or all instances failed). Raw patterns: {[p[0] for p in patterns]}")
 
 
         # If no prediction from patterns, try momentum
         if not predicted_by_rule and momentum:
+            decision_path.append("Evaluating Momentum:")
             for m_name, m_snapshot in momentum:
                 active_momentum_for_learning.append((m_name, m_snapshot))
 
                 if self._is_pattern_instance_failed(m_name, m_snapshot):
-                    developer_view += f" (Note: Momentum '{m_name}' instance previously failed. Skipping for prediction.)"
+                    decision_path.append(f"  - Momentum '{m_name}' instance previously failed. Skipping for prediction.")
                     continue
 
                 if 'Momentum' in m_name:
                     prediction_result = current_pb_history[-1]
                     prediction_source_detail = f"Momentum: {m_name}. Predicting continuation ({prediction_result})."
                     predicted_by_rule = True
+                    decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
                     break
                 elif m_name == "Steady Repeat Momentum":
                     if len(current_pb_history) >= 6:
                         prediction_result = current_pb_history[-6]
                         prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue repeat."
                         predicted_by_rule = True
+                        decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
                         break
                 elif 'Ladder Momentum' in m_name:
                     streaks = _get_streaks(self.history)
@@ -637,37 +794,42 @@ class OracleEngine:
                             prediction_result = prev_streak[0]
                             prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue ladder."
                             predicted_by_rule = True
+                            decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
                             break
                         elif last_streak[1] >= 2 and prev_streak[1] == 1:
                             prediction_result = prev_streak[0]
                             prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue ladder."
                             predicted_by_rule = True
+                            decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
                             break
             
             if not predicted_by_rule:
-                developer_view += f"Decision: Momentum detected but no prediction made (or failed instances). Raw momentum: {[m[0] for m in momentum]}"
+                decision_path.append(f"  - Momentum detected but no prediction made (or all instances failed). Raw momentum: {[m[0] for m in momentum]}")
 
 
-        # --- 5. Intuition Logic (Used when no clear Primary Pattern or Momentum) ---
+        # --- Intuition Logic (Used when no clear Primary Pattern or Momentum) ---
         if not predicted_by_rule:
+            decision_path.append("Applying Intuition Logic (No strong patterns/momentum):")
             intuitive_guess = self.intuition_predict(self.history)
             if intuitive_guess == 'T':
                 prediction_result = 'T'
-                developer_view += "Decision: Intuition Logic: Specific Tie pattern identified."
+                decision_path.append("  - Intuition Logic: Specific Tie pattern identified.")
             elif intuitive_guess in ['P', 'B']:
                 prediction_result = intuitive_guess
-                developer_view += f"Decision: Intuition Logic: Predicting {intuitive_guess} based on subtle patterns."
+                decision_path.append(f"  - Intuition Logic: Predicting {intuitive_guess} based on subtle patterns/context.")
             else:
                 recommendation = "Avoid ❌"
                 risk_level = "Uncertainty"
-                developer_view += "Decision: Intuition Logic: No strong P/B/T prediction, recommending Avoid."
+                decision_path.append("  - Intuition Logic: No strong P/B/T prediction, recommending Avoid.")
                 prediction_result = '?'
         
         # Final check: If still no prediction, and no specific reason to avoid, default to Avoid
         if prediction_result == '?' and recommendation == "Play ✅":
             recommendation = "Avoid ❌"
             risk_level = "Uncertainty"
-            developer_view += "Final Decision: No clear patterns, momentum, or intuition for prediction. Recommending Avoid."
+            decision_path.append("Final Decision: No clear patterns, momentum, or intuition for prediction. Recommending Avoid.")
+
+        developer_view += "\n".join(decision_path)
 
         return {
             "developer_view": developer_view,
