@@ -183,7 +183,6 @@ if "oracle_engine" not in st.session_state:
 if not hasattr(st.session_state.oracle_engine, '_detect_sequences'):
     st.session_state.oracle_engine = OracleEngine()
     st.session_state.oracle_engine.reset_history() # Reset all learning states
-    # st.warning("Detected an outdated OracleEngine instance (missing _detect_sequences method). Re-initializing the AI engine. History and learning stats have been reset.") # Removed this warning
     # No need for individual attribute checks below if we just re-initialized the whole engine.
     # The new OracleEngine() instance will have all the latest attributes.
 else:
@@ -211,87 +210,18 @@ else:
 # --- Session State Initialization (other variables) ---
 if "history" not in st.session_state:
     st.session_state.history = []
-if "money_balance" not in st.session_state:
-    st.session_state.money_balance = 1000.0
-if "bet_amount" not in st.session_state:
-    st.session_state.bet_amount = 100.0
+# Removed money_balance, bet_amount from session_state init
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
 
-# Money Management Systems
-if "money_management_system" not in st.session_state:
-    st.session_state.money_management_system = "Fixed Bet"
-if "martingale_current_step" not in st.session_state:
-    st.session_state.martingale_current_step = 0
-if "martingale_base_bet" not in st.session_state:
-    st.session_state.martingale_base_bet = 100.0
-if "martingale_multiplier" not in st.session_state:
-    st.session_state.martingale_multiplier = 2.0
-if "martingale_max_steps" not in st.session_state:
-    st.session_state.martingale_max_steps = 5
-if "fibonacci_sequence" not in st.session_state:
-    st.session_state.fibonacci_sequence = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181]
-if "fibonacci_current_index" not in st.session_state:
-    st.session_state.fibonacci_current_index = 1
-if "fibonacci_unit_bet" not in st.session_state:
-    st.session_state.fibonacci_unit_bet = 100.0
-if "fibonacci_max_steps_input" not in st.session_state:
-    st.session_state.fibonacci_max_steps_input = len(st.session_state.fibonacci_sequence) - 1
-if "labouchere_original_sequence" not in st.session_state:
-    st.session_state.labouchere_original_sequence = [1.0, 2.0, 3.0, 4.0]
-if "labouchere_current_sequence" not in st.session_state:
-    st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
-if "labouchere_unit_bet" not in st.session_state:
-    st.session_state.labouchere_unit_bet = 100.0
+# Removed all money management system related session state initializations
+# if "money_management_system" not in st.session_state:
+#     st.session_state.money_management_system = "Fixed Bet"
+# ... and so on for martingale, fibonacci, labouchere
 
-# --- Function to Calculate Next Bet Amount ---
-def calculate_next_bet():
-    system = st.session_state.money_management_system
-
-    if system == "Fixed Bet":
-        return st.session_state.bet_amount
-
-    elif system == "Martingale":
-        current_bet_multiplier = st.session_state.martingale_multiplier ** st.session_state.martingale_current_step
-        next_bet = st.session_state.martingale_base_bet * current_bet_multiplier
-
-        if st.session_state.martingale_current_step >= st.session_state.martingale_max_steps:
-            st.warning(f"Martingale ถึงไม้สูงสุด ({st.session_state.martingale_max_steps}) แล้ว! จะใช้เงินเดิมพันฐาน.")
-            return st.session_state.martingale_base_bet
-
-        return next_bet
-
-    elif system == "Fibonacci":
-        fib_seq = st.session_state.fibonacci_sequence
-        current_idx = st.session_state.fibonacci_current_index
-        max_steps = st.session_state.fibonacci_max_steps_input
-
-        if current_idx >= len(fib_seq) or current_idx > max_steps:
-            st.warning(f"Fibonacci ถึงไม้สูงสุด ({max_steps}) หรือเกินลำดับแล้ว! จะใช้เงินเดิมพันหน่วย.")
-            return st.session_state.fibonacci_unit_bet
-
-        next_bet = fib_seq[current_idx] * st.session_state.fibonacci_unit_bet
-        return next_bet
-
-    elif system == "Labouchere":
-        current_seq = st.session_state.labouchere_current_sequence
-        unit_bet = st.session_state.labouchere_unit_bet
-
-        if not current_seq:
-            st.success("Labouchere: ลำดับครบเป้าหมายแล้ว! กำลังรีเซ็ตลำดับ.")
-            st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
-            if not st.session_state.labouchere_current_sequence:
-                return unit_bet
-            current_seq = st.session_state.labouchere_current_sequence
-
-        if len(current_seq) == 1:
-            next_bet = current_seq[0] * unit_bet
-        else:
-            next_bet = (current_seq[0] + current_seq[-1]) * unit_bet
-
-        return next_bet
-
-    return st.session_state.bet_amount
+# --- Removed Function to Calculate Next Bet Amount ---
+# def calculate_next_bet():
+#     ...
 
 # --- Callback Functions for History and Betting Management ---
 def remove_last_from_history():
@@ -299,105 +229,36 @@ def remove_last_from_history():
         st.session_state.history.pop()
         _cached_backtest_accuracy.clear()
         st.session_state.oracle_engine.reset_learning_states_on_undo()
-    st.rerun()
+    
 
 def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.history = []
-    st.session_state.money_balance = 1000.0 # Reset balance for new shoe simulation
+    # Removed money_balance reset
     st.session_state.bet_log = []
     st.session_state.oracle_engine.reset_history() # Resets all learning states
     _cached_backtest_accuracy.clear()
-    reset_money_management_state()
-    st.rerun()
-
-def reset_money_management_state():
-    st.session_state.martingale_current_step = 0
-    st.session_state.fibonacci_current_index = 1
-    st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
-
-def reset_money_management_state_on_undo():
-    if st.session_state.money_management_system == "Martingale":
-        st.session_state.martingale_current_step = 0
-    elif st.session_state.money_management_system == "Fibonacci":
-        st.session_state.fibonacci_current_index = 1
-    elif st.session_state.money_management_system == "Labouchere":
-        st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
+    # Removed reset_money_management_state()
 
 
 def record_bet_result(predicted_side, actual_result, recommendation_status):
-    # Only calculate bet amount if the recommendation was "Play"
-    bet_amt_for_log = st.session_state.bet_amount_calculated if recommendation_status == "Play ✅" else 0.0
-    win_loss = 0.0
-    outcome = "Avoided" # Default outcome if no prediction was made or avoided
-
-    current_system = st.session_state.money_management_system
-
-    # --- Core Logic for Win/Loss and Money Management ---
-    # ONLY process win/loss and money management if the system recommended "Play"
-    if recommendation_status == "Play ✅" and predicted_side in ['P', 'B', 'T']:
-        if predicted_side == actual_result: # Direct Hit
-            outcome = "Hit"
-            if actual_result == 'P':
-                win_loss = bet_amt_for_log
-            elif actual_result == 'B':
-                win_loss = bet_amt_for_log * 0.95 # Banker commission
-            elif actual_result == 'T':
-                win_loss = bet_amt_for_log * 8.0 # Tie payout
-            st.session_state.money_balance += win_loss
-
-            # Reset money management system on win
-            if current_system == "Martingale":
-                st.session_state.martingale_current_step = 0
-            elif current_system == "Fibonacci":
-                st.session_state.fibonacci_current_index = 1
-            elif current_system == "Labouchere":
-                current_seq = st.session_state.labouchere_current_sequence
-                if len(current_seq) <= 2:
-                    st.session_state.labouchere_current_sequence = [] # Target achieved
-                else:
-                    st.session_state.labouchere_current_sequence = current_seq[1:-1] # Remove first and last
-                if not st.session_state.labouchere_current_sequence: # If sequence becomes empty, reset for next target
-                    st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
-
-        elif actual_result == 'T' and predicted_side in ['P', 'B']: # Tie when betting P or B (Push/No Action)
-            win_loss = 0.0 # Money returned
-            outcome = "Push (Tie)"
-            # Money balance remains unchanged
-            # Money management system state remains unchanged (no step/index change)
-            
-        else: # Miss (Loss for P/B/T bets)
-            win_loss = -bet_amt_for_log
-            st.session_state.money_balance = max(0.0, st.session_state.money_balance - bet_amt_for_log) # Ensure money_balance doesn't go below 0.0
-
-            # Advance money management system on loss
-            if current_system == "Martingale":
-                st.session_state.martingale_current_step += 1
-                if st.session_state.martingale_current_step > st.session_state.martingale_max_steps:
-                    st.session_state.martingale_current_step = st.session_state.martingale_max_steps
-            elif current_system == "Fibonacci":
-                st.session_state.fibonacci_current_index += 1
-                max_steps = st.session_state.fibonacci_max_steps_input
-                if st.session_state.fibonacci_current_index >= len(st.session_state.fibonacci_sequence) or st.session_state.fibonacci_current_index > max_steps:
-                    st.session_state.fibonacci_current_index = max_steps # Cap at max steps or end of sequence
-            elif current_system == "Labouchere":
-                current_seq = st.session_state.labouchere_current_sequence
-                if st.session_state.labouchere_unit_bet > 0:
-                    st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
-                else:
-                    st.session_state.labouchere_current_sequence.append(1.0) # Fallback if unit bet is zero/invalid
-    # else: If recommendation_status is "Avoid ❌", money balance and money management state do not change.
-    #      win_loss remains 0.0, outcome remains "Avoided".
-
-
+    # Simplified logic: no money management, just record the outcome and update learning
+    # We'll use a placeholder bet amount of 1.0 for logging consistency if needed,
+    # but actual money balance is not tracked.
+    
+    # The recommendation_status will now be "Play ✅" if a prediction was made,
+    # or "Avoid ❌" if no prediction could be made (e.g., low confidence, insufficient history).
+    
+    # For logging purposes, we can assume a "bet" happened if it was a "Play ✅" recommendation
+    # and a prediction was made.
+    
+    outcome = "Recorded" # Default outcome
+    
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
-        "System": current_system,
-        "Bet Amount": f"{bet_amt_for_log:.2f}",
         "Predict": predicted_side,
         "Actual": actual_result,
-        "Win/Loss": f"{win_loss:+.2f}",
-        "Balance": f"{st.session_state.money_balance:.2f}",
-        "Outcome": outcome
+        "Recommendation": recommendation_status, # Log the recommendation
+        "Outcome": outcome # Simplified outcome
     })
 
     # --- Update History for Oracle Engine ---
@@ -415,8 +276,8 @@ def record_bet_result(predicted_side, actual_result, recommendation_status):
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
     # --- Update Oracle Engine's Learning States ---
-    # Only update learning if the system recommended "Play" and it wasn't a push.
-    if recommendation_status == "Play ✅" and predicted_side in ['P', 'B', 'T'] and not (actual_result == 'T' and predicted_side in ['P', 'B']):
+    # Only update learning if a prediction was made (i.e., not '?' for predicted_side)
+    if predicted_side != '?':
         history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
         big_road_data_before = _build_big_road_data(history_before_current_result)
         
@@ -433,123 +294,18 @@ def record_bet_result(predicted_side, actual_result, recommendation_status):
         )
     
     _cached_backtest_accuracy.clear()
-    st.rerun()
 
 
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
 
-# --- User/Room ID Input (Removed as Firebase is removed) ---
+# --- Removed Money Management UI ---
 st.sidebar.markdown("### ⚙️ การตั้งค่า")
-# Removed Firebase authentication status and User ID display
-# Removed Room ID input
-
-# --- Capital Balance and Bet Amount ---
-st.session_state.money_balance = st.number_input(
-    "💰 เงินทุนปัจจุบัน:",
-    min_value=0.0,
-    value=st.session_state.money_balance,
-    step=100.0,
-    format="%.2f",
-    help="กำหนดจำนวนเงินทุนเริ่มต้นของคุณ"
-)
-
-# --- Select and Configure Money Management System ---
-st.session_state.money_management_system = st.selectbox(
-    "📊 เลือกระบบเดินเงิน:",
-    ("Fixed Bet", "Martingale", "Fibonacci", "Labouchere"),
-    key="select_money_system"
-)
-
-if st.session_state.money_management_system == "Fixed Bet":
-    st.session_state.bet_amount = st.number_input(
-        "💸 เงินเดิมพันต่อตา (Fixed Bet):",
-        min_value=1.0,
-        value=st.session_state.bet_amount,
-        step=10.0,
-        format="%.2f",
-        help="กำหนดจำนวนเงินที่คุณจะเดิมพันในแต่ละตา"
-    )
-
-elif st.session_state.money_management_system == "Martingale":
-    st.session_state.martingale_base_bet = st.number_input(
-        "💰 เงินเดิมพันเริ่มต้น Martingale:",
-        min_value=1.0,
-        value=st.session_state.martingale_base_bet,
-        step=10.0,
-        format="%.2f",
-        help="เงินเดิมพันเริ่มต้นของระบบ Martingale"
-    )
-    st.session_state.martingale_multiplier = st.number_input(
-        "✖️ ตัวคูณ Martingale (เช่น 2.0):",
-        min_value=1.1,
-        value=st.session_state.martingale_multiplier,
-        step=0.1,
-        format="%.1f",
-        help="ตัวคูณเงินเดิมพันเมื่อแพ้ในระบบ Martingale"
-    )
-    st.session_state.martingale_max_steps = st.number_input(
-        "🪜 จำนวนไม้สูงสุด Martingale (ป้องกันความเสี่ยง):",
-        min_value=1,
-        value=st.session_state.martingale_max_steps,
-        step=1,
-        format="%d",
-        help="จำนวนครั้งสูงสุดที่จะทบเงินเมื่อแพ้"
-    )
-    st.info(f"Martingale: ปัจจุบันอยู่ที่ไม้ที่ {st.session_state.martingale_current_step}")
-
-elif st.session_state.money_management_system == "Fibonacci":
-    st.session_state.fibonacci_unit_bet = st.number_input(
-        "💸 เงินเดิมพันหน่วย Fibonacci:",
-        min_value=1.0,
-        value=st.session_state.fibonacci_unit_bet,
-        step=10.0,
-        format="%.2f",
-        help="1 หน่วยในลำดับ Fibonacci จะเท่ากับเงินเท่าไหร่"
-    )
-    st.session_state.fibonacci_max_steps_input = st.number_input(
-        "🪜 จำนวนไม้สูงสุด Fibonacci (ป้องกันความเสี่ยง):",
-        min_value=1,
-        value=st.session_state.fibonacci_max_steps_input,
-        step=1,
-        format="%d",
-        help="จำนวนครั้งสูงสุดที่จะทบตามลำดับ Fibonacci"
-    )
-    st.info(f"Fibonacci: ปัจจุบันอยู่ที่ลำดับที่ {st.session_state.fibonacci_current_index} (ค่า {st.session_state.fibonacci_sequence[st.session_state.fibonacci_current_index]})")
-
-elif st.session_state.money_management_system == "Labouchere":
-    original_seq_str = ",".join([f"{s:.1f}" if s % 1 != 0 else f"{int(s)}" for s in st.session_state.labouchere_original_sequence])
-
-    new_original_seq_str = st.text_input(
-        "🔢 ลำดับ Labouchere (คั่นด้วย , เช่น 1,2,3,4):",
-        value=original_seq_str,
-        help="กำหนดลำดับตัวเลขเริ่มต้นของ Labouchere"
-    )
-    try:
-        parsed_seq = [float(x.strip()) for x in new_original_seq_str.split(',') if x.strip()]
-        if parsed_seq:
-            if st.session_state.labouchere_original_sequence != parsed_seq:
-                st.session_state.labouchere_original_sequence = parsed_seq
-                st.session_state.labouchere_current_sequence = parsed_seq.copy()
-        elif not parsed_seq and st.session_state.labouchere_original_sequence:
-             st.session_state.labouchere_original_sequence = []
-             st.session_state.labouchere_current_sequence = []
-    except ValueError:
-        st.error("Invalid Labouchere sequence format. Please use numbers separated by commas.")
-
-    st.session_state.labouchere_unit_bet = st.number_input(
-        "💸 เงินเดิมพันหน่วย Labouchere:",
-        min_value=1.0,
-        value=st.session_state.labouchere_unit_bet,
-        step=10.0,
-        format="%.2f",
-        help="1 หน่วยในลำดับ Labouchere จะเท่ากับเงินเท่าไหร่"
-    )
-    st.info(f"Labouchere: ลำดับปัจจุบัน: {', '.join([f'{x:.1f}' if x % 1 != 0 else f'{int(x)}' for x in st.session_state.labouchere_current_sequence]) if st.session_state.labouchere_current_sequence else 'ว่างเปล่า (เป้าหมายสำเร็จ!)'}")
-
-
-st.session_state.bet_amount_calculated = calculate_next_bet()
-st.info(f"**จำนวนเงินที่ต้องเดิมพันตาถัดไป:** {st.session_state.bet_amount_calculated:.2f} บาท")
+# Removed st.session_state.money_balance input
+# Removed st.selectbox for money_management_system
+# Removed all conditional inputs for Martingale, Fibonacci, Labouchere
+# Removed st.session_state.bet_amount input
+# Removed st.info(f"**จำนวนเงินที่ต้องเดิมพันตาถัดไป:** ...")
 
 
 if len(st.session_state.history) < 20:
@@ -560,6 +316,7 @@ prediction_data = None
 next_pred_side = '?'
 conf = 0
 recommendation_status = "—" # Initialize recommendation status
+current_drawdown_display = 0 # Initialize for display
 
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
@@ -571,12 +328,17 @@ if len(engine.history) >= 20:
         next_pred_side = prediction_data['prediction']
         conf = engine.confidence_score(engine.history, _build_big_road_data(engine.history))
         recommendation_status = prediction_data['recommendation'] # Get the recommendation status
+        current_drawdown_display = prediction_data['current_drawdown'] # Get current drawdown
 
         emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
 
         st.markdown(f'<div class="prediction-text">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
-        st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}")
+        st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}") # Risk is now informational
         st.markdown(f"**🧾 คำแนะนำ:** **{recommendation_status}**")
+        
+        # Display Current Drawdown ONLY if a prediction was made (not '?')
+        if next_pred_side != '?':
+            st.markdown(f"**📉 แพ้ติดกัน:** **{current_drawdown_display}** ครั้ง") 
 
         with st.expander("🧬 Developer View"):
             st.text(prediction_data['developer_view'])
@@ -598,6 +360,7 @@ if len(engine.history) >= 20:
             )
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
+            st.write(f"Current Drawdown (from backtest): {backtest_summary['current_drawdown']} misses") # Also show in backtest summary
     else:
         st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
@@ -658,47 +421,31 @@ else:
 
 col_p_b_t = st.columns(3)
 
-# Pass the recommendation_status to record_bet_result
-if prediction_data and isinstance(prediction_data, dict) and 'recommendation' in prediction_data:
-    if prediction_data['recommendation'] == "Play ✅":
-        with col_p_b_t[0]:
-            if st.button(f"🔵 P", key="result_P_play", use_container_width=True):
-                record_bet_result(prediction_data['prediction'], 'P', recommendation_status)
-                # st.rerun() # Rerun is called inside record_bet_result
-        with col_p_b_t[1]:
-            if st.button(f"🔴 B", key="result_B_play", use_container_width=True):
-                record_bet_result(prediction_data['prediction'], 'B', recommendation_status)
-                # st.rerun()
-        with col_p_b_t[2]:
-            if st.button(f"🟢 T", key="result_T_play", use_container_width=True):
-                record_bet_result(prediction_data['prediction'], 'T', recommendation_status)
-                # st.rerun()
-    elif prediction_data['recommendation'] == "Avoid ❌":
-        with col_p_b_t[0]:
-            if st.button(f"บันทึก: 🔵 P", key="no_bet_P", use_container_width=True):
-                record_bet_result('?', 'P', recommendation_status) # predicted_side is '?' for avoided bets
-                # st.rerun()
-        with col_p_b_t[1]:
-            if st.button(f"บันทึก: 🔴 B", key="no_bet_B", use_container_width=True):
-                record_bet_result('?', 'B', recommendation_status)
-                # st.rerun()
-        with col_p_b_t[2]:
-            if st.button(f"บันทึก: 🟢 T", key="no_bet_T", use_container_width=True):
-                record_bet_result('?', 'T', recommendation_status)
-                # st.rerun()
-else: # Initial state or insufficient history
+# The buttons will now always record the actual result,
+# and the prediction_data['recommendation'] will be passed.
+# If prediction_data['prediction'] is '?', then recommendation will be 'Avoid ❌'
+# If prediction_data['prediction'] is P/B/T, then recommendation will be 'Play ✅'
+if prediction_data: # If prediction_data is available (history >= 20)
+    with col_p_b_t[0]:
+        if st.button(f"บันทึก: 🔵 P", key="result_P", use_container_width=True):
+            record_bet_result(prediction_data['prediction'], 'P', prediction_data['recommendation'])
+    with col_p_b_t[1]:
+        if st.button(f"บันทึก: 🔴 B", key="result_B", use_container_width=True):
+            record_bet_result(prediction_data['prediction'], 'B', prediction_data['recommendation'])
+    with col_p_b_t[2]:
+        if st.button(f"บันทึก: 🟢 T", key="result_T", use_container_width=True):
+            record_bet_result(prediction_data['prediction'], 'T', prediction_data['recommendation'])
+else: # Initial state or insufficient history (prediction_data is None)
     with col_p_b_t[0]:
         if st.button(f"บันทึก: 🔵 P", key="init_P", use_container_width=True):
-            record_bet_result('?', 'P', "—") # No prediction yet, so no recommendation status
-            # st.rerun()
+            record_bet_result('?', 'P', "Avoid ❌") # No prediction yet, so '?' and 'Avoid'
     with col_p_b_t[1]:
         if st.button(f"บันทึก: 🔴 B", key="init_B", use_container_width=True):
-            record_bet_result('?', 'B', "—")
-            # st.rerun()
+            record_bet_result('?', 'B', "Avoid ❌")
     with col_p_b_t[2]:
         if st.button(f"บันทึก: 🟢 T", key="init_T", use_container_width=True):
-            record_bet_result('?', 'T', "—")
-            # st.rerun()
+            record_bet_result('?', 'T', "Avoid ❌")
+
 
 col_hist1, col_hist2 = st.columns(2)
 with col_hist1:
