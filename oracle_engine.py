@@ -28,8 +28,8 @@ def _get_streaks(history_pb):
 
 def _build_big_road_data(full_history_list):
     """
-    Builds the Big Road data structure from the full history list,
-    implementing the standard "bending" for streaks longer than 6.
+    Builds the Big Road data structure with a fixed vertical height of 6 rows.
+    If a streak exceeds 6, it wraps to the next column at the top.
     Returns a list of columns, where each column is a list of (outcome, ties, is_natural) tuples,
     or None for empty cells to maintain grid structure.
     """
@@ -41,6 +41,8 @@ def _build_big_road_data(full_history_list):
     # Track the current column and row index for placing the next result
     current_col_idx = -1
     current_row_idx = -1
+    
+    MAX_ROWS = 6 # Standard Big Road has 6 rows
 
     for entry_idx, entry in enumerate(full_history_list):
         main_outcome = entry['main_outcome']
@@ -67,11 +69,11 @@ def _build_big_road_data(full_history_list):
         # Handle P/B outcomes
         if big_road_columns and main_outcome == last_main_pb_outcome:
             # Same outcome as the previous P/B, so continue the streak
-            if current_row_idx < 5: # Max 6 rows (0-5)
+            if current_row_idx < MAX_ROWS - 1: # If not yet at the bottom row (0-5)
                 current_row_idx += 1
-            else: # Column is full (row_idx is 5), need to bend to the right
+            else: # Column is full (row_idx is MAX_ROWS - 1), need to start a new column
                 current_col_idx += 1
-                current_row_idx = 5 # Stay at row 5 for bending
+                current_row_idx = 0 # Start at the top of the new column
         else:
             # New streak or first entry
             current_col_idx += 1
@@ -80,22 +82,11 @@ def _build_big_road_data(full_history_list):
 
         # Ensure big_road_columns has enough columns
         while len(big_road_columns) <= current_col_idx:
-            big_road_columns.append([]) # Add an empty column
-
-        # Fill empty cells above the current position with None if bending
-        while len(big_road_columns[current_col_idx]) <= current_row_idx:
-            big_road_columns[current_col_idx].append(None)
+            big_road_columns.append([None] * MAX_ROWS) # Add an empty column, pre-filled with None for 6 rows
         
         # Place the current result
         big_road_columns[current_col_idx][current_row_idx] = (main_outcome, ties, is_natural)
         
-    # After populating, ensure all columns have at least 6 rows for consistent display grid
-    # This is for visual alignment in the UI, empty cells will be None.
-    max_display_rows = 6
-    for col in big_road_columns:
-        while len(col) < max_display_rows:
-            col.append(None)
-
     return big_road_columns
 
 
@@ -889,7 +880,7 @@ class OracleEngine:
                 # This requires storing the next outcome with the sequence, or inferring from pattern.
                 # For simplicity, we'll assume the sequence itself implies the next outcome based on its last char
                 # and if it implies a continuation or alternation.
-                # E.g., if sequence is (P,B,P) and has high success, next is B (pingpong)
+                # E.g., if sequence is (P,B,P) and high success, next is B (pingpong)
                 # If (B,B,B) and high success, next is B (dragon)
                 # This is an intuition layer for sequences.
                 
@@ -943,9 +934,9 @@ class OracleEngine:
             "accuracy": backtest_stats['accuracy_percent'],
             "risk": risk_level,
             "recommendation": recommendation,
-            "active_patterns": active_patterns_for_learning,
-            "active_momentum": active_momentum_for_learning,
-            "active_sequences": active_sequences_for_learning # New: Return active sequences
+            "active_patterns": [],
+            "active_momentum": [],
+            "active_sequences": []
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
