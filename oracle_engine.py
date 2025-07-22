@@ -445,7 +445,8 @@ class OracleEngine:
                 changes += 1
         
         # If more than 70% of hands changed, it's choppy
-        if changes / min(len(h), 9) >= 0.7: # 9 possible changes in 10 hands
+        # Adjusted threshold from 0.7 to 0.8 to make it less sensitive to choppiness
+        if changes / min(len(h), 9) >= 0.8: 
             return True
         
         # Another indicator: many short streaks (length 1 or 2)
@@ -675,256 +676,186 @@ class OracleEngine:
         developer_view = "\n".join(developer_view_parts) + "\n--- Prediction Logic ---\n"
 
 
-        # --- Layer 2 Confidence: Early Exit Conditions (Risk Management) ---
+        # --- Main Prediction Logic (Attempt to predict if confidence is high enough) ---
+        score = self.confidence_score(self.history, big_road_data)
+        
+        if score >= 60: # If confidence is 60% or higher, attempt to make a prediction
+            decision_path.append(f"Confidence Score (Layer 1: {score}%) is >= 60%. Attempting prediction.")
+            patterns = self.detect_patterns(self.history, big_road_data)
+            momentum = self.detect_momentum(self.history, big_road_data)
+            sequences = self._detect_sequences(self.history)
 
-        # 1. Check Trap Zone (Avoid if truly dangerous or false pattern)
-        if self.in_trap_zone(self.history):
-            risk_level = "Trap / False Pattern"
-            recommendation = "Avoid ❌"
-            decision_path.append(f"Decision: Trap Zone / False Pattern detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance.")
-            developer_view += "\n".join(decision_path)
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'],
-                "risk": risk_level,
-                "recommendation": recommendation,
-                "active_patterns": [],
-                "active_momentum": [],
-                "active_sequences": []
-            }
+            active_patterns_for_learning = []
+            active_momentum_for_learning = []
+            active_sequences_for_learning = []
 
-        # 2. Check Choppy (High Volatility) - Avoid if too unpredictable
-        if self.is_choppy(self.history):
-            risk_level = "High Volatility (Choppy)"
-            recommendation = "Avoid ❌"
-            decision_path.append(f"Decision: Choppy behavior detected. Confidence: {self.confidence_score(self.history, big_road_data)}%. Recommending avoidance.")
-            developer_view += "\n".join(decision_path)
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'],
-                "risk": risk_level,
-                "recommendation": recommendation,
-                "active_patterns": [],
-                "active_momentum": [],
-                "active_sequences": []
-            }
+            predicted_by_rule = False
+            
+            # Prioritize patterns
+            if patterns:
+                decision_path.append("Evaluating Patterns for prediction:")
+                for p_name, p_snapshot in patterns:
+                    active_patterns_for_learning.append((p_name, p_snapshot))
 
-        # 3. Check Confidence Score (Layer 1) - Avoid if too low
-        # Changed threshold from 50 to 60
-        if score < 60: 
+                    if self._is_pattern_instance_failed(p_name, p_snapshot):
+                        decision_path.append(f"  - Pattern '{p_name}' instance previously failed. Skipping for prediction.")
+                        continue
+
+                    # Prediction logic for patterns
+                    if 'Dragon' in p_name or 'FollowStreak' in p_name:
+                        prediction_result = current_pb_history[-1]
+                        predicted_by_rule = True
+                        decision_path.append(f"  - Matched {p_name}. Predicting continuation ({prediction_result}).")
+                        break
+                    elif 'Pingpong' in p_name:
+                        last = current_pb_history[-1]
+                        prediction_result = 'P' if last == 'B' else 'B'
+                        predicted_by_rule = True
+                        decision_path.append(f"  - Matched {p_name}. Predicting opposite ({prediction_result}).")
+                        break
+                    elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
+                        if len(current_pb_history) >= 2:
+                            last_block_char = _get_streaks(current_pb_history)[-1][0]
+                            prediction_result = 'P' if last_block_char == 'B' else 'B'
+                            predicted_by_rule = True
+                            decision_path.append(f"  - Matched {p_name}. Predicting opposite of block ({prediction_result}).")
+                            break
+                    elif 'One-Two Pattern' in p_name:
+                        if len(current_pb_history) >= 3:
+                            if current_pb_history[-1] == current_pb_history[-3] and current_pb_history[-1] != current_pb_history[-2]:
+                                prediction_result = current_pb_history[-2]
+                                predicted_by_rule = True
+                                decision_path.append(f"  - Matched {p_name}. Predicting {prediction_result} to complete One-Two.")
+                                break
+                    elif 'Two-One Pattern' in p_name:
+                        if len(current_pb_history) >= 3:
+                            if current_pb_history[-1] == current_pb_history[-2] and current_pb_history[-1] != current_pb_history[-3]:
+                                prediction_result = current_pb_history[-3]
+                                predicted_by_rule = True
+                                decision_path.append(f"  - Matched {p_name}. Predicting {prediction_result} to complete Two-One.")
+                                break
+                    elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
+                        prediction_result = current_pb_history[-1] # For simplicity, these 2D patterns often imply continuation of main road trend
+                        predicted_by_rule = True
+                        decision_path.append(f"  - Matched {p_name}. Predicting continuation ({prediction_result}).")
+                        break
+                
+                if not predicted_by_rule:
+                    decision_path.append(f"  - Patterns detected but no prediction made (or all instances failed). Raw patterns: {[p[0] for p in patterns]}")
+
+            # If no prediction from patterns, try momentum
+            if not predicted_by_rule and momentum:
+                decision_path.append("Evaluating Momentum for prediction:")
+                for m_name, m_snapshot in momentum:
+                    active_momentum_for_learning.append((m_name, m_snapshot))
+
+                    if self._is_pattern_instance_failed(m_name, m_snapshot):
+                        decision_path.append(f"  - Momentum '{m_name}' instance previously failed. Skipping for prediction.")
+                        continue
+
+                    if 'Momentum' in m_name:
+                        prediction_result = current_pb_history[-1]
+                        predicted_by_rule = True
+                        decision_path.append(f"  - Matched {m_name}. Predicting continuation ({prediction_result}).")
+                        break
+                    elif m_name == "Steady Repeat Momentum":
+                        if len(current_pb_history) >= 6:
+                            prediction_result = current_pb_history[-6]
+                            predicted_by_rule = True
+                            decision_path.append(f"  - Matched {m_name}. Predicting {prediction_result} to continue repeat.")
+                            break
+                    elif 'Ladder Momentum' in m_name:
+                        streaks = _get_streaks(self.history)
+                        if streaks and len(streaks) >= 2:
+                            last_streak = streaks[-1]
+                            prev_streak = streaks[-2]
+                            if last_streak[1] == 1 and prev_streak[1] >= 2:
+                                prediction_result = prev_streak[0]
+                                predicted_by_rule = True
+                                decision_path.append(f"  - Matched {m_name}. Predicting {prediction_result} to continue ladder.")
+                                break
+                            elif last_streak[1] >= 2 and prev_streak[1] == 1:
+                                prediction_result = prev_streak[0]
+                                predicted_by_rule = True
+                                decision_path.append(f"  - Matched {m_name}. Predicting {prediction_result} to continue ladder.")
+                                break
+                
+                if not predicted_by_rule:
+                    decision_path.append(f"  - Momentum detected but no prediction made (or all instances failed). Raw momentum: {[m[0] for m in momentum]}")
+
+            # If no prediction from patterns or momentum, try memory-based sequences
+            if not predicted_by_rule and sequences:
+                decision_path.append("Evaluating Memory-based Sequences for prediction:")
+                sequences.sort(key=lambda x: (x[0], self.sequence_memory_stats.get(x[1], {'hits':0, 'misses':0}).get('hits',0)), reverse=True)
+                
+                for length, sequence_tuple in sequences:
+                    active_sequences_for_learning.append((length, sequence_tuple))
+                    seq_stats = self.sequence_memory_stats.get(sequence_tuple, {'hits': 0, 'misses': 0})
+                    total_seq = seq_stats['hits'] + seq_stats['misses']
+
+                    if total_seq > 0 and seq_stats['hits'] / total_seq < 0.6: # Only use if success rate is decent
+                        decision_path.append(f"  - Sequence {sequence_tuple} has low success rate ({seq_stats['hits']}/{total_seq}). Skipping.")
+                        continue
+                    
+                    if len(sequence_tuple) >= 2 and sequence_tuple[-1] == sequence_tuple[-2]: # Last two are same, implies streak
+                        prediction_result = sequence_tuple[-1] # Predict continuation
+                        predicted_by_rule = True
+                        decision_path.append(f"  - Matched Sequence {sequence_tuple}. Predicting continuation ({prediction_result}).")
+                        break
+                    elif len(sequence_tuple) >= 2 and sequence_tuple[-1] != sequence_tuple[-2]: # Last two are different, implies alternation
+                        prediction_result = 'P' if sequence_tuple[-1] == 'B' else 'B' # Predict alternation
+                        predicted_by_rule = True
+                        decision_path.append(f"  - Matched Sequence {sequence_tuple}. Predicting alternation ({prediction_result}).")
+                        break
+                
+                if not predicted_by_rule:
+                    decision_path.append(f"  - Sequences detected but no prediction made (or all instances failed/low success). Raw sequences: {sequences}")
+
+            # --- Intuition Logic (Used when no clear Primary Pattern or Momentum or Sequence) ---
+            if not predicted_by_rule:
+                decision_path.append("Applying Intuition Logic (No strong patterns/momentum/sequences):")
+                intuitive_guess = self.intuition_predict(self.history)
+                if intuitive_guess == 'T':
+                    prediction_result = 'T'
+                    decision_path.append("  - Intuition Logic: Specific Tie pattern identified.")
+                elif intuitive_guess in ['P', 'B']:
+                    prediction_result = intuitive_guess
+                    decision_path.append(f"  - Intuition Logic: Predicting {intuitive_guess} based on subtle patterns/context.")
+                else:
+                    prediction_result = '?' # If intuition can't give a strong P/B/T, then no prediction
+                    decision_path.append("  - Intuition Logic: No strong P/B/T prediction from intuition.")
+        else: # Confidence < 60%
             recommendation = "Avoid ❌"
             risk_level = "Low Confidence"
             decision_path.append(f"Decision: Confidence Score (Layer 1: {score}%) is below threshold (60%). Recommending avoidance.")
-            developer_view += "\n".join(decision_path)
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'],
-                "risk": risk_level,
-                "recommendation": recommendation,
-                "active_patterns": [],
-                "active_momentum": [],
-                "active_sequences": []
-            }
+            # prediction_result remains '?' from initialization
 
-        # 4. Check Drawdown (Avoid if too many consecutive misses)
-        if backtest_stats['max_drawdown'] >= 3:
-            risk_level = "High Drawdown (Break Pattern)"
-            recommendation = "Avoid ❌"
-            decision_path.append(f"Decision: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Recommending avoidance.")
-            developer_view += "\n".join(decision_path)
-            return {
-                "developer_view": developer_view,
-                "prediction": prediction_result,
-                "accuracy": backtest_stats['accuracy_percent'],
-                "risk": risk_level,
-                "recommendation": recommendation,
-                "active_patterns": [],
-                "active_momentum": [],
-                "active_sequences": []
-            }
-
-        # --- Primary Prediction Logic ---
-        patterns = self.detect_patterns(self.history, big_road_data)
-        momentum = self.detect_momentum(self.history, big_road_data)
-        sequences = self._detect_sequences(self.history) # New: Detected sequences
-
-        active_patterns_for_learning = []
-        active_momentum_for_learning = []
-        active_sequences_for_learning = [] # New: For learning update
-
-        predicted_by_rule = False
-        prediction_source_detail = ""
-
-        # Prioritize patterns
-        if patterns:
-            decision_path.append("Evaluating Patterns:")
-            for p_name, p_snapshot in patterns:
-                active_patterns_for_learning.append((p_name, p_snapshot))
-
-                if self._is_pattern_instance_failed(p_name, p_snapshot):
-                    decision_path.append(f"  - Pattern '{p_name}' instance previously failed. Skipping for prediction.")
-                    continue
-
-                # Prediction logic for patterns
-                if 'Dragon' in p_name or 'FollowStreak' in p_name:
-                    prediction_result = current_pb_history[-1]
-                    prediction_source_detail = f"Pattern: {p_name}. Predicting continuation ({prediction_result})."
-                    predicted_by_rule = True
-                    decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
-                    break
-                elif 'Pingpong' in p_name:
-                    last = current_pb_history[-1]
-                    prediction_result = 'P' if last == 'B' else 'B'
-                    prediction_source_detail = f"Pattern: {p_name}. Predicting opposite ({prediction_result})."
-                    predicted_by_rule = True
-                    decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
-                    break
-                elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
-                    if len(current_pb_history) >= 2:
-                        last_block_char = _get_streaks(current_pb_history)[-1][0]
-                        prediction_result = 'P' if last_block_char == 'B' else 'B'
-                        prediction_source_detail = f"Pattern: {p_name}. Predicting opposite of block ({prediction_result})."
-                        predicted_by_rule = True
-                        decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
-                        break
-                elif 'One-Two Pattern' in p_name:
-                    if len(current_pb_history) >= 3:
-                        if current_pb_history[-1] == current_pb_history[-3] and current_pb_history[-1] != current_pb_history[-2]:
-                            prediction_result = current_pb_history[-2]
-                            prediction_source_detail = f"Pattern: {p_name}. Predicting {prediction_result} to complete One-Two."
-                            predicted_by_rule = True
-                            decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
-                            break
-                elif 'Two-One Pattern' in p_name:
-                    if len(current_pb_history) >= 3:
-                        if current_pb_history[-1] == current_pb_history[-2] and current_pb_history[-1] != current_pb_history[-3]:
-                            prediction_result = current_pb_history[-3]
-                            prediction_source_detail = f"Pattern: {p_name}. Predicting {prediction_result} to complete Two-One."
-                            predicted_by_rule = True
-                            decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
-                            break
-                elif 'Big Eye Boy' in p_name or 'Small Road' in p_name or 'Cockroach Pig' in p_name:
-                    prediction_result = current_pb_history[-1] # For simplicity, these 2D patterns often imply continuation of main road trend
-                    prediction_source_detail = f"2D Pattern: {p_name}. Predicting continuation ({prediction_result})."
-                    predicted_by_rule = True
-                    decision_path.append(f"  - Matched {p_name}. {prediction_source_detail}")
-                    break
-            
-            if not predicted_by_rule:
-                decision_path.append(f"  - Patterns detected but no prediction made (or all instances failed). Raw patterns: {[p[0] for p in patterns]}")
-
-
-        # If no prediction from patterns, try momentum
-        if not predicted_by_rule and momentum:
-            decision_path.append("Evaluating Momentum:")
-            for m_name, m_snapshot in momentum:
-                active_momentum_for_learning.append((m_name, m_snapshot))
-
-                if self._is_pattern_instance_failed(m_name, m_snapshot):
-                    decision_path.append(f"  - Momentum '{m_name}' instance previously failed. Skipping for prediction.")
-                    continue
-
-                if 'Momentum' in m_name:
-                    prediction_result = current_pb_history[-1]
-                    prediction_source_detail = f"Momentum: {m_name}. Predicting continuation ({prediction_result})."
-                    predicted_by_rule = True
-                    decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
-                    break
-                elif m_name == "Steady Repeat Momentum":
-                    if len(current_pb_history) >= 6:
-                        prediction_result = current_pb_history[-6]
-                        prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue repeat."
-                        predicted_by_rule = True
-                        decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
-                        break
-                elif 'Ladder Momentum' in m_name:
-                    streaks = _get_streaks(self.history)
-                    if streaks and len(streaks) >= 2:
-                        last_streak = streaks[-1]
-                        prev_streak = streaks[-2]
-                        if last_streak[1] == 1 and prev_streak[1] >= 2:
-                            prediction_result = prev_streak[0]
-                            prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue ladder."
-                            predicted_by_rule = True
-                            decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
-                            break
-                        elif last_streak[1] >= 2 and prev_streak[1] == 1:
-                            prediction_result = prev_streak[0]
-                            prediction_source_detail = f"Momentum: {m_name}. Predicting {prediction_result} to continue ladder."
-                            predicted_by_rule = True
-                            decision_path.append(f"  - Matched {m_name}. {prediction_source_detail}")
-                            break
-            
-            if not predicted_by_rule:
-                decision_path.append(f"  - Momentum detected but no prediction made (or all instances failed). Raw momentum: {[m[0] for m in momentum]}")
-
-        # If no prediction from patterns or momentum, try memory-based sequences
-        if not predicted_by_rule and sequences:
-            decision_path.append("Evaluating Memory-based Sequences:")
-            # Prioritize longer, more accurate sequences
-            sequences.sort(key=lambda x: (x[0], self.sequence_memory_stats.get(x[1], {'hits':0, 'misses':0}).get('hits',0)), reverse=True)
-            
-            for length, sequence_tuple in sequences:
-                active_sequences_for_learning.append((length, sequence_tuple))
-                seq_stats = self.sequence_memory_stats.get(sequence_tuple, {'hits': 0, 'misses': 0})
-                total_seq = seq_stats['hits'] + seq_stats['misses']
-
-                if total_seq > 0 and seq_stats['hits'] / total_seq < 0.6: # Only use if success rate is decent
-                    decision_path.append(f"  - Sequence {sequence_tuple} has low success rate ({seq_stats['hits']}/{total_seq}). Skipping.")
-                    continue
-                
-                # Predict the outcome that historically follows this sequence
-                # This requires storing the next outcome with the sequence, or inferring from pattern.
-                # For simplicity, we'll assume the sequence itself implies the next outcome based on its last char
-                # and if it implies a continuation or alternation.
-                # E.g., if sequence is (P,B,P) and high success, next is B (pingpong)
-                # If (B,B,B) and high success, next is B (dragon)
-                # This is an intuition layer for sequences.
-                
-                # Let's use the last element of the sequence and assume continuation if it's a streak,
-                # or alternation if it's a pingpong-like sequence.
-                # This is a basic heuristic for sequence prediction.
-                if len(sequence_tuple) >= 2 and sequence_tuple[-1] == sequence_tuple[-2]: # Last two are same, implies streak
-                    prediction_result = sequence_tuple[-1] # Predict continuation
-                    prediction_source_detail = f"Sequence: {sequence_tuple}. Predicting continuation ({prediction_result})."
-                    predicted_by_rule = True
-                    decision_path.append(f"  - Matched Sequence {sequence_tuple}. {prediction_source_detail}")
-                    break
-                elif len(sequence_tuple) >= 2 and sequence_tuple[-1] != sequence_tuple[-2]: # Last two are different, implies alternation
-                    prediction_result = 'P' if sequence_tuple[-1] == 'B' else 'B' # Predict alternation
-                    prediction_source_detail = f"Sequence: {sequence_tuple}. Predicting alternation ({prediction_result})."
-                    predicted_by_rule = True
-                    decision_path.append(f"  - Matched Sequence {sequence_tuple}. {prediction_source_detail}")
-                    break
-            
-            if not predicted_by_rule:
-                decision_path.append(f"  - Sequences detected but no prediction made (or all instances failed/low success). Raw sequences: {sequences}")
-
-
-        # --- Intuition Logic (Used when no clear Primary Pattern or Momentum or Sequence) ---
-        if not predicted_by_rule:
-            decision_path.append("Applying Intuition Logic (No strong patterns/momentum/sequences):")
-            intuitive_guess = self.intuition_predict(self.history)
-            if intuitive_guess == 'T':
-                prediction_result = 'T'
-                decision_path.append("  - Intuition Logic: Specific Tie pattern identified.")
-            elif intuitive_guess in ['P', 'B']:
-                prediction_result = intuitive_guess
-                decision_path.append(f"  - Intuition Logic: Predicting {intuitive_guess} based on subtle patterns/context.")
-            else:
+        # --- Layer 2 Confidence: Apply Risk Checks (even if a prediction was made) ---
+        # If a prediction was made (prediction_result is not '?'), now check if it should be avoided due to risk
+        if prediction_result != '?':
+            if self.in_trap_zone(self.history):
+                risk_level = "Trap / False Pattern"
                 recommendation = "Avoid ❌"
-                risk_level = "Uncertainty"
-                decision_path.append("  - Intuition Logic: No strong P/B/T prediction, recommending Avoid.")
-                prediction_result = '?'
+                decision_path.append(f"Risk Check: Trap Zone / False Pattern detected. Overriding recommendation to Avoid.")
+            elif self.is_choppy(self.history):
+                risk_level = "High Volatility (Choppy)"
+                recommendation = "Avoid ❌"
+                decision_path.append(f"Risk Check: Choppy behavior detected. Overriding recommendation to Avoid.")
+            elif backtest_stats['max_drawdown'] >= 3:
+                risk_level = "High Drawdown (Break Pattern)"
+                recommendation = "Avoid ❌"
+                decision_path.append(f"Risk Check: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Overriding recommendation to Avoid.")
+            else:
+                risk_level = "Normal" # If no risk detected, keep as Normal
+                recommendation = "Play ✅" # If no risk detected, recommend Play
+                decision_path.append("Risk Check: No high risk detected. Recommending Play.")
         
         # Final check: If still no prediction, and no specific reason to avoid, default to Avoid
-        if prediction_result == '?' and recommendation == "Play ✅":
+        if prediction_result == '?' and recommendation == "Play ✅": # This case should ideally not happen with the new logic flow
             recommendation = "Avoid ❌"
             risk_level = "Uncertainty"
-            decision_path.append("Final Decision: No clear patterns, momentum, or intuition for prediction. Recommending Avoid.")
+            decision_path.append("Final Decision: No clear prediction could be made. Defaulting to Avoid.")
+
 
         developer_view += "\n".join(decision_path)
 
@@ -934,9 +865,9 @@ class OracleEngine:
             "accuracy": backtest_stats['accuracy_percent'],
             "risk": risk_level,
             "recommendation": recommendation,
-            "active_patterns": [],
-            "active_momentum": [],
-            "active_sequences": []
+            "active_patterns": active_patterns_for_learning,
+            "active_momentum": active_momentum_for_learning,
+            "active_sequences": active_sequences_for_learning # New: Return active sequences
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
@@ -951,27 +882,19 @@ class OracleEngine:
         big_road_data = _build_big_road_data(self.history)
         streaks = _get_streaks(current_pb_history)
 
-        if self.in_trap_zone(self.history):
-            recommendation = "Avoid ❌"
-            return {"prediction": prediction_result, "recommendation": recommendation}
-
-        if self.is_choppy(self.history): # New: Choppy check for backtest
-            recommendation = "Avoid ❌"
-            return {"prediction": prediction_result, "recommendation": recommendation}
-
+        # For backtest, we still want to simulate the "Avoid" logic as closely as possible
+        # to reflect the real-time behavior.
+        
         score = self.confidence_score(self.history, big_road_data)
-        # Changed threshold from 50 to 60 for backtest prediction as well
+        
         if score < 60:
             recommendation = "Avoid ❌"
             return {"prediction": prediction_result, "recommendation": recommendation}
-        
-        # Backtest also needs to check drawdown, but _cached_backtest_accuracy already does this
-        # for the main predict_next. For this simplified version, we assume the main loop
-        # will handle the drawdown check.
 
+        # If confidence is high enough, try to predict
         patterns = self.detect_patterns(self.history, big_road_data)
         momentum = self.detect_momentum(self.history, big_road_data)
-        sequences = self._detect_sequences(self.history) # New: Detected sequences for backtest
+        sequences = self._detect_sequences(self.history)
 
         predicted_by_rule_for_backtest = False
 
@@ -1065,5 +988,15 @@ class OracleEngine:
                 prediction_result = intuitive_guess
             else:
                 recommendation = "Avoid ❌" # If intuition can't give a strong P/B/T, avoid
+
+        # Now, apply the risk checks for backtest, overriding recommendation if necessary
+        if self.in_trap_zone(self.history):
+            recommendation = "Avoid ❌"
+        elif self.is_choppy(self.history):
+            recommendation = "Avoid ❌"
+        # Backtest's max_drawdown is handled by the _cached_backtest_accuracy function,
+        # which is called at the beginning of the main predict_next.
+        # For predict_next_for_backtest, we assume the main loop will handle the overall drawdown check.
+        # So, no need to re-check backtest_stats['max_drawdown'] here.
 
         return {"prediction": prediction_result, "recommendation": recommendation}
