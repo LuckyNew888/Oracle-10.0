@@ -98,7 +98,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
     """
     hits = 0
     misses = 0
-    current_drawdown = 0
+    current_drawdown = 0 # Track current consecutive misses for backtest
     max_drawdown = 0
     total_bets_counted = 0
 
@@ -113,7 +113,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
             break
     
     if start_index_for_backtest == 0:
-        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
+        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0, "current_drawdown": 0}
 
 
     for i in range(start_index_for_backtest, len(history)):
@@ -131,8 +131,10 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
 
         simulated_prediction_data = temp_sim_engine.predict_next_for_backtest()
         simulated_predicted_outcome = simulated_prediction_data['prediction']
-        simulated_recommendation = simulated_prediction_data['recommendation']
+        simulated_recommendation = simulated_prediction_data['recommendation'] # This will now always be 'Play ✅' if confidence is high enough
 
+        # We only count bets if the system would have recommended "Play" based on confidence
+        # Since protection systems are removed, 'Play' is based solely on confidence >= 60%
         if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
             total_bets_counted += 1
             if simulated_predicted_outcome == actual_main_outcome:
@@ -142,15 +144,61 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
                 misses += 1
                 current_drawdown += 1
                 max_drawdown = max(max_drawdown, current_drawdown)
+        else:
+            # If the system avoided (due to low confidence), reset current_drawdown for this specific path
+            # This ensures current_drawdown accurately reflects consecutive misses when playing.
+            current_drawdown = 0 # If not playing, it's not a 'miss' in the drawdown sense.
+
 
     accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
 
+    # Calculate current_drawdown for the *very end* of the history
+    final_current_drawdown = 0
+    if total_bets_counted > 0:
+        # Re-calculate current_drawdown for the actual end of the history
+        # Only count misses if the system would have predicted 'Play'
+        temp_engine_for_final_drawdown = OracleEngine(
+            initial_pattern_stats=pattern_stats,
+            initial_momentum_stats=momentum_stats,
+            initial_failed_pattern_instances=failed_pattern_instances,
+            initial_sequence_memory_stats=sequence_memory_stats
+        )
+        temp_engine_for_final_drawdown.history = history # Use full history
+        
+        # Iterate backwards from the end of the history to find consecutive misses
+        # only when the system would have recommended to play.
+        for i in reversed(range(start_index_for_backtest, len(history))):
+            simulated_history_for_check = history[:i]
+            actual_result_obj_for_check = history[i]
+            actual_main_outcome_for_check = actual_result_obj_for_check['main_outcome']
+
+            temp_sim_engine_for_check = OracleEngine(
+                initial_pattern_stats=pattern_stats,
+                initial_momentum_stats=momentum_stats,
+                initial_failed_pattern_instances=failed_pattern_instances,
+                initial_sequence_memory_stats=sequence_memory_stats
+            )
+            temp_sim_engine_for_check.history = simulated_history_for_check
+
+            simulated_prediction_data_for_check = temp_sim_engine_for_check.predict_next_for_backtest()
+            simulated_predicted_outcome_for_check = simulated_prediction_data_for_check['prediction']
+            simulated_recommendation_for_check = simulated_prediction_data_for_check['recommendation']
+
+            if simulated_recommendation_for_check == "Play ✅" and simulated_predicted_outcome_for_check in ['P', 'B', 'T']:
+                if simulated_predicted_outcome_for_check != actual_main_outcome_for_check:
+                    final_current_drawdown += 1
+                else:
+                    break # A hit breaks the consecutive miss streak
+            else:
+                break # If not playing, it's not a miss in the drawdown sense.
+    
     return {
         "accuracy_percent": accuracy_percent,
         "max_drawdown": max_drawdown,
         "hits": hits,
         "misses": misses,
-        "total_bets": total_bets_counted
+        "total_bets": total_bets_counted,
+        "current_drawdown": final_current_drawdown # Return the calculated current drawdown
     }
 
 
@@ -394,91 +442,31 @@ class OracleEngine:
         return momentum_detected
 
     # --- 3. ⚠️ Trap Zone Detection (Detecting Dangerous Zones & False Patterns) ---
-    def in_trap_zone(self, current_history):
-        """
-        Detects zones where changes are rapid and truly unpredictable,
-        including "false patterns" that break expected sequences.
-        """
-        h = _get_pb_history(current_history)
-        if len(h) < 4:
-            return False
-
-        streaks = _get_streaks(h)
-
-        # Trap 1: Very short, chaotic, unpredictable sequence (not Pingpong or Dragon)
-        # Check for high frequency of changes without a clear pattern.
-        # This is a stronger indicator of chaos than just alternating.
-        if len(h) >= 6:
-            last6 = h[-6:]
-            # If the last 3 results are all different from each other (e.g., P, B, T or P, B, P, but not P, P, B)
-            if len(set(last6[-3:])) >= 2 and last6[-1] != last6[-2] and last6[-2] != last6[-3]:
-                if len(set(h[-4:])) >= 3: # If last 4 also show high diversity
-                    return True
-
-        # Trap 2: Streak broken immediately after a long streak and then immediately reverts
-        # Example: BBBBB P B (B was broken by P, then B immediately came back)
-        if len(streaks) >= 3:
-            last_streak = streaks[-1]
-            prev_streak = streaks[-2]
-            if prev_streak[1] >= 5 and last_streak[1] == 1 and (len(streaks) >= 3 and streaks[-3][0] == last_streak[0]):
-                return True
-        
-        # Trap 3: Sudden reversal after a medium streak (e.g., BBB PP)
-        if len(streaks) >= 2:
-            last_streak = streaks[-1]
-            prev_streak = streaks[-2]
-            if prev_streak[1] >= 3 and last_streak[1] >= 2 and prev_streak[0] != last_streak[0]:
-                return True
-
-        # --- False Pattern Detector ---
-        # False Pingpong (e.g., PBPBPBBP) - Pingpong pattern breaks with a repeat
-        if len(streaks) >= 7: # Need at least 7 streaks for PBPBPB + 1 break
-            # Check if last 6 streaks were all length 1 (PBPBPB)
-            if all(s[1] == 1 for s in streaks[-6:-1]):
-                # And the last streak is a repeat of the one before it (breaking the pingpong)
-                if streaks[-1][1] >= 2 and streaks[-1][0] == streaks[-2][0]:
-                    return True # This is a false pingpong
-
-        # False Dragon (e.g., BBBBB PBB) - Dragon pattern breaks then immediately tries to resume
-        if len(streaks) >= 3:
-            last_streak = streaks[-1]
-            middle_streak = streaks[-2]
-            first_streak = streaks[-3]
-            # If first streak was long (e.g., >=4), then cut by a single, then tries to resume but short
-            if first_streak[1] >= 4 and middle_streak[1] == 1 and last_streak[1] >= 2 and first_streak[0] == last_streak[0]:
-                return True # This is a false dragon
-
-        return False
+    # REMOVED: in_trap_zone function is no longer used for recommendation logic
+    # def in_trap_zone(self, current_history):
+    #     """
+    #     Detects zones where changes are rapid and truly unpredictable,
+    #     including "false patterns" that break expected sequences.
+    #     """
+    #     h = _get_pb_history(current_history)
+    #     if len(h) < 4:
+    #         return False
+    #     streaks = _get_streaks(h)
+    #     # ... (rest of the in_trap_zone logic) ...
+    #     return False
 
     # --- New: Trend Analysis (Choppy Detector) ---
-    def is_choppy(self, current_history):
-        """
-        Detects if the current history exhibits choppy (rapidly alternating) behavior.
-        A high number of outcome changes in a short period.
-        """
-        h = _get_pb_history(current_history)
-        if len(h) < 10: # Need enough history to detect choppiness
-            return False
-
-        # Count changes in the last 10 P/B outcomes
-        changes = 0
-        for i in range(len(h) - min(len(h), 10), len(h) - 1):
-            if h[i] != h[i+1]:
-                changes += 1
-        
-        # If more than 70% of hands changed, it's choppy
-        # Adjusted threshold from 0.7 to 0.8 to make it less sensitive to choppiness
-        if changes / min(len(h), 9) >= 0.8: 
-            return True
-        
-        # Another indicator: many short streaks (length 1 or 2)
-        streaks = _get_streaks(h)
-        if len(streaks) >= 5: # Look at last 5 streaks
-            short_streaks = [s for s in streaks[-5:] if s[1] <= 2]
-            if len(short_streaks) >= 4: # 4 out of 5 streaks are short
-                return True
-
-        return False
+    # REMOVED: is_choppy function is no longer used for recommendation logic
+    # def is_choppy(self, current_history):
+    #     """
+    #     Detects if the current history exhibits choppy (rapidly alternating) behavior.
+    #     A high number of outcome changes in a short period.
+    #     """
+    #     h = _get_pb_history(current_history)
+    #     if len(h) < 10: # Need enough history to detect choppiness
+    #         return False
+    #     # ... (rest of the is_choppy logic) ...
+    #     return False
 
 
     # --- 4. 🎯 Confidence Engine (2-Layer Confidence Score 0-100%) ---
@@ -664,8 +652,8 @@ class OracleEngine:
         Returns a dictionary with prediction, risk, recommendation, developer_view.
         """
         prediction_result = '?'
-        risk_level = "Normal"
-        recommendation = "Play ✅"
+        risk_level = "Normal" # Default to Normal
+        recommendation = "Play ✅" # Default to Play
         developer_view = ""
         decision_path = [] # To log the decision making process
 
@@ -687,10 +675,10 @@ class OracleEngine:
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
             "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)], # New debug info
-            "Is in Trap Zone (False Pattern)": self.in_trap_zone(self.history),
-            "Is Choppy (High Volatility)": self.is_choppy(self.history), # New debug info
+            # Removed Trap Zone and Choppy from debug info as they are no longer part of recommendation logic
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
-            "Backtest Max Drawdown": backtest_stats['max_drawdown']
+            "Backtest Max Drawdown": backtest_stats['max_drawdown'],
+            "Current Consecutive Misses": backtest_stats['current_drawdown'] # New: Add current consecutive misses
         }
         developer_view_parts = []
         for key, value in debug_info.items():
@@ -870,31 +858,39 @@ class OracleEngine:
             decision_path.append(f"Decision: Confidence Score (Layer 1: {score}%) is below threshold (60%). Recommending avoidance.")
             # prediction_result remains '?' from initialization
 
-        # --- Layer 2 Confidence: Apply Risk Checks (even if a prediction was made) ---
-        # If a prediction was made (prediction_result is not '?'), now check if it should be avoided due to risk
-        if prediction_result != '?':
-            if self.in_trap_zone(self.history):
-                risk_level = "Trap / False Pattern"
-                recommendation = "Avoid ❌"
-                decision_path.append(f"Risk Check: Trap Zone / False Pattern detected. Overriding recommendation to Avoid.")
-            elif self.is_choppy(self.history):
-                risk_level = "High Volatility (Choppy)"
-                recommendation = "Avoid ❌"
-                decision_path.append(f"Risk Check: Choppy behavior detected. Overriding recommendation to Avoid.")
-            elif backtest_stats['max_drawdown'] >= 3:
-                risk_level = "High Drawdown (Break Pattern)"
-                recommendation = "Avoid ❌"
-                decision_path.append(f"Risk Check: Drawdown exceeded 3 consecutive misses ({backtest_stats['max_drawdown']} misses). Overriding recommendation to Avoid.")
-            else:
-                risk_level = "Normal" # If no risk detected, keep as Normal
-                recommendation = "Play ✅" # If no risk detected, recommend Play
-                decision_path.append("Risk Check: No high risk detected. Recommending Play.")
+        # --- No Layer 2 Confidence: Protection systems are removed.
+        # Risk_level is now purely informational, and recommendation is based solely on prediction availability.
         
-        # Final check: If still no prediction, and no specific reason to avoid, default to Avoid
-        if prediction_result == '?' and recommendation == "Play ✅": # This case should ideally not happen with the new logic flow
-            recommendation = "Avoid ❌"
+        # Determine risk_level for display (informational only)
+        # Re-introduce simplified risk checks for informational display only, not for recommendation override
+        current_risk_info = []
+        # Re-adding back the functions for informational purposes.
+        # Note: These functions are *not* called to override recommendation.
+        # They are just used to set the 'risk_level' string.
+        # To do this, I need to re-add the functions `in_trap_zone` and `is_choppy` to the class,
+        # but ensure they are only used for informational `risk_level` and not for `recommendation`.
+
+        # Temporarily re-add `in_trap_zone` and `is_choppy` for informational `risk_level` calculation
+        # It's better to keep these functions as part of the class if they are used, even for info.
+        # Let's assume they are still defined in the class for this part.
+        
+        # NOTE: Since I'm removing the functions, I can't call them here.
+        # If the user wants the risk *text* to appear, but not affect prediction,
+        # I need to keep the functions. The request was to "ยกเลิกส่วนนี้ออกทั้งหมด" for protection.
+        # This implies removing the functions and their effects.
+        # So, the `risk_level` will now be "Normal" by default, or "Low Confidence" / "Uncertainty"
+        # if no prediction is made. The specific "Trap / False Pattern" or "High Volatility (Choppy)"
+        # risk levels will no longer be displayed.
+
+        # Simplified risk level based on whether a prediction was made.
+        if prediction_result == '?':
             risk_level = "Uncertainty"
+            recommendation = "Avoid ❌" # If no prediction, it's an avoid
             decision_path.append("Final Decision: No clear prediction could be made. Defaulting to Avoid.")
+        else:
+            risk_level = "Normal" # If a prediction was made, it's considered normal risk (as protection is off)
+            recommendation = "Play ✅" # If a prediction was made, it's a play
+            decision_path.append("Final Decision: Prediction made. Recommending Play.")
 
 
         developer_view += "\n".join(decision_path)
@@ -903,20 +899,22 @@ class OracleEngine:
             "developer_view": developer_view,
             "prediction": prediction_result,
             "accuracy": backtest_stats['accuracy_percent'],
-            "risk": risk_level,
-            "recommendation": recommendation,
+            "risk": risk_level, # Risk level is now informational, and simplified
+            "recommendation": recommendation, # Recommendation based on prediction availability
             "active_patterns": active_patterns_for_learning,
             "active_momentum": active_momentum_for_learning,
-            "active_sequences": active_sequences_for_learning # New: Return active sequences
+            "active_sequences": active_sequences_for_learning,
+            "current_drawdown": backtest_stats['current_drawdown'] # Pass current drawdown
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
     def predict_next_for_backtest(self):
         """
         Simplified prediction for backtesting, without calling backtest_accuracy recursively.
+        This version reflects the new logic: predict if confidence >= 60%, no protection override.
         """
         prediction_result = '?'
-        recommendation = "Play ✅"
+        recommendation = "Play ✅" # Default recommendation for backtest if prediction is made
         
         current_pb_history = _get_pb_history(self.history)
         big_road_data = _build_big_road_data(self.history)
@@ -925,7 +923,7 @@ class OracleEngine:
         score = self.confidence_score(self.history, big_road_data)
         
         if score < 60:
-            recommendation = "Avoid ❌"
+            recommendation = "Avoid ❌" # If confidence is too low, backtest also avoids
             return {"prediction": prediction_result, "recommendation": recommendation}
 
         # If confidence is high enough, try to predict
@@ -1036,10 +1034,10 @@ class OracleEngine:
             else:
                 recommendation = "Avoid ❌" # If intuition can't give a strong P/B/T, avoid
 
-        # Now, apply the risk checks for backtest, overriding recommendation if necessary
-        if self.in_trap_zone(self.history):
-            recommendation = "Avoid ❌"
-        elif self.is_choppy(self.history):
-            recommendation = "Avoid ❌"
+        # No protection system override for backtest recommendation either
+        if prediction_result == '?':
+            recommendation = "Avoid ❌" # If no prediction could be made, it's an avoid
+        else:
+            recommendation = "Play ✅" # If a prediction was made, it's a play
 
         return {"prediction": prediction_result, "recommendation": recommendation}
