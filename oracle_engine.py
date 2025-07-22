@@ -28,47 +28,75 @@ def _get_streaks(history_pb):
 
 def _build_big_road_data(full_history_list):
     """
-    Builds the Big Road data structure from the full history list.
-    Each column is a list of results (P, B). Ties are counted on the P/B cell.
-    Returns a list of columns, where each column is a list of (outcome, ties, is_natural).
+    Builds the Big Road data structure from the full history list,
+    implementing the standard "bending" for streaks longer than 6.
+    Returns a list of columns, where each column is a list of (outcome, ties, is_natural) tuples,
+    or None for empty cells to maintain grid structure.
     """
-    big_road = []
-    if not full_history_list:
-        return big_road
+    big_road_columns = []
+    
+    # Track the last P/B outcome to determine if a new streak/column starts
+    last_main_pb_outcome = None
+    
+    # Track the current column and row index for placing the next result
+    current_col_idx = -1
+    current_row_idx = -1
 
-    current_column = []
-    last_main_outcome = None
-
-    for entry in full_history_list:
+    for entry_idx, entry in enumerate(full_history_list):
         main_outcome = entry['main_outcome']
-        ties = entry.get('ties', 0) # Get ties count, default to 0
-        is_natural = entry.get('is_any_natural', False) # Get natural flag, default to False
+        ties = entry.get('ties', 0)
+        is_natural = entry.get('is_any_natural', False)
 
         if main_outcome == 'T':
-            # Ties are attached to the last P/B entry.
-            if big_road and big_road[-1] and big_road[-1][-1][0] in ['P', 'B']:
-                last_pb_entry = list(big_road[-1][-1])
-                last_pb_entry[1] += 1
-                big_road[-1][-1] = tuple(last_pb_entry)
-            continue # Skip to next entry, as ties don't form new columns
+            # Ties are attached to the most recent P/B outcome in the grid.
+            # Find the last actual P/B cell and increment its tie count.
+            found_pb_for_tie = False
+            for c_idx in reversed(range(len(big_road_columns))):
+                for r_idx in reversed(range(len(big_road_columns[c_idx]))):
+                    cell = big_road_columns[c_idx][r_idx]
+                    if cell is not None and cell[0] in ['P', 'B']:
+                        updated_cell = list(cell)
+                        updated_cell[1] += 1 # Increment ties
+                        big_road_columns[c_idx][r_idx] = tuple(updated_cell)
+                        found_pb_for_tie = True
+                        break
+                if found_pb_for_tie:
+                    break
+            continue # Ties do not create new cells or affect column/row placement
 
-        if not current_column: # First entry or starting a new column
-            current_column.append((main_outcome, ties, is_natural))
-            last_main_outcome = main_outcome
+        # Handle P/B outcomes
+        if big_road_columns and main_outcome == last_main_pb_outcome:
+            # Same outcome as the previous P/B, so continue the streak
+            if current_row_idx < 5: # Max 6 rows (0-5)
+                current_row_idx += 1
+            else: # Column is full (row_idx is 5), need to bend to the right
+                current_col_idx += 1
+                current_row_idx = 5 # Stay at row 5 for bending
         else:
-            # Check if the current outcome is different from the last main outcome
-            # This handles cases where a tie might have been inserted but the main outcome streak continues
-            if main_outcome != last_main_outcome:
-                big_road.append(current_column)
-                current_column = [(main_outcome, ties, is_natural)]
-                last_main_outcome = main_outcome
-            else: # Continue current column
-                current_column.append((main_outcome, ties, is_natural))
-    
-    if current_column: # Add the last column if not empty
-        big_road.append(current_column)
-    
-    return big_road
+            # New streak or first entry
+            current_col_idx += 1
+            current_row_idx = 0 # Start at the top of a new column
+            last_main_pb_outcome = main_outcome # Update the outcome for the new streak
+
+        # Ensure big_road_columns has enough columns
+        while len(big_road_columns) <= current_col_idx:
+            big_road_columns.append([]) # Add an empty column
+
+        # Fill empty cells above the current position with None if bending
+        while len(big_road_columns[current_col_idx]) <= current_row_idx:
+            big_road_columns[current_col_idx].append(None)
+        
+        # Place the current result
+        big_road_columns[current_col_idx][current_row_idx] = (main_outcome, ties, is_natural)
+        
+    # After populating, ensure all columns have at least 6 rows for consistent display grid
+    # This is for visual alignment in the UI, empty cells will be None.
+    max_display_rows = 6
+    for col in big_road_columns:
+        while len(col) < max_display_rows:
+            col.append(None)
+
+    return big_road_columns
 
 
 @st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
@@ -269,28 +297,33 @@ class OracleEngine:
         # --- 2D Big Road Patterns (Improved Simplified) ---
         num_cols = len(big_road_data)
         if num_cols >= 3: # Need at least 3 columns for meaningful 2D patterns
-            last_col = big_road_data[-1]
-            prev_col = big_road_data[-2]
-            prev_prev_col = big_road_data[-3]
-
+            # Note: big_road_data now includes None for bending, so we need to filter for actual cells
+            last_col_actual = [cell for cell in big_road_data[-1] if cell is not None]
+            prev_col_actual = [cell for cell in big_road_data[-2] if cell is not None]
+            
             # Big Eye Boy (Simplified): Check if the pattern "follows the previous column's trend"
             # If the current column's depth is similar to the previous column's depth, it's a "follow"
             # This is a key characteristic of Big Eye Boy.
-            if len(last_col) == len(prev_col) and last_col[0][0] == prev_col[0][0]: # Same depth, same outcome (implies follow)
-                patterns_detected.append(('Big Eye Boy (2D Simple - Follow)', tuple(h[-sum(len(c) for c in big_road_data[-2:]):])))
-            elif len(last_col) == 1 and len(prev_col) > 1 and last_col[0][0] != prev_col[0][0]: # Single cut after a streak (implies break)
-                patterns_detected.append(('Big Eye Boy (2D Simple - Break)', tuple(h[-sum(len(c) for c in big_road_data[-2:]):])))
+            if last_col_actual and prev_col_actual: # Ensure columns are not empty after filtering None
+                if len(last_col_actual) == len(prev_col_actual) and last_col_actual[0][0] == prev_col_actual[0][0]: # Same depth, same outcome (implies follow)
+                    patterns_detected.append(('Big Eye Boy (2D Simple - Follow)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-2:]):])))
+                elif len(last_col_actual) == 1 and len(prev_col_actual) > 1 and last_col_actual[0][0] != prev_col_actual[0][0]: # Single cut after a streak (implies break)
+                    patterns_detected.append(('Big Eye Boy (2D Simple - Break)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-2:]):])))
 
             # Small Road (Simplified): Check if the current column is the same as the column two columns back (alternating)
             # This implies a "chop" or "alternating" pattern in the 2D view.
-            if len(last_col) == len(prev_prev_col) and last_col[0][0] == prev_prev_col[0][0]:
-                patterns_detected.append(('Small Road (2D Simple - Chop)', tuple(h[-sum(len(c) for c in big_road_data[-3:]):])))
+            if num_cols >= 3:
+                prev_prev_col_actual = [cell for cell in big_road_data[-3] if cell is not None]
+                if last_col_actual and prev_prev_col_actual:
+                    if len(last_col_actual) == len(prev_prev_col_actual) and last_col_actual[0][0] == prev_prev_col_actual[0][0]:
+                        patterns_detected.append(('Small Road (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-3:]):])))
 
             # Cockroach Pig (Simplified): Similar to Small Road, but looking at 3 columns back
             if num_cols >= 4:
-                prev_prev_prev_col = big_road_data[-4]
-                if len(last_col) == len(prev_prev_prev_col) and last_col[0][0] == prev_prev_prev_col[0][0]:
-                    patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len(c) for c in big_road_data[-4:]):])))
+                prev_prev_prev_col_actual = [cell for cell in big_road_data[-4] if cell is not None]
+                if last_col_actual and prev_prev_prev_col_actual:
+                    if len(last_col_actual) == len(prev_prev_prev_col_actual) and last_col_actual[0][0] == prev_prev_prev_col_actual[0][0]:
+                        patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-4:]):])))
 
 
         return patterns_detected
@@ -636,7 +669,7 @@ class OracleEngine:
         # --- Debugging Info for Developer View ---
         debug_info = {
             "Current PB History Length": len(current_pb_history),
-            "Big Road Columns (P/B only)": [[item[0] for item in col] for col in big_road_data],
+            "Big Road Columns (P/B only)": [[cell[0] for cell in col if cell is not None] for col in big_road_data], # Adjusted for None cells
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
             "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)], # New debug info
@@ -856,10 +889,6 @@ class OracleEngine:
                 # This requires storing the next outcome with the sequence, or inferring from pattern.
                 # For simplicity, we'll assume the sequence itself implies the next outcome based on its last char
                 # and if it implies a continuation or alternation.
-                # A more advanced model would store (sequence, next_outcome_stats)
-                
-                # For now, if a sequence is detected and has a good success rate,
-                # we can infer the next outcome based on common patterns it might represent.
                 # E.g., if sequence is (P,B,P) and has high success, next is B (pingpong)
                 # If (B,B,B) and high success, next is B (dragon)
                 # This is an intuition layer for sequences.
