@@ -130,20 +130,31 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
 
         simulated_prediction_data = temp_sim_engine.predict_next_for_backtest()
         simulated_predicted_outcome = simulated_prediction_data['prediction']
-        simulated_recommendation = simulated_prediction_data['recommendation']
+        simulated_recommendation = simulated_prediction_data['recommendation'] 
 
+        # --- Logic for overall accuracy (hits/misses/total_bets_counted) ---
+        # This still respects the "Play ✅" recommendation for the overall accuracy percentage
         if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
             total_bets_counted += 1
             if simulated_predicted_outcome == actual_main_outcome:
                 hits += 1
-                current_drawdown_tracker = 0 # Reset on hit
             else:
                 misses += 1
+        
+        # --- Separate logic for current_drawdown_tracker (consecutive misses) ---
+        # This tracker should count consecutive losses *whenever a prediction was made (not '?')*,
+        # regardless of the 'recommendation' (Play/Avoid).
+        # It resets only on a hit or if no prediction was made.
+        if simulated_predicted_outcome in ['P', 'B', 'T']: # A prediction was made (P, B, or T)
+            if simulated_predicted_outcome == actual_main_outcome:
+                current_drawdown_tracker = 0 # Reset on hit
+            else:
                 current_drawdown_tracker += 1 # Increment on miss
-                max_drawdown = max(max_drawdown, current_drawdown_tracker)
+                max_drawdown = max(max_drawdown, current_drawdown_tracker) # Update max drawdown based on this tracker
         else:
-            # If the system avoided (due to low confidence), reset current_drawdown_tracker for this specific path
-            current_drawdown_tracker = 0 # Reset if not playing (no prediction or avoid)
+            # If no prediction was made ('?'), reset the consecutive miss tracker.
+            # This covers cases where confidence is too low or history is insufficient for a prediction.
+            current_drawdown_tracker = 0 
     
     accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
 
