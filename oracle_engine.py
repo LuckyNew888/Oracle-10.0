@@ -1,87 +1,74 @@
-ข้อมูลที่ได้รับ:
-PPPPBBBBTBBPPBPPBBPBTBPBP
-(ความยาว: 25 ตา)
+# oracle_engine.py v1.1
 
-🧬 Developer View:
-[PPPP], [BBBB], [T], [BB], [PP], [B], [PP], [BB], [P], [B], [T], [B], [P], [B], [P]
+def analyze_patterns(history):
+    if len(history) < 20:
+        return {"patterns": [], "momentum": [], "recommendation": "รอข้อมูลครบ 20 ตา"}
 
-🔍 รูปแบบที่ตรวจพบ:
+    patterns = []
+    momentum = []
 
-Dragon: [PPPP], [BBBB] (2 ครั้ง)
+    def last_n(n):
+        return history[-n:] if len(history) >= n else []
 
-2-Cut: [BB], [PP], [BB], [BP], [PB] (แทรกอยู่)
+    seq = ''.join(history)
 
-Pingpong: พบในช่วงท้าย → [P], [B], [P], [B], [P]
+    # เค้าไพ่: Pingpong (สลับ)
+    if any(seq.endswith(p) for p in ["BPBP", "PBPB", "BPBPBP", "PBPBPB"]):
+        patterns.append("Pingpong")
 
-🧬 DNA Pattern Analysis:
-ลูปช่วงแรกชัดเจน (2 มังกร) → [P4], [B4]
+    # เค้าไพ่: Dragon
+    if len(set(last_n(4))) == 1:
+        patterns.append("Dragon")
 
-กลางเกม = 2-Cut ซ้อน, แต่ไม่คงที่ → เริ่มไม่เสถียร
+    # เค้าไพ่: Two-Cut
+    if any(seq.endswith(p) for p in ["BBPP", "PPBB", "BBPPBB", "PPBBPP"]):
+        patterns.append("Two-Cut")
 
-ช่วงท้าย → เข้าสู่ Pingpong Mode (PBPBP)
+    # เค้าไพ่: Triple-Cut
+    if any(seq.endswith(p) for p in ["BBBPPP", "PPPBBB"]):
+        patterns.append("Triple-Cut")
 
-🚀 Momentum Tracker:
-Momentum เปลี่ยนมือที่ 17 → เริ่มตัดไปตัดมา
+    # One-Two Pattern
+    if seq.endswith("BPPBPP") or seq.endswith("PBBPBB"):
+        patterns.append("One-Two Pattern")
 
-ไม่มีแรงวิ่งต่อใดชัดเจนในช่วงสุดท้าย
+    # Two-One Pattern
+    if seq.endswith("BBPBBP") or seq.endswith("PPBPPB"):
+        patterns.append("Two-One Pattern")
 
-⚠️ Trap Zone Detection:
-✅ ตรวจพบ Trap Zone แบบ Pingpong ปลอม
+    # Broken Pattern
+    if any(seq.endswith(p) for p in ["BPBPPBP", "PBPBBBP", "BBPBPP"]):
+        patterns.append("Broken Pattern")
 
-จากลูป BPPBB → สร้างลวงว่าเป็น 2-Cut
+    # FollowStreak
+    streak_char = history[-1]
+    streak_count = 0
+    for h in reversed(history):
+        if h == streak_char:
+            streak_count += 1
+        else:
+            break
+    if streak_count >= 3:
+        patterns.append("FollowStreak")
 
-ช่วงท้าย (PBTBPBP) → เข้าสู่ Random Chaos Phase
-→ ความแม่นยำต่ำ หากฝืนเล่น
+    # Momentum: B3+, P3+
+    if history[-1] == "B" and history[-3:] == ["B"] * 3:
+        momentum.append("B3+ Momentum")
+    if history[-1] == "P" and history[-3:] == ["P"] * 3:
+        momentum.append("P3+ Momentum")
 
-🔁 Memory Logic:
-ไม่มีแพทเทิร์นซ้ำที่เคยล้มเหลว → ระบบยังจำลูปได้อยู่
+    # Momentum: Steady Pingpong
+    if any(seq.endswith(p) for p in ["BPBPBPB", "PBPBPBP"]):
+        momentum.append("Steady Pingpong")
 
-🔬 Backtest Simulation (มือ #11–#25):
-วิเคราะห์มือ #11 ถึง #25 (15 ตา):
+    # Momentum: Ladder
+    if any(seq.endswith(p) for p in ["BPBBPBBB", "PBPPPBBB"]):
+        momentum.append("Ladder Momentum")
 
-ตา	ผล	ระบบจับ	Hit/Miss
-11	B	2-Cut ? → OK	✅
-12	B	ติด B → OK	✅
-13	P	ตัด → OK	✅
-14	P	P ติด → OK	✅
-15	B	ตัด → OK	✅
-16	P	ตัด → OK	✅
-17	P	P ติด → OK	✅
-18	B	ตัด → OK	✅
-19	B	B ติด → OK	✅
-20	P	ตัด → OK	✅
-21	B	ตัด → OK	✅
-22	T	✘ (หลอก)	❌
-23	B	B ติด?	✅
-24	P	ตัด → OK	✅
-25	B	ตัด → OK	✅
+    recommendation = "วิเคราะห์เสร็จสิ้น" if patterns or momentum else "ยังไม่พบเค้าไพ่ชัดเจน"
 
-✅ Hit: 14 / 15
-🎯 Accuracy: 93.3%
-
-🔮 Prediction (ตาถัดไป = #26):
-จาก pattern ล่าสุด: PBPBP
-→ มีลักษณะ Pingpong 5 จุด
-→ แต่เริ่มเสี่ยง Trap → ต้องใช้ Intuition Logic
-
-Intuition Logic:
-เมื่อ PBPBP → มีแนวโน้มวน → ตาถัดไปน่าจะ B
-
-🎯 สรุปการวิเคราะห์:
-🔮 Prediction: B
-
-🎯 Accuracy: 93.3%
-
-📍 Risk: Trap (Pingpong Zone Detected)
-
-🧾 Recommendation: Play (แต่เฝ้าระวัง)
-→ หากผิด = หยุด 1 ไม้ก่อนเข้าใหม่
-
-ต้องการวิเคราะห์ต่อหรือดู Simulation ย้อนหลังเพิ่มเติมไหมครับ? ✅
-
-
-
-
-
-
-
+    return {
+        "patterns": patterns,
+        "momentum": momentum,
+        "recommendation": recommendation
+    }
