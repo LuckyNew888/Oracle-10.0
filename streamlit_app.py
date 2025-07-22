@@ -1,39 +1,20 @@
 import streamlit as st
 import pandas as pd
 import math
-import asyncio # For async Firestore operations
-import json # <--- ADDED THIS IMPORT
-import uuid # For anonymous user ID generation
+# Removed asyncio as it's no longer needed for Firestore operations
+# Removed json as it's no longer needed for Firebase config or failed_pattern_instances serialization
+# Removed uuid as it's no longer needed for anonymous user ID generation
 
-# Firebase imports
-from firebase_admin import credentials, firestore, auth, initialize_app
-import firebase_admin
+# Removed Firebase imports
+# from firebase_admin import credentials, firestore, auth, initialize_app
+# import firebase_admin
 
 # Import OracleEngine and helper functions
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
 
-# --- Firebase Initialization (Global, only once) ---
-# Check if Firebase app is already initialized
-if not firebase_admin._apps:
-    try:
-        # Use the global __firebase_config variable
-        # st.secrets is used to access secrets.toml in Streamlit Cloud
-        firebase_config = json.loads(st.secrets["firebase_config"])
-        cred = credentials.Certificate(firebase_config)
-        firebase_admin.initialize_app(cred)
-        db = firestore.client()
-        auth_app = auth.Client(firebase_admin.get_app()) # Get auth client
-        st.session_state.firebase_initialized = True
-        st.session_state.db = db
-        st.session_state.auth_app = auth_app
-    except Exception as e:
-        st.error(f"Error initializing Firebase: {e}. Please ensure firebase_config is correctly set in secrets.toml.")
-        st.session_state.firebase_initialized = False
-else:
-    st.session_state.firebase_initialized = True
-    st.session_state.db = firestore.client()
-    st.session_state.auth_app = auth.Client(firebase_admin.get_app())
-
+# --- Firebase Initialization (Removed) ---
+# All Firebase initialization logic has been removed.
+# st.session_state.firebase_initialized = False # Ensure this is false if no Firebase
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI", layout="centered")
@@ -235,64 +216,20 @@ if "labouchere_current_sequence" not in st.session_state:
 if "labouchere_unit_bet" not in st.session_state:
     st.session_state.labouchere_unit_bet = 100.0
 
-# Firebase related session states
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
-if "room_id" not in st.session_state:
-    st.session_state.room_id = "default_room" # Default room ID
-if "auth_status" not in st.session_state:
-    st.session_state.auth_status = "Authenticating..."
-if "learning_data_loaded" not in st.session_state:
-    st.session_state.learning_data_loaded = False
-if "save_learning_trigger" not in st.session_state:
-    st.session_state.save_learning_trigger = False
+# Removed Firebase related session states
+# if "user_id" not in st.session_state:
+#     st.session_state.user_id = None
+# if "room_id" not in st.session_state:
+#     st.session_state.room_id = "default_room"
+# if "auth_status" not in st.session_state:
+#     st.session_state.auth_status = "Authenticating..."
+# if "learning_data_loaded" not in st.session_state:
+#     st.session_state.learning_data_loaded = False
+# if "save_learning_trigger" not in st.session_state:
+#     st.session_state.save_learning_trigger = False
 
-# --- Firebase Authentication and Data Loading ---
-async def authenticate_and_load_data():
-    if not st.session_state.firebase_initialized:
-        return
-
-    if st.session_state.user_id is None:
-        try:
-            # Use __initial_auth_token if available, otherwise sign in anonymously
-            # Corrected line 255: removed extra ']'
-            if hasattr(st.secrets, "__initial_auth_token") and st.secrets.__initial_auth_token__:
-                custom_token = st.secrets.__initial_auth_token__
-                decoded_token = st.session_state.auth_app.verify_id_token(custom_token)
-                st.session_state.user_id = decoded_token['uid']
-                st.session_state.auth_status = f"Authenticated (User ID: {st.session_state.user_id})"
-            else:
-                # For anonymous sign-in, Firebase Admin SDK doesn't directly support it.
-                # In a real deployed app, you'd use client-side Firebase JS SDK for anonymous auth.
-                # For this Canvas environment, we'll just generate a UUID if no initial token.
-                st.session_state.user_id = f"anon-{uuid.uuid4()}"
-                st.session_state.auth_status = f"Anonymous User (ID: {st.session_state.user_id})"
-
-            # Set Firestore context for the OracleEngine instance
-            engine = st.session_state.oracle_engine
-            app_id = st.secrets.get("__app_id", "default-app-id") # Get app_id from secrets
-            engine.set_firestore_context(st.session_state.db, st.session_state.user_id, st.session_state.room_id, app_id)
-
-            # Load learning data after successful authentication
-            if not st.session_state.learning_data_loaded:
-                await engine.load_learning_states_from_firestore()
-                st.session_state.learning_data_loaded = True
-
-        except Exception as e:
-            st.error(f"Authentication or data loading error: {e}")
-            st.session_state.auth_status = "Authentication Failed"
-            st.session_state.user_id = None
-
-# Run authentication and data loading only once at startup
-if not st.session_state.get('auth_and_load_done', False):
-    asyncio.run(authenticate_and_load_data())
-    st.session_state.auth_and_load_done = True
-
-# Trigger saving learning data if needed
-if st.session_state.save_learning_trigger:
-    asyncio.run(st.session_state.oracle_engine.save_learning_states_to_firestore())
-    st.session_state.save_learning_trigger = False
-
+# --- Firebase Authentication and Data Loading (Removed) ---
+# All Firebase authentication and data loading logic has been removed.
 
 # --- Function to Calculate Next Bet Amount ---
 def calculate_next_bet():
@@ -348,14 +285,14 @@ def remove_last_from_history():
     if st.session_state.history:
         st.session_state.history.pop()
         _cached_backtest_accuracy.clear()
-        st.session_state.oracle_engine.reset_learning_states_on_undo() # This will trigger Firestore save
+        st.session_state.oracle_engine.reset_learning_states_on_undo()
     st.rerun()
 
 def reset_all_history():
     st.session_state.history = []
     st.session_state.money_balance = 1000.0
     st.session_state.bet_log = []
-    st.session_state.oracle_engine.reset_history() # This will trigger Firestore save
+    st.session_state.oracle_engine.reset_history()
     _cached_backtest_accuracy.clear()
     reset_money_management_state()
     st.rerun()
@@ -480,28 +417,10 @@ def record_bet_result(predicted_side, actual_result):
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
 
-# --- User/Room ID Input ---
+# --- User/Room ID Input (Removed) ---
 st.sidebar.markdown("### ⚙️ การตั้งค่า")
-st.sidebar.write(f"สถานะการยืนยันตัวตน: {st.session_state.auth_status}")
-if st.session_state.user_id:
-    st.sidebar.write(f"User ID: `{st.session_state.user_id}`")
-
-new_room_id = st.sidebar.text_input(
-    "รหัสห้อง (Room ID) สำหรับการเรียนรู้เฉพาะห้อง:",
-    value=st.session_state.room_id,
-    key="room_id_input",
-    help="ใช้สำหรับบันทึกและโหลดข้อมูลการเรียนรู้ของห้องนั้นๆ"
-)
-
-if new_room_id != st.session_state.room_id:
-    st.session_state.room_id = new_room_id
-    st.session_state.learning_data_loaded = False # Force reload for new room
-    st.session_state.oracle_engine.set_firestore_context(
-        st.session_state.db, st.session_state.user_id, st.session_state.room_id, st.secrets.get("__app_id", "default-app-id")
-    )
-    # Rerun to trigger async load_learning_states_from_firestore
-    st.rerun()
-
+# Removed Firebase authentication status and User ID display
+# Removed Room ID input
 
 # --- Capital Balance and Bet Amount ---
 st.session_state.money_balance = st.number_input(
@@ -642,11 +561,8 @@ if len(engine.history) >= 20:
             st.write("--- Momentum Success Rates ---")
             st.write(engine.momentum_stats)
             st.write("--- Failed Pattern Instances ---")
-            # Convert keys back to tuples for display
-            display_failed_instances = {
-                tuple(json.loads(k)): v for k, v in engine.get_current_learning_states()[2].items()
-            }
-            st.write(display_failed_instances)
+            # No longer need to convert keys from JSON string
+            st.write(engine.failed_pattern_instances)
             st.write("--- Backtest Results ---")
             backtest_summary = _cached_backtest_accuracy(
                 engine.history,
