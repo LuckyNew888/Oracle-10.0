@@ -176,26 +176,36 @@ def get_oracle_engine():
 if "oracle_engine" not in st.session_state:
     st.session_state.oracle_engine = get_oracle_engine()
 
-# --- Cache compatibility check for new attributes ---
+# --- Cache compatibility check for new attributes and methods ---
 # This ensures that if a cached OracleEngine instance is loaded from a previous version
-# that didn't have certain attributes, they get initialized.
-if not hasattr(st.session_state.oracle_engine, 'sequence_memory_stats'):
-    st.session_state.oracle_engine.sequence_memory_stats = {}
-if not hasattr(st.session_state.oracle_engine, 'pattern_weights'):
-    st.session_state.oracle_engine.pattern_weights = {
-        'Dragon': 1.0, 'FollowStreak': 0.95, 'Pingpong': 0.9, 'Two-Cut': 0.8,
-        'Triple-Cut': 0.8, 'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7,
-        'Big Eye Boy (2D Simple - Follow)': 0.9, 'Big Eye Boy (2D Simple - Break)': 0.8,
-        'Small Road (2D Simple - Chop)': 0.75, 'Cockroach Pig (2D Simple - Chop)': 0.7,
-        'Broken Pattern': 0.3,
-    }
-if not hasattr(st.session_state.oracle_engine, 'momentum_weights'):
-    st.session_state.oracle_engine.momentum_weights = {
-        'B3+ Momentum': 0.9, 'P3+ Momentum': 0.9, 'Steady Repeat Momentum': 0.85,
-        'Ladder Momentum (1-2-3)': 0.7, 'Ladder Momentum (X-Y-XX-Y)': 0.6,
-    }
-if not hasattr(st.session_state.oracle_engine, 'sequence_weights'):
-    st.session_state.oracle_engine.sequence_weights = {3: 0.6, 4: 0.7, 5: 0.8}
+# that didn't have certain attributes or methods, it gets re-initialized or updated.
+# More robust check for critical methods like _detect_sequences
+if not hasattr(st.session_state.oracle_engine, '_detect_sequences'):
+    st.session_state.oracle_engine = OracleEngine()
+    st.session_state.oracle_engine.reset_history() # Reset all learning states
+    st.warning("Detected an outdated OracleEngine instance (missing _detect_sequences method). Re-initializing the AI engine. History and learning stats have been reset.")
+    # No need for individual attribute checks below if we just re-initialized the whole engine.
+    # The new OracleEngine() instance will have all the latest attributes.
+else:
+    # If the engine wasn't re-initialized, ensure all new attributes are present.
+    # This handles cases where the class structure changed but not so drastically as to remove core methods.
+    if not hasattr(st.session_state.oracle_engine, 'sequence_memory_stats'):
+        st.session_state.oracle_engine.sequence_memory_stats = {}
+    if not hasattr(st.session_state.oracle_engine, 'pattern_weights'):
+        st.session_state.oracle_engine.pattern_weights = {
+            'Dragon': 1.0, 'FollowStreak': 0.95, 'Pingpong': 0.9, 'Two-Cut': 0.8,
+            'Triple-Cut': 0.8, 'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7,
+            'Big Eye Boy (2D Simple - Follow)': 0.9, 'Big Eye Boy (2D Simple - Break)': 0.8,
+            'Small Road (2D Simple - Chop)': 0.75, 'Cockroach Pig (2D Simple - Chop)': 0.7,
+            'Broken Pattern': 0.3,
+        }
+    if not hasattr(st.session_state.oracle_engine, 'momentum_weights'):
+        st.session_state.oracle_engine.momentum_weights = {
+            'B3+ Momentum': 0.9, 'P3+ Momentum': 0.9, 'Steady Repeat Momentum': 0.85,
+            'Ladder Momentum (1-2-3)': 0.7, 'Ladder Momentum (X-Y-XX-Y)': 0.6,
+        }
+    if not hasattr(st.session_state.oracle_engine, 'sequence_weights'):
+        st.session_state.oracle_engine.sequence_weights = {3: 0.6, 4: 0.7, 5: 0.8}
 
 
 # --- Session State Initialization (other variables) ---
