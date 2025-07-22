@@ -297,70 +297,76 @@ def reset_money_management_state_on_undo():
 
 
 def record_bet_result(predicted_side, actual_result):
-    bet_amt_for_log = st.session_state.bet_amount_calculated
+    bet_amt_for_log = st.session_state.bet_amount_calculated # This is the bet amount that *would* have been placed
     win_loss = 0.0
-    outcome = "Miss" # Default outcome
+    outcome = "Avoided" # Default outcome if no prediction was made
 
     current_system = st.session_state.money_management_system
 
     # --- Core Logic for Win/Loss and Money Management ---
-    if predicted_side == actual_result: # Direct Hit
-        outcome = "Hit"
-        if actual_result == 'P':
-            win_loss = bet_amt_for_log
-        elif actual_result == 'B':
-            win_loss = bet_amt_for_log * 0.95 # Banker commission
-        elif actual_result == 'T':
-            win_loss = bet_amt_for_log * 8.0 # Tie payout
-        st.session_state.money_balance += win_loss
+    # ONLY process win/loss and money management if a prediction was actually made (not 'Avoid')
+    if predicted_side in ['P', 'B', 'T']:
+        if predicted_side == actual_result: # Direct Hit
+            outcome = "Hit"
+            if actual_result == 'P':
+                win_loss = bet_amt_for_log
+            elif actual_result == 'B':
+                win_loss = bet_amt_for_log * 0.95 # Banker commission
+            elif actual_result == 'T':
+                win_loss = bet_amt_for_log * 8.0 # Tie payout
+            st.session_state.money_balance += win_loss
 
-        # Reset money management system on win
-        if current_system == "Martingale":
-            st.session_state.martingale_current_step = 0
-        elif current_system == "Fibonacci":
-            st.session_state.fibonacci_current_index = 1
-        elif current_system == "Labouchere":
-            current_seq = st.session_state.labouchere_current_sequence
-            if len(current_seq) <= 2:
-                st.session_state.labouchere_current_sequence = [] # Target achieved
-            else:
-                st.session_state.labouchere_current_sequence = current_seq[1:-1] # Remove first and last
-            if not st.session_state.labouchere_current_sequence: # If sequence becomes empty, reset for next target
-                st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
+            # Reset money management system on win
+            if current_system == "Martingale":
+                st.session_state.martingale_current_step = 0
+            elif current_system == "Fibonacci":
+                st.session_state.fibonacci_current_index = 1
+            elif current_system == "Labouchere":
+                current_seq = st.session_state.labouchere_current_sequence
+                if len(current_seq) <= 2:
+                    st.session_state.labouchere_current_sequence = [] # Target achieved
+                else:
+                    st.session_state.labouchere_current_sequence = current_seq[1:-1] # Remove first and last
+                if not st.session_state.labouchere_current_sequence: # If sequence becomes empty, reset for next target
+                    st.session_state.labouchere_current_sequence = st.session_state.labouchere_original_sequence.copy()
 
-    elif actual_result == 'T' and predicted_side in ['P', 'B']: # Tie when betting P or B (Push/No Action)
-        win_loss = 0.0 # Money returned
-        outcome = "Push (Tie)"
-        # Money balance remains unchanged
-        # Money management system state remains unchanged (no step/index change)
-        
-    else: # Miss (Loss for P/B/T bets)
-        win_loss = -bet_amt_for_log
-        # Ensure money_balance doesn't go below 0.0
-        st.session_state.money_balance = max(0.0, st.session_state.money_balance - bet_amt_for_log)
+        elif actual_result == 'T' and predicted_side in ['P', 'B']: # Tie when betting P or B (Push/No Action)
+            win_loss = 0.0 # Money returned
+            outcome = "Push (Tie)"
+            # Money balance remains unchanged
+            # Money management system state remains unchanged (no step/index change)
+            
+        else: # Miss (Loss for P/B/T bets)
+            win_loss = -bet_amt_for_log
+            st.session_state.money_balance = max(0.0, st.session_state.money_balance - bet_amt_for_log) # Ensure money_balance doesn't go below 0.0
 
-        # Advance money management system on loss
-        if current_system == "Martingale":
-            st.session_state.martingale_current_step += 1
-            if st.session_state.martingale_current_step > st.session_state.martingale_max_steps:
-                st.session_state.martingale_current_step = st.session_state.martingale_max_steps
-        elif current_system == "Fibonacci":
-            st.session_state.fibonacci_current_index += 1
-            max_steps = st.session_state.fibonacci_max_steps_input
-            if st.session_state.fibonacci_current_index >= len(st.session_state.fibonacci_sequence) or st.session_state.fibonacci_current_index > max_steps:
-                st.session_state.fibonacci_current_index = max_steps # Cap at max steps or end of sequence
-        elif current_system == "Labouchere":
-            current_seq = st.session_state.labouchere_current_sequence
-            if st.session_state.labouchere_unit_bet > 0:
-                st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
-            else:
-                st.session_state.labouchere_current_sequence.append(1.0) # Fallback if unit bet is zero/invalid
+            # Advance money management system on loss
+            if current_system == "Martingale":
+                st.session_state.martingale_current_step += 1
+                if st.session_state.martingale_current_step > st.session_state.martingale_max_steps:
+                    st.session_state.martingale_current_step = st.session_state.martingale_max_steps
+            elif current_system == "Fibonacci":
+                st.session_state.fibonacci_current_index += 1
+                max_steps = st.session_state.fibonacci_max_steps_input
+                if st.session_state.fibonacci_current_index >= len(st.session_state.fibonacci_sequence) or st.session_state.fibonacci_current_index > max_steps:
+                    st.session_state.fibonacci_current_index = max_steps # Cap at max steps or end of sequence
+            elif current_system == "Labouchere":
+                current_seq = st.session_state.labouchere_current_sequence
+                if st.session_state.labouchere_unit_bet > 0:
+                    st.session_state.labouchere_current_sequence.append(bet_amt_for_log / st.session_state.labouchere_unit_bet)
+                else:
+                    st.session_state.labouchere_current_sequence.append(1.0) # Fallback if unit bet is zero/invalid
+    # else: # If predicted_side is '?', it means "Avoid".
+    #     # Money balance does not change.
+    #     # Money management system state does not change.
+    #     # win_loss remains 0.0 (initialized)
+    #     outcome remains "Avoided" (initialized)
 
 
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "System": current_system,
-        "Bet Amount": f"{bet_amt_for_log:.2f}",
+        "Bet Amount": f"{bet_amt_for_log:.2f}" if predicted_side in ['P', 'B', 'T'] else "0.00", # Show 0.00 if avoided
         "Predict": predicted_side,
         "Actual": actual_result,
         "Win/Loss": f"{win_loss:+.2f}",
@@ -369,9 +375,7 @@ def record_bet_result(predicted_side, actual_result):
     })
 
     # --- Update History for Oracle Engine ---
-    # Handle Tie results for Big Road display:
-    # If actual_result is 'T', increment ties count of the last P/B entry.
-    # If no P/B entry, or if actual_result is P/B, add as a new entry.
+    # This part should still happen to record the actual game outcome for future predictions
     if actual_result == 'T':
         found_pb_for_tie = False
         for i in reversed(range(len(st.session_state.history))):
@@ -379,14 +383,13 @@ def record_bet_result(predicted_side, actual_result):
                 st.session_state.history[i]['ties'] += 1
                 found_pb_for_tie = True
                 break
-        if not found_pb_for_tie: # If history is empty or only ties, add the tie as a new entry
+        if not found_pb_for_tie:
             st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
     else:
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
     # --- Update Oracle Engine's Learning States ---
-    # Only update learning if a prediction was made (i.e., not '?' for predicted_side)
-    # And if it was not a "Push" for P/B bets (as pushes don't represent a clear win/loss for the prediction)
+    # This condition is already correct as it only updates learning if a prediction was made and it wasn't a push.
     if predicted_side in ['P', 'B', 'T'] and not (actual_result == 'T' and predicted_side in ['P', 'B']):
         history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
         big_road_data_before = _build_big_road_data(history_before_current_result)
