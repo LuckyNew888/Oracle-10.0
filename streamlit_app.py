@@ -10,7 +10,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 # Define the current expected version of OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.2" # Updated version to 1.2
+CURRENT_ENGINE_VERSION = "1.4" # Updated version to 1.4
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
@@ -435,7 +435,7 @@ async def get_gemini_analysis(history_data):
     result = mock_response
 
     if result.get("candidates") and len(result["candidates"]) > 0 and result["candidates"][0].get("content") and result["candidates"][0]["content"].get("parts") and len(result["candidates"][0]["content"]["parts"]) > 0:
-        return result["candidates"][0]["content"]["parts"][0]["text"]
+        return result["candidates"][0]["content"].parts[0].text
     else:
         return f"❌ ไม่สามารถรับการวิเคราะห์จาก Gemini ได้: {result.get('error', {}).get('message', 'Unknown error')}"
 
@@ -537,7 +537,8 @@ else:
 # --- Tie Opportunity Section ---
 st.markdown("---") # Separator
 st.markdown("#### 🟢 โอกาสเสมอ (Tie Opportunity):")
-if len(engine.history) >= 20:
+# Changed minimum history for Tie/Super6 analysis to 1 (as theoretical prob applies from 0 hands)
+if len(engine.history) >= 1: 
     tie_data = st.session_state.tie_opportunity_data
     tie_pred_side = tie_data['prediction']
     tie_conf = tie_data['confidence']
@@ -546,11 +547,14 @@ if len(engine.history) >= 20:
     if tie_pred_side == 'T':
         st.markdown(f'<div class="tie-opportunity-text">🟢 Tie (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**💡 เหตุผล:** {tie_reason}")
+    elif tie_pred_side == 'S6':
+        st.markdown(f'<div class="tie-opportunity-text super6">🟠 Super6 (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
+        st.markdown(f"**💡 เหตุผล:** {tie_reason}")
     else:
-        st.markdown(f'<div class="tie-opportunity-text no-recommendation">— ไม่มีคำแนะนำ Tie ที่แข็งแกร่ง (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="tie-opportunity-text no-recommendation">— ไม่มีคำแนะนำ Tie/Super6 ที่แข็งแกร่ง (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**💡 เหตุผล:** {tie_reason}")
 else:
-    st.markdown("— (ประวัติไม่ครบ)")
+    st.markdown("— (ประวัติไม่ครบสำหรับ Tie/Super6)")
 
 
 with st.expander("🧬 Developer View"):
@@ -561,7 +565,9 @@ with st.expander("🧬 Developer View"):
     st.write(engine.momentum_stats)
     st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
     st.write(engine.sequence_memory_stats)
-    st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
+    st.write("--- Tie Prediction Stats (for tracking) ---") # New: Display Tie stats
+    st.write(engine.tie_stats)
+    st.write("--- Super6 Prediction Stats (for tracking) ---") # New: Display Super6 stats
     st.write(engine.super6_stats)
     st.write("--- Failed Pattern Instances ---")
     st.write(engine.failed_pattern_instances)
