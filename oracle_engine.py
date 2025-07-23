@@ -180,7 +180,7 @@ class OracleEngine:
     # Define the version of the OracleEngine class
     # Increment this version whenever there are significant changes to the class structure
     # or its internal attributes/methods that might cause caching issues.
-    __version__ = "1.4" # Updated version to 1.4 for theoretical probability for Tie/Super6
+    __version__ = "1.5" # Updated version to 1.5 for fixing AttributeError
 
     # Define theoretical probabilities for Tie and Super6
     THEORETICAL_TIE_PROB = 0.0951  # ~9.51%
@@ -739,7 +739,7 @@ class OracleEngine:
             prediction_result = '?' # No specific prediction
             recommendation = "Avoid ❌ (ป้องกันแพ้ติดกัน)"
             risk_level = "High Drawdown"
-            decision_path.append(f"PROTECTION: Live drawdown ({current_live_drawdown}) reached limit ({DRAWDOWN_LIMIT_FOR_AVOID}). Recommending Avoid.")
+            decision_path.append(f"PROTECTION: Live drawdown ({current_drawdown_display}) reached limit ({DRAWDOWN_LIMIT_FOR_AVOID}). Recommending Avoid.")
             developer_view += "\n".join(decision_path)
             return {
                 "developer_view": developer_view,
@@ -1111,10 +1111,6 @@ class OracleEngine:
         # Base confidence for Super6: if frequency is above 1.28% (avg), scale up.
         # Using a scaling factor to make 9.51% map to a decent confidence, e.g., 50-70%
         # And 1.28% map to a lower but still present confidence.
-        
-        # Let's adjust scaling:
-        # If actual frequency is THEORETICAL_TIE_PROB, confidence should be around 50%
-        # If actual frequency is 2x THEORETICAL_TIE_PROB, confidence should be higher.
         
         # Simple linear scaling:
         # If frequency is 0, confidence is 0.
