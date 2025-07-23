@@ -144,17 +144,15 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
                 misses += 1
         
         # --- Separate logic for current_drawdown_tracker (consecutive misses) ---
-        # This tracker counts consecutive losses *only when a prediction was made (not '?')*.
-        # It resets only on a hit. It does NOT reset if no prediction was made ('?').
-        if simulated_predicted_outcome in ['P', 'B', 'T']: # A prediction was made (P, B, or T)
-            if simulated_predicted_outcome == actual_main_outcome:
-                current_drawdown_tracker = 0 # Reset on hit
-            else:
-                current_drawdown_tracker += 1 # Increment on miss
-        # If simulated_predicted_outcome is '?', the current_drawdown_tracker remains unchanged.
-        # This is the key change: no 'else' to reset to 0 if it's '?'.
+        # This tracker increments if the AI's prediction was wrong OR if AI made no prediction ('?').
+        # It resets only if the AI made a P/B/T prediction AND it was correct.
+        if simulated_predicted_outcome in ['P', 'B', 'T'] and simulated_predicted_outcome == actual_main_outcome:
+            current_drawdown_tracker = 0 # Reset only on a correct P/B/T prediction
+        else:
+            # If it's a miss (P/B/T predicted and wrong) OR if it's a '?' prediction,
+            # then it counts as a continuation of the "not getting it right" streak.
+            current_drawdown_tracker += 1
 
-        # Update max_drawdown always after updating current_drawdown_tracker
         max_drawdown = max(max_drawdown, current_drawdown_tracker) 
     
     accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
@@ -165,7 +163,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         "hits": hits,
         "misses": misses,
         "total_bets": total_bets_counted,
-        "current_drawdown": current_drawdown_tracker # Return the final value of the tracker
+        "current_drawdown": current_drawdown_tracker # Return the final value
     }
 
 
