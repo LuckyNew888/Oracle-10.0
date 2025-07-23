@@ -445,6 +445,7 @@ class OracleEngine:
             else:
                 break
         if tie_streak_count >= 2: # Detects TT, TTT, etc.
+            # Use full_h for snapshot to include 'T' outcomes
             tie_super6_patterns_detected.append((f'Consecutive Tie ({tie_streak_count}x)', tuple([item['main_outcome'] for item in full_h[-tie_streak_count:]])))
 
         # Tie after specific P/B patterns (e.g., PBP, BBP)
@@ -603,8 +604,11 @@ class OracleEngine:
                 self.sequence_memory_stats[sequence_tuple]['misses'] += 1
         
         # New: Update Tie and Super6 Stats
-        tie_super6_patterns_detected = self.detect_tie_super6_patterns(self.history[:-1]) # Detect patterns before current result
-        for ts_name, ts_snapshot in tie_super6_patterns_detected:
+        # Re-detect patterns for the *current* state (including the just-added actual_outcome)
+        # This is crucial for learning from the very last hand.
+        # We need to pass the full history to detect_tie_super6_patterns
+        tie_super6_patterns_detected_for_learning = self.detect_tie_super6_patterns(self.history) 
+        for ts_name, ts_snapshot in tie_super6_patterns_detected_for_learning:
             if ts_name.startswith('Tie'):
                 if ts_name not in self.tie_stats:
                     self.tie_stats[ts_name] = {'hits': 0, 'misses': 0}
@@ -615,9 +619,8 @@ class OracleEngine:
             elif ts_name.startswith('Super6'):
                 if ts_name not in self.super6_stats:
                     self.super6_stats[ts_name] = {'hits': 0, 'misses': 0}
-                # This is a placeholder. True Super6 detection requires knowing if Banker won by 6.
-                # For now, we'll assume 'S6' is a distinct outcome that needs to be matched.
-                if actual_outcome == 'S6': # Assuming 'S6' is recorded as actual outcome
+                # Assuming 'S6' is a distinct outcome in actual_outcome for learning
+                if actual_outcome == 'S6': 
                     self.super6_stats[ts_name]['hits'] += 1
                 else:
                     self.super6_stats[ts_name]['misses'] += 1
