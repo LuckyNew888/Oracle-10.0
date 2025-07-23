@@ -226,7 +226,7 @@ else:
         st.session_state.oracle_engine.pattern_weights = {
             'Dragon': 1.0, 'FollowStreak': 0.95, 'Pingpong': 0.9, 'Two-Cut': 0.8,
             'Triple-Cut': 0.8, 'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7,
-            'Big Eye Boy (2D Simple - Follow)': 0.9, 'Big Eye Boy (2D Simple - Break)': 0.8,
+            'Big Eye Boy (2D Simple - Follow)': 0.9, 'Big Eye Boy (2D (2D Simple - Break)': 0.8,
             'Small Road (2D Simple - Chop)': 0.75, 'Cockroach Pig (2D Simple - Chop)': 0.7,
             'Broken Pattern': 0.3,
         }
@@ -269,8 +269,10 @@ if "gemini_analysis_result" not in st.session_state: # To store Gemini's analysi
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini"
 if "tie_opportunity_data" not in st.session_state: # To store Tie opportunity analysis
     st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'}
-if "hands_since_last_gemini_analysis" not in st.session_state: # Counter for auto Gemini analysis
+if "hands_since_last_gemini_analysis" not in st.session_state: # Counter for auto Gemini analysis (every 12 hands)
     st.session_state.hands_since_last_gemini_analysis = 0
+if "gemini_continuous_analysis_mode" not in st.session_state: # New: Flag for continuous Gemini analysis during drawdown
+    st.session_state.gemini_continuous_analysis_mode = False
 
 
 # --- Callback Functions for History and Betting Management ---
@@ -284,6 +286,7 @@ def remove_last_from_history():
         st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
         st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on undo
         st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
+        st.session_state.gemini_continuous_analysis_mode = False # Reset continuous analysis mode
 
 
 def reset_all_history(): # This is now "Start New Shoe"
@@ -296,6 +299,7 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
     st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
     st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on new shoe
+    st.session_state.gemini_continuous_analysis_mode = False # Reset continuous analysis mode
 
 
 def record_bet_result(actual_result): # Simplified signature
@@ -306,16 +310,20 @@ def record_bet_result(actual_result): # Simplified signature
     outcome_status = "Recorded" # Default outcome status for log
 
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    if predicted_side != '?': # Only consider loss if AI made a specific prediction
+    # live_drawdown should ONLY reset to 0 if a specific prediction was made AND it was correct.
+    # If the system recommended '?' (Avoid), live_drawdown should NOT change.
+    if predicted_side != '?': # AI made a specific prediction (P, B, T, S6)
         if predicted_side == actual_result:
             st.session_state.live_drawdown = 0 # Reset on a direct hit
-        elif actual_result == 'T':
-            st.session_state.live_drawdown = 0 # If actual is Tie, always reset drawdown (not a loss for P/B/S6, hit for T)
-        else:
-            # This covers cases where predicted_side is P/B/S6/T and actual_result is a clear miss (not T)
+            st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode
+        elif actual_result == 'T': # If actual is Tie, and AI predicted P/B/S6, it's not a loss, so reset. If AI predicted T, it's a hit.
+            st.session_state.live_drawdown = 0
+            st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode
+        else: # AI made a specific prediction (P, B, T, S6) AND it was a clear miss (not T)
             st.session_state.live_drawdown += 1 # Increment on a clear miss
-    else: # If AI predicted '?' (no specific prediction)
-        st.session_state.live_drawdown = 0 # Reset if AI made no specific prediction for this hand
+            # Do NOT set gemini_continuous_analysis_mode to False here, as we want it to continue if still losing
+    # else: If predicted_side was '?' (system recommended Avoid), live_drawdown remains unchanged.
+    # The gemini_continuous_analysis_mode should also remain True if it was already True.
     
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
@@ -328,7 +336,7 @@ def record_bet_result(actual_result): # Simplified signature
     # --- Update History for Oracle Engine ---
     # This part should still happen to record the actual game outcome for future predictions
     # Note: For Super6, we need to decide how it's recorded in history.
-    # For now, if actual_result is 'S6', it will be recorded as 'S6'.
+    # For now, if actual_result is 'S6', it will be treated as 'S6'.
     if actual_result == 'T':
         found_pb_for_tie = False
         for i in reversed(range(len(st.session_state.history))):
@@ -363,17 +371,28 @@ def record_bet_result(actual_result): # Simplified signature
     
     _cached_backtest_accuracy.clear()
 
-    # --- Auto-trigger Gemini Analysis ---
-    st.session_state.hands_since_last_gemini_analysis += 1
+    # --- Auto-trigger Gemini Analysis Logic ---
     gemini_api_key_available = "GEMINI_API_KEY" in st.secrets # Check API key availability for auto-trigger
 
-    if (st.session_state.hands_since_last_gemini_analysis >= 12 and
-        len(st.session_state.history) >= 20 and # Ensure enough history for meaningful analysis
-        gemini_api_key_available):
-        
-        st.toast("✨ กำลังให้ Gemini วิเคราะห์อัตโนมัติ...", icon="✨")
-        st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
-        st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter after analysis
+    if gemini_api_key_available and len(st.session_state.history) >= 20: # Ensure enough history for meaningful analysis
+        # Condition 1: Trigger if live_drawdown hits 3, and activate continuous mode
+        if st.session_state.live_drawdown == 3 and not st.session_state.gemini_continuous_analysis_mode:
+            st.session_state.gemini_continuous_analysis_mode = True
+            st.toast(f"✨ แพ้ติดกัน {st.session_state.live_drawdown} ครั้ง! กำลังให้ Gemini วิเคราะห์เชิงลึก...", icon="✨")
+            st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
+            st.session_state.hands_since_last_gemini_analysis = 0 # Reset 12-hand counter
+        # Condition 2: Continue analysis if in continuous mode and still losing (drawdown > 0)
+        elif st.session_state.gemini_continuous_analysis_mode and st.session_state.live_drawdown > 0:
+            st.toast(f"✨ ยังคงวิเคราะห์ต่อเนื่อง (แพ้ติดกัน {st.session_state.live_drawdown} ครั้ง)...", icon="✨")
+            st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
+            st.session_state.hands_since_last_gemini_analysis = 0 # Reset 12-hand counter
+        # Condition 3: Regular 12-hand auto-trigger (only if not in continuous mode)
+        elif not st.session_state.gemini_continuous_analysis_mode:
+            st.session_state.hands_since_last_gemini_analysis += 1
+            if st.session_state.hands_since_last_gemini_analysis >= 12:
+                st.toast("✨ กำลังให้ Gemini วิเคราะห์อัตโนมัติ (ทุก 12 ตา)...", icon="✨")
+                st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
+                st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter after analysis
 
 
 # --- Gemini Analysis Function ---
@@ -461,7 +480,8 @@ if st.sidebar.button("✨ วิเคราะห์เชิงลึก (Gemi
             # Pass a copy of the history to avoid modifying the live history during analysis
             # Call the async function using Streamlit's async support
             st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
-            st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter if manually triggered
+            st.session_state.hands_since_last_gemini_analysis = 0 # Reset 12-hand counter if manually triggered
+            st.session_state.gemini_continuous_analysis_mode = False # Exit continuous mode if manually triggered
     else:
         st.sidebar.error("โปรดตั้งค่า Gemini API Key ใน Streamlit Secrets ก่อน")
 
@@ -480,7 +500,8 @@ recommendation_status = "—"
 current_drawdown_display = st.session_state.live_drawdown
 
 if len(engine.history) >= 20:
-    prediction_data = engine.predict_next() # Calculate primary prediction for current state
+    # Pass current_live_drawdown to predict_next for protection logic
+    prediction_data = engine.predict_next(current_live_drawdown=current_drawdown_display) # Calculate primary prediction for current state
     st.session_state.tie_opportunity_data = engine.get_tie_opportunity_analysis(engine.history) # Calculate Tie opportunity
 
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
@@ -493,12 +514,19 @@ if len(engine.history) >= 20:
 
         emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', 'S6': '🟠 Super6', '?': '— ไม่มีคำแนะนำ'} # Added S6
         
-        # Apply specific CSS class for Tie and Super6 predictions
+        # Apply specific CSS class for prediction results
         prediction_css_class = ""
-        if next_pred_side == 'T':
+        if next_pred_side == 'P':
+            prediction_css_class = "player"
+        elif next_pred_side == 'B':
+            prediction_css_class = "banker"
+        elif next_pred_side == 'T':
             prediction_css_class = "tie"
         elif next_pred_side == 'S6':
             prediction_css_class = "super6"
+        elif next_pred_side == '?':
+            prediction_css_class = "no-prediction"
+
 
         st.markdown(f'<div class="prediction-text {prediction_css_class}">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}") # Risk is now informational
@@ -538,7 +566,7 @@ if len(engine.history) >= 20:
         st.markdown(f'<div class="tie-opportunity-text">🟢 Tie (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**💡 เหตุผล:** {tie_reason}")
     else:
-        st.markdown(f'<div class="tie-opportunity-text">— ไม่มีคำแนะนำ Tie ที่แข็งแกร่ง (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="tie-opportunity-text no-recommendation">— ไม่มีคำแนะนำ Tie ที่แข็งแกร่ง (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**💡 เหตุผล:** {tie_reason}")
 else:
     st.markdown("— (ประวัติไม่ครบ)")
@@ -553,8 +581,6 @@ with st.expander("🧬 Developer View"):
     st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
     st.write(engine.sequence_memory_stats)
     st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
-    st.write(engine.tie_stats)
-    st.write("--- Super6 Prediction Stats ---") # New: Display Super6 stats
     st.write(engine.super6_stats)
     st.write("--- Failed Pattern Instances ---")
     st.write(engine.failed_pattern_instances)
