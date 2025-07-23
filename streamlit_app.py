@@ -65,6 +65,14 @@ st.markdown("""
         margin-top: 0.5rem;
         margin-bottom: 0.5rem;
     }
+    /* Specific styles for Tie and Super6 predictions */
+    .prediction-text.tie {
+        color: #28a745; /* Green for Tie */
+    }
+    .prediction-text.super6 {
+        color: #FF8C00; /* Orange for Super6 */
+    }
+
     /* Reduce button margin */
     div.stButton > button {
         margin-top: 0.2rem;
@@ -205,6 +213,19 @@ else:
         }
     if not hasattr(st.session_state.oracle_engine, 'sequence_weights'):
         st.session_state.oracle_engine.sequence_weights = {3: 0.6, 4: 0.7, 5: 0.8}
+    # New: Ensure Tie/Super6 stats and weights are present for existing cached engine
+    if not hasattr(st.session_state.oracle_engine, 'tie_stats'):
+        st.session_state.oracle_engine.tie_stats = {}
+    if not hasattr(st.session_state.oracle_engine, 'super6_stats'):
+        st.session_state.oracle_engine.super6_stats = {}
+    if not hasattr(st.session_state.oracle_engine, 'tie_weights'):
+        st.session_state.oracle_engine.tie_weights = {
+            'Tie After PBP': 0.7, 'Tie After BBP': 0.7, 'Consecutive Tie': 0.8, 'Tie Frequency Pattern': 0.6,
+        }
+    if not hasattr(st.session_state.oracle_engine, 'super6_weights'):
+        st.session_state.oracle_engine.super6_weights = {
+            'Super6 After B Streak': 0.6, 'Super6 After P Cut': 0.5,
+        }
 
 
 # --- Session State Initialization (other variables) ---
@@ -213,8 +234,8 @@ if "history" not in st.session_state:
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
 if "last_prediction_data" not in st.session_state: # Store last prediction data for record_bet_result
-    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'} # Removed current_drawdown from here
-if "live_drawdown" not in st.session_state: # New: Live consecutive loss counter
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+if "live_drawdown" not in st.session_state: # Live consecutive loss counter
     st.session_state.live_drawdown = 0
 
 
@@ -245,7 +266,7 @@ def record_bet_result(actual_result): # Simplified signature
     outcome_status = "Recorded" # Default outcome status for log
 
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    if predicted_side in ['P', 'B', 'T']: # If AI made a specific prediction (P, B, T)
+    if predicted_side in ['P', 'B', 'T', 'S6']: # Include 'S6' in predictions that affect drawdown
         if predicted_side == actual_result:
             st.session_state.live_drawdown = 0 # Reset on a hit
         else:
@@ -263,6 +284,8 @@ def record_bet_result(actual_result): # Simplified signature
 
     # --- Update History for Oracle Engine ---
     # This part should still happen to record the actual game outcome for future predictions
+    # Note: For Super6, we need to decide how it's recorded in history.
+    # For now, if actual_result is 'S6', it will be recorded as 'S6'.
     if actual_result == 'T':
         found_pb_for_tie = False
         for i in reversed(range(len(st.session_state.history))):
@@ -273,6 +296,8 @@ def record_bet_result(actual_result): # Simplified signature
         if not found_pb_for_tie:
             st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
     else:
+        # If actual_result is 'S6', it will be treated as a main_outcome.
+        # This simplifies the history structure for now.
         st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
     # --- Update Oracle Engine's Learning States ---
@@ -327,15 +352,22 @@ if len(engine.history) >= 20:
         # Store the current prediction data in session state for the next button click
         st.session_state.last_prediction_data = prediction_data
 
-        emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', '?': '— ไม่มีคำแนะนำ'}
+        emoji_map = {'P': '🔵 Player', 'B': '🔴 Banker', 'T': '🟢 Tie', 'S6': '🟠 Super6', '?': '— ไม่มีคำแนะนำ'} # Added S6
+        
+        # Apply specific CSS class for Tie and Super6 predictions
+        prediction_css_class = ""
+        if next_pred_side == 'T':
+            prediction_css_class = "tie"
+        elif next_pred_side == 'S6':
+            prediction_css_class = "super6"
 
-        st.markdown(f'<div class="prediction-text">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="prediction-text {prediction_css_class}">{emoji_map.get(next_pred_side, "?")} (Confidence: {conf}%)</div>', unsafe_allow_html=True)
         st.markdown(f"**📍 ความเสี่ยง:** {prediction_data['risk']}") # Risk is now informational
         st.markdown(f"**🧾 คำแนะนำ:** **{recommendation_status}**")
         
         # Display Current Drawdown ONLY if a prediction was made (not '?')
         # As per the new logic, live_drawdown is 0 if next_pred_side is '?'.
-        # So this condition ensures it only shows when there's an actual P/B/T prediction.
+        # So this condition ensures it only shows when there's an actual P/B/T/S6 prediction.
         if next_pred_side != '?': 
             st.markdown(f"**📉 แพ้ติดกัน:** **{current_drawdown_display}** ครั้ง") 
 
@@ -347,6 +379,10 @@ if len(engine.history) >= 20:
             st.write(engine.momentum_stats)
             st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
             st.write(engine.sequence_memory_stats)
+            st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
+            st.write(engine.tie_stats)
+            st.write("--- Super6 Prediction Stats ---") # New: Display Super6 stats
+            st.write(engine.super6_stats)
             st.write("--- Failed Pattern Instances ---")
             st.write(engine.failed_pattern_instances)
             st.write("--- Backtest Results ---")
@@ -355,7 +391,9 @@ if len(engine.history) >= 20:
                 engine.pattern_stats,
                 engine.momentum_stats,
                 engine.failed_pattern_instances,
-                engine.sequence_memory_stats # Pass sequence memory to backtest cache
+                engine.sequence_memory_stats,
+                engine.tie_stats, # Pass tie stats
+                engine.super6_stats # Pass super6 stats
             )
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
@@ -408,6 +446,16 @@ if big_road_display_data:
                 if natural_flag:
                     natural_indicator = f"<span class='natural-indicator'>N</span>"
                 
+                # Special handling for Super6 display in Big Road (if we decide to show it there)
+                # For now, Super6 is just another outcome like P/B/T in history.
+                # If 'S6' is a main_outcome, it will be displayed as a new circle.
+                # You might want to customize its appearance (e.g., a different color/icon).
+                if cell_result == 'S6':
+                    emoji_color_class = "super6-circle" # You'd need to add this CSS class
+                    # For now, let's just make it a Banker circle with a special indicator
+                    emoji_color_class = "banker-circle" # Default to banker color
+                    natural_indicator = f"<span class='natural-indicator'>S6</span>" # Indicate Super6
+
                 cell_content = (
                     f"<div class='big-road-circle {emoji_color_class}'>"
                     f"{natural_indicator}"
@@ -425,18 +473,21 @@ else:
     st.info("🔄 ยังไม่มีข้อมูล")
 
 
-col_p_b_t = st.columns(3)
+col_p_b_t_s6 = st.columns(4) # Changed to 4 columns for S6 button
 
 # Use on_click and pass only the actual result.
 # predicted_side and recommendation_status will be retrieved from st.session_state.last_prediction_data
-with col_p_b_t[0]:
+with col_p_b_t_s6[0]:
     if st.button(f"บันทึก: 🔵 P", key="record_P", use_container_width=True, on_click=record_bet_result, args=('P',)):
         pass # Action handled by on_click
-with col_p_b_t[1]:
+with col_p_b_t_s6[1]:
     if st.button(f"บันทึก: 🔴 B", key="record_B", use_container_width=True, on_click=record_bet_result, args=('B',)):
         pass # Action handled by on_click
-with col_p_b_t[2]:
+with col_p_b_t_s6[2]:
     if st.button(f"บันทึก: 🟢 T", key="record_T", use_container_width=True, on_click=record_bet_result, args=('T',)):
+        pass # Action handled by on_click
+with col_p_b_t_s6[3]: # New column for Super6 button
+    if st.button(f"บันทึก: 🟠 S6", key="record_S6", use_container_width=True, on_click=record_bet_result, args=('S6',)):
         pass # Action handled by on_click
 
 
