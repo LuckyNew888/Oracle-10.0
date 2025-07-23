@@ -91,7 +91,7 @@ def _build_big_road_data(full_history_list):
 
 
 @st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
-def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances, sequence_memory_stats):
+def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances, sequence_memory_stats, tie_stats, super6_stats):
     """
     Calculates the system's accuracy from historical predictions and tracks max drawdown.
     This is a global cached function to improve performance.
@@ -126,7 +126,9 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
             initial_pattern_stats=pattern_stats,
             initial_momentum_stats=momentum_stats,
             initial_failed_pattern_instances=failed_pattern_instances,
-            initial_sequence_memory_stats=sequence_memory_stats
+            initial_sequence_memory_stats=sequence_memory_stats,
+            initial_tie_stats=tie_stats, # Pass tie stats
+            initial_super6_stats=super6_stats # Pass super6 stats
         )
         temp_sim_engine.history = simulated_history
 
@@ -136,7 +138,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
 
         # --- Logic for overall accuracy (hits/misses/total_bets_counted) ---
         # This counts bets only when the system would have recommended "Play ✅"
-        if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T']:
+        if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T', 'S6']: # Include S6
             total_bets_counted += 1
             if simulated_predicted_outcome == actual_main_outcome:
                 hits += 1
@@ -144,13 +146,13 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
                 misses += 1
         
         # --- Logic for max_drawdown calculation within backtest ---
-        # This counts consecutive hands where a P/B/T prediction was made and was wrong.
-        # It resets only on a correct P/B/T prediction.
-        if simulated_predicted_outcome in ['P', 'B', 'T']:
+        # This counts consecutive hands where a P/B/T/S6 prediction was made and was wrong.
+        # It resets only on a correct P/B/T/S6 prediction.
+        if simulated_predicted_outcome in ['P', 'B', 'T', 'S6']: # If a specific prediction (P, B, T, S6) was made
             if simulated_predicted_outcome == actual_main_outcome:
-                temp_drawdown_for_max = 0 # Reset on a correct P/B/T prediction
+                temp_drawdown_for_max = 0 # Reset on a correct P/B/T/S6 prediction
             else:
-                temp_drawdown_for_max += 1 # Increment on an incorrect P/B/T prediction
+                temp_drawdown_for_max += 1 # Increment on an incorrect P/B/T/S6 prediction
         else: # If simulated_predicted_outcome is '?'
             temp_drawdown_for_max = 0 # Reset if AI made no specific prediction for this hand
 
@@ -168,14 +170,17 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
 
 
 class OracleEngine:
-    def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None):
+    def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None, initial_tie_stats=None, initial_super6_stats=None):
         self.history = []
         self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
         self.momentum_stats = initial_momentum_stats if initial_momentum_stats is not None else {}
         self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
-        # New: Memory-based Matching for short sequences
         self.sequence_memory_stats = initial_sequence_memory_stats if initial_sequence_memory_stats is not None else {}
         
+        # New: Stats for Tie and Super6 predictions
+        self.tie_stats = initial_tie_stats if initial_tie_stats is not None else {}
+        self.super6_stats = initial_super6_stats if initial_super6_stats is not None else {}
+
         # Weighted Pattern Scoring: Define base weights for each pattern and momentum
         # Actual contribution to confidence will be modulated by their success rate
         self.pattern_weights = {
@@ -205,6 +210,17 @@ class OracleEngine:
             4: 0.7, # Weight for 4-bit sequences
             5: 0.8, # Weight for 5-bit sequences
         }
+        # New: Weights for Tie and Super6 patterns (can be adjusted)
+        self.tie_weights = {
+            'Tie After PBP': 0.7,
+            'Tie After BBP': 0.7,
+            'Consecutive Tie': 0.8,
+            'Tie Frequency Pattern': 0.6, # Placeholder for more advanced freq analysis
+        }
+        self.super6_weights = {
+            'Super6 After B Streak': 0.6, # Placeholder, highly dependent on actual card data
+            'Super6 After P Cut': 0.5, # Placeholder
+        }
 
 
     # --- Data Management (for the Engine itself) ---
@@ -224,7 +240,9 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        self.sequence_memory_stats = {} # Reset sequence memory too
+        self.sequence_memory_stats = {}
+        self.tie_stats = {} # Reset Tie stats
+        self.super6_stats = {} # Reset Super6 stats
 
     def reset_history(self):
         """Resets the entire history and all learning/backtest data."""
@@ -232,11 +250,13 @@ class OracleEngine:
         self.pattern_stats = {}
         self.momentum_stats = {}
         self.failed_pattern_instances = {}
-        self.sequence_memory_stats = {} # Reset sequence memory too
+        self.sequence_memory_stats = {}
+        self.tie_stats = {} # Reset Tie stats
+        self.super6_stats = {} # Reset Super6 stats
 
     def get_current_learning_states(self):
         """Returns the current learning states for caching purposes."""
-        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances, self.sequence_memory_stats
+        return self.pattern_stats, self.momentum_stats, self.failed_pattern_instances, self.sequence_memory_stats, self.tie_stats, self.super6_stats
 
     # --- 1. 🧬 DNA Pattern Analysis (Pattern Detection) ---
     def detect_patterns(self, current_history, big_road_data):
@@ -406,6 +426,55 @@ class OracleEngine:
 
         return momentum_detected
 
+    # --- New: Tie and Super6 Pattern Detection ---
+    def detect_tie_super6_patterns(self, current_history):
+        """
+        Detects patterns that might indicate a Tie or Super6.
+        Returns a list of (pattern_name, sequence_snapshot) tuples.
+        """
+        h = _get_pb_history(current_history) # Only P/B history for most patterns
+        full_h = current_history # Full history including Ties for Tie-specific patterns
+        tie_super6_patterns_detected = []
+
+        # --- Tie Patterns ---
+        # Consecutive Ties
+        tie_streak_count = 0
+        for i in reversed(range(len(full_h))):
+            if full_h[i]['main_outcome'] == 'T':
+                tie_streak_count += 1
+            else:
+                break
+        if tie_streak_count >= 2: # Detects TT, TTT, etc.
+            tie_super6_patterns_detected.append((f'Consecutive Tie ({tie_streak_count}x)', tuple([item['main_outcome'] for item in full_h[-tie_streak_count:]])))
+
+        # Tie after specific P/B patterns (e.g., PBP, BBP)
+        if len(h) >= 3:
+            last3_pb = tuple(h[-3:])
+            if last3_pb == ('P', 'B', 'P'):
+                tie_super6_patterns_detected.append(('Tie After PBP', last3_pb))
+            elif last3_pb == ('B', 'B', 'P'):
+                tie_super6_patterns_detected.append(('Tie After BBP', last3_pb))
+        
+        # Tie frequency pattern (simple check: if ties are unusually frequent in last N hands)
+        if len(full_h) >= 10:
+            last10_outcomes = [item['main_outcome'] for item in full_h[-10:]]
+            tie_count_last10 = last10_outcomes.count('T')
+            if tie_count_last10 >= 3: # If 3 or more ties in last 10 hands
+                tie_super6_patterns_detected.append(('Tie Frequency Pattern (High in last 10)', tuple(last10_outcomes)))
+
+        # --- Super6 Patterns (Highly speculative without card data) ---
+        # Super6 after a Banker streak (very simple, needs refinement with card data)
+        if len(h) >= 3 and h[-1] == 'B' and h[-2] == 'B' and h[-3] == 'B':
+            # This is a very weak indicator without knowing the exact score
+            tie_super6_patterns_detected.append(('Super6 After B Streak (Simple)', tuple(h[-3:])))
+        
+        # Super6 after a Player cut (another very weak indicator)
+        if len(h) >= 2 and h[-1] == 'B' and h[-2] == 'P' and _get_streaks(h)[-1][1] == 1:
+            # Player streak of 1, then Banker wins. Could be a Super6.
+            tie_super6_patterns_detected.append(('Super6 After P Cut (Simple)', tuple(h[-2:])))
+
+        return tie_super6_patterns_detected
+
     # --- 4. 🎯 Confidence Engine (2-Layer Confidence Score 0-100%) ---
     def confidence_score(self, current_history, big_road_data):
         """
@@ -419,6 +488,7 @@ class OracleEngine:
         patterns = self.detect_patterns(current_history, big_road_data)
         momentum = self.detect_momentum(current_history, big_road_data)
         sequences = self._detect_sequences(current_history) # New: Detected sequences
+        tie_super6_patterns = self.detect_tie_super6_patterns(current_history) # New: Tie/Super6 patterns
         
         score = 75 # Increased base confidence to be even more proactive
 
@@ -457,6 +527,29 @@ class OracleEngine:
                 score += seq_success_rate * seq_weight * 70 # Scale contribution for sequences
             else:
                 score += seq_weight * 30 # Boost for new sequences
+
+        # New: Incorporate Tie/Super6 Pattern Stats into Confidence
+        for ts_name, ts_snapshot in tie_super6_patterns:
+            if ts_name.startswith('Tie'):
+                stats = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                total = stats['hits'] + stats['misses']
+                base_weight = self.tie_weights.get(ts_name, 0.3) # Lower base weight for Tie patterns
+
+                if total > 0:
+                    success_rate = stats['hits'] / total
+                    score += success_rate * base_weight * 60 # Scaled contribution
+                else:
+                    score += base_weight * 20
+            elif ts_name.startswith('Super6'):
+                stats = self.super6_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                total = stats['hits'] + stats['misses']
+                base_weight = self.super6_weights.get(ts_name, 0.2) # Even lower base weight for Super6
+
+                if total > 0:
+                    success_rate = stats['hits'] / total
+                    score += success_rate * base_weight * 50 # Scaled contribution
+                else:
+                    score += base_weight * 15
 
         score = max(0, min(100, score))
         return int(score)
@@ -508,6 +601,26 @@ class OracleEngine:
                 self.sequence_memory_stats[sequence_tuple]['hits'] += 1
             else:
                 self.sequence_memory_stats[sequence_tuple]['misses'] += 1
+        
+        # New: Update Tie and Super6 Stats
+        tie_super6_patterns_detected = self.detect_tie_super6_patterns(self.history[:-1]) # Detect patterns before current result
+        for ts_name, ts_snapshot in tie_super6_patterns_detected:
+            if ts_name.startswith('Tie'):
+                if ts_name not in self.tie_stats:
+                    self.tie_stats[ts_name] = {'hits': 0, 'misses': 0}
+                if actual_outcome == 'T': # Only count hit if actual outcome was Tie
+                    self.tie_stats[ts_name]['hits'] += 1
+                else: # Count as miss if actual outcome was not Tie
+                    self.tie_stats[ts_name]['misses'] += 1
+            elif ts_name.startswith('Super6'):
+                if ts_name not in self.super6_stats:
+                    self.super6_stats[ts_name] = {'hits': 0, 'misses': 0}
+                # This is a placeholder. True Super6 detection requires knowing if Banker won by 6.
+                # For now, we'll assume 'S6' is a distinct outcome that needs to be matched.
+                if actual_outcome == 'S6': # Assuming 'S6' is recorded as actual outcome
+                    self.super6_stats[ts_name]['hits'] += 1
+                else:
+                    self.super6_stats[ts_name]['misses'] += 1
 
 
     # --- 6. 🧠 Adaptive Intuition Logic (Deep Logic when no clear Pattern) ---
@@ -602,7 +715,9 @@ class OracleEngine:
             self.pattern_stats,
             self.momentum_stats,
             self.failed_pattern_instances,
-            self.sequence_memory_stats # Pass sequence memory for backtest
+            self.sequence_memory_stats,
+            self.tie_stats, # Pass tie stats
+            self.super6_stats # Pass super6 stats
         )
 
         # --- Debugging Info for Developer View ---
@@ -611,10 +726,10 @@ class OracleEngine:
             "Big Road Columns (P/B only)": [[cell[0] for cell in col if cell is not None] for col in big_road_data], # Adjusted for None cells
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
-            "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)], # New debug info
+            "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)],
+            "Raw Tie/Super6 Patterns Detected": [ts[0] for ts in self.detect_tie_super6_patterns(self.history)], # New debug info
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown'],
-            # "Current Consecutive Misses" is now handled in Streamlit app state
         }
         developer_view_parts = []
         for key, value in debug_info.items():
@@ -630,14 +745,67 @@ class OracleEngine:
             patterns = self.detect_patterns(self.history, big_road_data)
             momentum = self.detect_momentum(self.history, big_road_data)
             sequences = self._detect_sequences(self.history)
+            tie_super6_patterns = self.detect_tie_super6_patterns(self.history) # Re-detect for current prediction cycle
 
             active_patterns_for_learning = []
             active_momentum_for_learning = []
             active_sequences_for_learning = []
+            active_tie_super6_for_learning = [] # New: For Tie/Super6 patterns
 
             predicted_by_rule = False
             
-            # Prioritize patterns
+            # --- Prioritize Tie/Super6 patterns if they are very strong ---
+            # This is a critical decision point: should Tie/Super6 override P/B?
+            # For now, let's give them a chance if their specific patterns are detected.
+            # We can refine this prioritization later.
+            if tie_super6_patterns:
+                decision_path.append("Evaluating Tie/Super6 Patterns for prediction:")
+                for ts_name, ts_snapshot in tie_super6_patterns:
+                    active_tie_super6_for_learning.append((ts_name, ts_snapshot))
+                    
+                    # Check if this specific Tie/Super6 pattern instance has failed before
+                    # For simplicity, we'll use failed_pattern_instances for now, but
+                    # ideally Tie/Super6 patterns should have their own failure tracking.
+                    if self._is_pattern_instance_failed(ts_name, ts_snapshot): # Using generic failed pattern
+                        decision_path.append(f"  - Tie/Super6 Pattern '{ts_name}' instance previously failed. Skipping for prediction.")
+                        continue
+
+                    # Predict Tie
+                    if ts_name.startswith('Tie'):
+                        tie_stats_current = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                        tie_total = tie_stats_current['hits'] + tie_stats_current['misses']
+                        if tie_total > 0 and tie_stats_current['hits'] / tie_total > 0.65: # Only predict if Tie pattern has good success rate
+                            prediction_result = 'T'
+                            predicted_by_rule = True
+                            decision_path.append(f"  - Matched {ts_name}. Predicting Tie ({prediction_result}).")
+                            break
+                    # Predict Super6
+                    elif ts_name.startswith('Super6'):
+                        super6_stats_current = self.super6_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                        super6_total = super6_stats_current['hits'] + super6_stats_current['misses']
+                        if super6_total > 0 and super6_stats_current['hits'] / super6_total > 0.65: # Only predict if Super6 pattern has good success rate
+                            prediction_result = 'S6' # Use 'S6' as the prediction outcome
+                            predicted_by_rule = True
+                            decision_path.append(f"  - Matched {ts_name}. Predicting Super6 ({prediction_result}).")
+                            break
+                if predicted_by_rule: # If a Tie or Super6 was predicted, we stop here for primary prediction
+                    developer_view += "\n".join(decision_path)
+                    return {
+                        "developer_view": developer_view,
+                        "prediction": prediction_result,
+                        "accuracy": backtest_stats['accuracy_percent'],
+                        "risk": risk_level,
+                        "recommendation": recommendation,
+                        "active_patterns": active_patterns_for_learning, # Still pass all detected for dev view
+                        "active_momentum": active_momentum_for_learning,
+                        "active_sequences": active_sequences_for_learning,
+                        "active_tie_super6": active_tie_super6_for_learning,
+                    }
+                else:
+                    decision_path.append("  - Tie/Super6 patterns detected but no strong prediction made or instances failed.")
+
+
+            # If no prediction from strong Tie/Super6 patterns, proceed with P/B patterns
             if patterns:
                 decision_path.append("Evaluating Patterns for prediction:")
                 for p_name, p_snapshot in patterns:
@@ -820,7 +988,7 @@ class OracleEngine:
             "active_patterns": active_patterns_for_learning,
             "active_momentum": active_momentum_for_learning,
             "active_sequences": active_sequences_for_learning,
-            # "current_drawdown" is no longer passed from here
+            "active_tie_super6": active_tie_super6_for_learning, # New: Pass active Tie/Super6 patterns
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
@@ -846,11 +1014,36 @@ class OracleEngine:
         patterns = self.detect_patterns(self.history, big_road_data)
         momentum = self.detect_momentum(self.history, big_road_data)
         sequences = self._detect_sequences(self.history)
+        tie_super6_patterns = self.detect_tie_super6_patterns(self.history) # For backtest
 
         predicted_by_rule_for_backtest = False
 
+        # --- Prioritize Tie/Super6 for backtest prediction ---
+        if tie_super6_patterns:
+            for ts_name, ts_snapshot in tie_super6_patterns:
+                # Using generic failed pattern check for now
+                if self._is_pattern_instance_failed(ts_name, ts_snapshot):
+                    continue
+
+                if ts_name.startswith('Tie'):
+                    tie_stats_current = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                    tie_total = tie_stats_current['hits'] + tie_stats_current['misses']
+                    if tie_total > 0 and tie_stats_current['hits'] / tie_total > 0.65:
+                        prediction_result = 'T'
+                        predicted_by_rule_for_backtest = True
+                        break
+                elif ts_name.startswith('Super6'):
+                    super6_stats_current = self.super6_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                    super6_total = super6_stats_current['hits'] + super6_stats_current['misses']
+                    if super6_total > 0 and super6_stats_current['hits'] / super6_total > 0.65:
+                        prediction_result = 'S6'
+                        predicted_by_rule_for_backtest = True
+                        break
+            if predicted_by_rule_for_backtest:
+                return {"prediction": prediction_result, "recommendation": recommendation}
+
         # Prioritize patterns for backtest prediction
-        if patterns:
+        if not predicted_by_rule_for_backtest and patterns:
             for p_name, p_snapshot in patterns:
                 if self._is_pattern_instance_failed(p_name, p_snapshot):
                     continue
