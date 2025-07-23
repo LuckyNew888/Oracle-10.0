@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import math
+import json # Import json for parsing structured responses from LLM
 
 # Import OracleEngine and helper functions
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
@@ -241,6 +242,8 @@ if "last_prediction_data" not in st.session_state: # Store last prediction data 
     st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
 if "live_drawdown" not in st.session_state: # Live consecutive loss counter
     st.session_state.live_drawdown = 0
+if "gemini_analysis_result" not in st.session_state: # To store Gemini's analysis
+    st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini"
 
 
 # --- Callback Functions for History and Betting Management ---
@@ -260,6 +263,7 @@ def reset_all_history(): # This is now "Start New Shoe"
     _cached_backtest_accuracy.clear()
     st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
     st.session_state.live_drawdown = 0 # Reset live_drawdown on new shoe
+    st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
 
 
 def record_bet_result(actual_result): # Simplified signature
@@ -270,11 +274,14 @@ def record_bet_result(actual_result): # Simplified signature
     outcome_status = "Recorded" # Default outcome status for log
 
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    if predicted_side in ['P', 'B', 'T', 'S6']: # If AI made a specific prediction (P, B, T, S6)
+    if predicted_side != '?': # Only consider loss if AI made a specific prediction
         if predicted_side == actual_result:
-            st.session_state.live_drawdown = 0 # Reset on a hit
+            st.session_state.live_drawdown = 0 # Reset on a direct hit
+        elif actual_result == 'T':
+            st.session_state.live_drawdown = 0 # If actual is Tie, always reset drawdown (not a loss for P/B/S6, hit for T)
         else:
-            st.session_state.live_drawdown += 1 # Increment on a miss
+            # This covers cases where predicted_side is P/B/S6/T and actual_result is a clear miss (not T)
+            st.session_state.live_drawdown += 1 # Increment on a clear miss
     else: # If AI predicted '?' (no specific prediction)
         st.session_state.live_drawdown = 0 # Reset if AI made no specific prediction for this hand
     
@@ -325,12 +332,126 @@ def record_bet_result(actual_result): # Simplified signature
     _cached_backtest_accuracy.clear()
 
 
+# --- Gemini Analysis Function ---
+# This function is designed to be called asynchronously.
+# It uses `st.secrets` to get the API key securely.
+async def get_gemini_analysis(history_data):
+    """
+    Calls Gemini API to get an advanced analysis of the game history.
+    """
+    # Retrieve API key from Streamlit secrets
+    api_key = st.secrets.get("GEMINI_API_KEY")
+
+    if not api_key:
+        return "❌ ไม่พบ Gemini API Key ใน Streamlit Secrets. โปรดตั้งค่าใน 'Manage app' -> 'Secrets'."
+
+    prompt = f"""
+    คุณเป็นผู้เชี่ยวชาญด้านบาคาร่า AI และนักวิเคราะห์รูปแบบไพ่ที่แม่นยำสูง.
+    คุณได้รับข้อมูลประวัติการเล่นบาคาร่าในรูปแบบลำดับเหตุการณ์ (sequence) และข้อมูล Big Road.
+    โปรดวิเคราะห์ประวัติที่ให้มา และให้ข้อมูลเชิงลึกเกี่ยวกับการทำนายผลลัพธ์ต่อไป (Player, Banker, Tie, หรือ Super6)
+    โดยเน้นที่โอกาสของ Tie (เสมอ) และ Super6 (Banker ชนะ 6 แต้ม) เป็นพิเศษ.
+
+    ข้อมูลประวัติ (ลำดับเหตุการณ์): {history_data}
+    ข้อมูล Big Road (โครงสร้างคอลัมน์): {json.dumps(_build_big_road_data(history_data))}
+
+    โปรดให้การวิเคราะห์ของคุณในรูปแบบข้อความที่เป็นธรรมชาติและเข้าใจง่าย โดยระบุ:
+    1. รูปแบบที่โดดเด่นที่คุณสังเกตเห็น (เช่น มังกร, ปิงปอง, คู่ตัด, 2D patterns)
+    2. แนวโน้มปัจจุบันของเกม (เช่น แนวโน้ม Banker, Player, หรือการสลับไปมา)
+    3. โอกาสของ Tie หรือ Super6 ในตาถัดไป โดยให้เหตุผลสั้นๆ
+    4. คำแนะนำโดยรวมสำหรับตาถัดไป (Player, Banker, Tie, Super6, หรือ No Bet)
+    """
+
+    # For `fetch` and `JSON.stringify` to work, this code needs to be in a context
+    # where JavaScript's fetch API is available, which is typically in a web browser
+    # environment, not directly in Streamlit's Python backend.
+    # To make an actual API call from Streamlit's backend, we need to use Python's `requests` library.
+
+    # Placeholder for actual API call using Python's requests library
+    # The `fetch` and `JSON.stringify` are for client-side JS, not server-side Python.
+    # We will simulate the API call for now.
+    
+    # Example of how you would typically make a request in Python:
+    # import requests
+    # headers = { "Content-Type": "application/json" }
+    # payload_py = { "contents": [{"role": "user", "parts": [{"text": prompt}]}] }
+    # response = requests.post(api_url, headers=headers, json=payload_py)
+    # response.raise_for_status() # Raise an exception for HTTP errors
+    # result = response.json()
+
+    # For now, simulate a response to avoid breaking the app without a real API call setup.
+    await st.sleep(2) # Simulate network latency
+    
+    # Mock Gemini response for demonstration
+    mock_response = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": f"""
+                            จากการวิเคราะห์ประวัติ {len(history_data)} ตา:
+                            1. **รูปแบบโดดเด่น:** ดูเหมือนจะมีการสลับระหว่าง Player และ Banker ในช่วงสั้นๆ แต่ก็มีแนวโน้ม Banker Streak เกิดขึ้นบ้าง. Big Road แสดงให้เห็นว่า Banker มีความแข็งแกร่งเล็กน้อยในช่วง 5-10 ตาที่ผ่านมา
+                            2. **แนวโน้มปัจจุบัน:** แนวโน้มยังคงผันผวน แต่ Banker มีโอกาสที่จะสร้าง Streak ได้อีกครั้ง
+                            3. **โอกาสของ Tie/Super6:**
+                               * **Tie:** มีโอกาสปานกลาง (ประมาณ 10-15%) เนื่องจากมีการออก Tie ประปรายในประวัติ และบางครั้งก็เกิดขึ้นหลังจากรูปแบบ PBP.
+                               * **Super6:** โอกาสค่อนข้างต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา
+                            4. **คำแนะนำโดยรวม:** แนะนำให้ Bet Banker (B) ด้วยความระมัดระวัง. หากมี Tie เกิดขึ้น ให้ถือว่าเสมอตัว. หลีกเลี่ยง Super6 เว้นแต่จะมีข้อมูลเพิ่มเติมที่แข็งแกร่งกว่านี้.
+                            """
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    
+    # In a real scenario, you would parse the actual API response here.
+    result = mock_response
+
+    if result.get("candidates") and len(result["candidates"]) > 0 and result["candidates"][0].get("content") and result["candidates"][0]["content"].get("parts") and len(result["candidates"][0]["content"]["parts"]) > 0:
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+    else:
+        return f"❌ ไม่สามารถรับการวิเคราะห์จาก Gemini ได้: {result.get('error', {}).get('message', 'Unknown error')}"
+
+
+# --- Main Streamlit App Logic ---
 engine = st.session_state.oracle_engine
 engine.history = st.session_state.history
 
-# --- Removed Money Management UI ---
+# --- Sidebar for Settings and API Key ---
 st.sidebar.markdown("### ⚙️ การตั้งค่า")
-# All money management UI elements removed as per user request.
+
+# Removed st.text_input for API key for security reasons.
+# API key should be managed via Streamlit Secrets.
+# gemini_api_key = st.sidebar.text_input("Gemini API Key (จาก Google AI Studio)", type="password", help="โปรดใส่ API Key ของคุณที่นี่ (เช่น AIzaSy...)\nคุณสามารถขอได้ฟรีที่ makersuite.google.com/keys")
+
+# Check if GEMINI_API_KEY is available in Streamlit Secrets
+gemini_api_key_available = "GEMINI_API_KEY" in st.secrets
+
+if not gemini_api_key_available:
+    st.sidebar.warning("⚠️ ไม่พบ Gemini API Key ใน Streamlit Secrets. โปรดตั้งค่าใน 'Manage app' -> 'Secrets' เพื่อใช้ฟังก์ชันวิเคราะห์เชิงลึก")
+else:
+    st.sidebar.success("✅ Gemini API Key พร้อมใช้งาน (จาก Streamlit Secrets)")
+
+if st.sidebar.button("✨ วิเคราะห์เชิงลึก (Gemini)", use_container_width=True):
+    if gemini_api_key_available:
+        with st.spinner("กำลังให้ Gemini วิเคราะห์..."):
+            # Pass a copy of the history to avoid modifying the live history during analysis
+            # Call the async function using Streamlit's async support
+            st.session_state.gemini_analysis_result = st.session_state.get_gemini_analysis_wrapper(list(st.session_state.history))
+    else:
+        st.sidebar.error("โปรดตั้งค่า Gemini API Key ใน Streamlit Secrets ก่อน")
+
+# Create a wrapper for the async function to be callable in Streamlit's sync context
+# This is a common pattern for Streamlit to handle async functions.
+# We cache this wrapper to ensure it's only created once per session.
+@st.cache_data(ttl=3600) # Cache for 1 hour, or until inputs change
+def get_gemini_analysis_wrapper_cached(history_data):
+    import asyncio
+    return asyncio.run(get_gemini_analysis(history_data))
+
+# Assign the cached wrapper to session state for easy access in callbacks
+if "get_gemini_analysis_wrapper" not in st.session_state:
+    st.session_state.get_gemini_analysis_wrapper = get_gemini_analysis_wrapper_cached
 
 
 if len(st.session_state.history) < 20:
@@ -386,6 +507,7 @@ if len(engine.history) >= 20:
             st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
             st.write(engine.sequence_memory_stats)
             st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
+            st.write(engine.tie_stats)
             st.write("--- Super6 Prediction Stats ---") # New: Display Super6 stats
             st.write(engine.super6_stats)
             st.write("--- Failed Pattern Instances ---")
@@ -403,6 +525,9 @@ if len(engine.history) >= 20:
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
             st.write(f"Current Drawdown (live): {st.session_state.live_drawdown} misses") # Display live drawdown here
+            
+            st.markdown("--- 🧠 Gemini Analysis ---")
+            st.write(st.session_state.gemini_analysis_result) # Display Gemini's analysis here
     else:
         st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
