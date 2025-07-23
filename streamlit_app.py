@@ -189,7 +189,7 @@ if "oracle_engine" not in st.session_state:
 # that didn't have certain attributes or methods, it gets re-initialized or updated.
 # More robust check for critical methods like _detect_sequences
 if not hasattr(st.session_state.oracle_engine, '_detect_sequences'):
-    st.session_state.oracle_engine = OracleEngine()
+    st.session_state.oracle_engine = OracleEngine() # This is the line that re-initializes
     st.session_state.oracle_engine.reset_history() # Reset all learning states
     # No need for individual attribute checks below if we just re-initialized the whole engine.
     # The new OracleEngine() instance will have all the latest attributes.
@@ -302,20 +302,17 @@ def record_bet_result(actual_result): # Simplified signature
 
     # --- Update Oracle Engine's Learning States ---
     # Only update learning if a prediction was made (i.e., not '?' for predicted_side)
+    # The _update_learning function now takes the full history for pattern detection
+    # so we pass st.session_state.history directly.
     if predicted_side != '?':
-        history_before_current_result = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
-        big_road_data_before = _build_big_road_data(history_before_current_result)
-        
-        patterns_before = st.session_state.oracle_engine.detect_patterns(history_before_current_result, big_road_data_before)
-        momentum_before = st.session_state.oracle_engine.detect_momentum(history_before_current_result, big_road_data_before)
-        sequences_before = st.session_state.oracle_engine._detect_sequences(history_before_current_result) # New: Get sequences
-
         st.session_state.oracle_engine._update_learning(
             predicted_outcome=predicted_side,
             actual_outcome=actual_result,
-            patterns_detected=patterns_before,
-            momentum_detected=momentum_before,
-            sequences_detected=sequences_before # New: Pass sequences to update learning
+            # Pass the full history to detect_patterns, momentum, sequences for learning
+            # The methods themselves will handle slicing if needed.
+            patterns_detected=st.session_state.oracle_engine.detect_patterns(st.session_state.history[:-1], _build_big_road_data(st.session_state.history[:-1])),
+            momentum_detected=st.session_state.oracle_engine.detect_momentum(st.session_state.history[:-1], _build_big_road_data(st.session_state.history[:-1])),
+            sequences_detected=st.session_state.oracle_engine._detect_sequences(st.session_state.history[:-1])
         )
     
     _cached_backtest_accuracy.clear()
@@ -451,9 +448,10 @@ if big_road_display_data:
                 # If 'S6' is a main_outcome, it will be displayed as a new circle.
                 # You might want to customize its appearance (e.g., a different color/icon).
                 if cell_result == 'S6':
-                    emoji_color_class = "super6-circle" # You'd need to add this CSS class
-                    # For now, let's just make it a Banker circle with a special indicator
-                    emoji_color_class = "banker-circle" # Default to banker color
+                    # Add a new CSS class for Super6 circles if you want a distinct visual
+                    # For now, it will use banker-circle but add an S6 indicator.
+                    # You can define .super6-circle { background-color: orange; } in CSS if desired.
+                    emoji_color_class = "banker-circle" # Default to banker color for now
                     natural_indicator = f"<span class='natural-indicator'>S6</span>" # Indicate Super6
 
                 cell_content = (
