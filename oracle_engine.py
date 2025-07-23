@@ -548,7 +548,7 @@ class OracleEngine:
             else:
                 score += seq_weight * 30 # Boost for new sequences
 
-        # New: Incorporate Tie/Super6 Pattern Stats into Confidence
+        # New: Incorporate Tie/Super6 Pattern Stats into Confidence (for overall confidence)
         for ts_name, ts_snapshot in tie_super6_patterns:
             if ts_name.startswith('Tie'):
                 stats = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
@@ -1165,3 +1165,49 @@ class OracleEngine:
             recommendation = "Play ✅" # If a prediction was made, it's a play
 
         return {"prediction": prediction_result, "recommendation": recommendation}
+
+    def get_tie_opportunity_analysis(self, current_history):
+        """
+        Analyzes the history specifically for Tie opportunities and returns a confidence.
+        Returns a dict: {'prediction': 'T' or '?', 'confidence': int, 'reason': str}
+        """
+        tie_patterns = self.detect_tie_super6_patterns(current_history)
+        tie_confidence = 0
+        reason = "ไม่มีรูปแบบ Tie ที่โดดเด่น"
+        predicted_tie = '?'
+
+        strong_tie_patterns = []
+
+        for ts_name, ts_snapshot in tie_patterns:
+            if ts_name.startswith('Tie'):
+                stats = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
+                total = stats['hits'] + stats['misses']
+                base_weight = self.tie_weights.get(ts_name, 0.3)
+
+                if total > 0:
+                    success_rate = stats['hits'] / total
+                    # Scale confidence contribution by success rate and base weight
+                    current_pattern_confidence = success_rate * base_weight * 100
+                    if current_pattern_confidence > 30: # Only consider if it contributes significantly
+                        strong_tie_patterns.append((ts_name, current_pattern_confidence))
+                        tie_confidence += current_pattern_confidence
+                else:
+                    # Give a small boost for new, undetected Tie patterns
+                    tie_confidence += base_weight * 10 # Smaller boost for unknown patterns
+
+        tie_confidence = min(100, max(0, int(tie_confidence)))
+
+        if tie_confidence >= 50: # Threshold for recommending Tie
+            predicted_tie = 'T'
+            if strong_tie_patterns:
+                # Sort by confidence to get the strongest pattern for the reason
+                strong_tie_patterns.sort(key=lambda x: x[1], reverse=True)
+                reason = f"พบรูปแบบ Tie ที่โดดเด่น: {strong_tie_patterns[0][0]} (ความมั่นใจจากรูปแบบ: {int(strong_tie_patterns[0][1])}%)"
+            else:
+                reason = "ความมั่นใจ Tie สูงจากแนวโน้มทั่วไป"
+        elif tie_confidence > 0:
+            reason = f"มีแนวโน้ม Tie เล็กน้อย (ความมั่นใจ: {tie_confidence}%)"
+        else:
+            reason = "ยังไม่พบแนวโน้ม Tie ที่ชัดเจน"
+
+        return {'prediction': predicted_tie, 'confidence': tie_confidence, 'reason': reason}
