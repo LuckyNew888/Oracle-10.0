@@ -144,14 +144,15 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
                 misses += 1
         
         # --- Separate logic for current_drawdown_tracker (consecutive misses) ---
-        # This tracker increments if the AI's prediction was wrong OR if AI made no prediction ('?').
-        # It resets only if the AI made a P/B/T prediction AND it was correct.
-        if simulated_predicted_outcome in ['P', 'B', 'T'] and simulated_predicted_outcome == actual_main_outcome:
-            current_drawdown_tracker = 0 # Reset only on a correct P/B/T prediction
-        else:
-            # If it's a miss (P/B/T predicted and wrong) OR if it's a '?' prediction,
-            # then it counts as a continuation of the "not getting it right" streak.
-            current_drawdown_tracker += 1
+        # This tracker counts consecutive losses *only when a P/B/T prediction was made and it was wrong*.
+        # It resets on a correct P/B/T prediction OR if no specific P/B/T prediction was made ('?').
+        if simulated_predicted_outcome in ['P', 'B', 'T']: # If a specific prediction (P, B, T) was made
+            if simulated_predicted_outcome == actual_main_outcome:
+                current_drawdown_tracker = 0 # Reset on a correct P/B/T prediction
+            else:
+                current_drawdown_tracker += 1 # Increment on an incorrect P/B/T prediction
+        else: # If simulated_predicted_outcome is '?' (no specific prediction)
+            current_drawdown_tracker = 0 # Reset if AI made no specific prediction (breaks the "miss" streak)
 
         max_drawdown = max(max_drawdown, current_drawdown_tracker) 
     
@@ -862,7 +863,7 @@ class OracleEngine:
                 elif 'Pingpong' in p_name:
                     last = current_pb_history[-1]
                     prediction_result = 'P' if last == 'B' else 'B'
-                    predicted_by_rule_for_backtest = True
+                    predicted_by_rule = True
                     break
                 elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
                     if len(current_pb_history) >= 2:
