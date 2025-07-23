@@ -212,8 +212,10 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
-if "last_prediction_data" not in st.session_state: # New: Store last prediction data
-    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
+if "last_prediction_data" not in st.session_state: # Store last prediction data for record_bet_result
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'} # Removed current_drawdown from here
+if "live_drawdown" not in st.session_state: # New: Live consecutive loss counter
+    st.session_state.live_drawdown = 0
 
 
 # --- Callback Functions for History and Betting Management ---
@@ -222,6 +224,8 @@ def remove_last_from_history():
         st.session_state.history.pop()
         _cached_backtest_accuracy.clear()
         st.session_state.oracle_engine.reset_learning_states_on_undo()
+        # Reset live_drawdown on undo, as the history has changed
+        st.session_state.live_drawdown = 0 
     
 
 def reset_all_history(): # This is now "Start New Shoe"
@@ -229,7 +233,8 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.bet_log = []
     st.session_state.oracle_engine.reset_history() # Resets all learning states
     _cached_backtest_accuracy.clear()
-    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+    st.session_state.live_drawdown = 0 # Reset live_drawdown on new shoe
 
 
 def record_bet_result(actual_result): # Simplified signature
@@ -238,7 +243,16 @@ def record_bet_result(actual_result): # Simplified signature
     recommendation_status = st.session_state.last_prediction_data['recommendation']
     
     outcome_status = "Recorded" # Default outcome status for log
-    
+
+    # --- Update live_drawdown based on the actual outcome and AI's prediction ---
+    if predicted_side in ['P', 'B', 'T']: # If AI made a specific prediction (P, B, T)
+        if predicted_side == actual_result:
+            st.session_state.live_drawdown = 0 # Reset on a hit
+        else:
+            st.session_state.live_drawdown += 1 # Increment on a miss
+    else: # If AI predicted '?' (no specific prediction)
+        st.session_state.live_drawdown = 0 # Reset if AI made no specific prediction for this hand
+
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "Predict": predicted_side,
@@ -298,7 +312,9 @@ prediction_data = None # Initialize for the current run
 next_pred_side = '?'
 conf = 0
 recommendation_status = "—"
-current_drawdown_display = 0
+
+# Get current_drawdown_display from session state
+current_drawdown_display = st.session_state.live_drawdown
 
 if len(engine.history) >= 20:
     prediction_data = engine.predict_next() # Calculate prediction for current state
@@ -307,8 +323,7 @@ if len(engine.history) >= 20:
         next_pred_side = prediction_data['prediction']
         conf = engine.confidence_score(engine.history, _build_big_road_data(engine.history))
         recommendation_status = prediction_data['recommendation']
-        current_drawdown_display = prediction_data['current_drawdown']
-
+        
         # Store the current prediction data in session state for the next button click
         st.session_state.last_prediction_data = prediction_data
 
@@ -319,7 +334,9 @@ if len(engine.history) >= 20:
         st.markdown(f"**🧾 คำแนะนำ:** **{recommendation_status}**")
         
         # Display Current Drawdown ONLY if a prediction was made (not '?')
-        if next_pred_side != '?':
+        # As per the new logic, live_drawdown is 0 if next_pred_side is '?'.
+        # So this condition ensures it only shows when there's an actual P/B/T prediction.
+        if next_pred_side != '?': 
             st.markdown(f"**📉 แพ้ติดกัน:** **{current_drawdown_display}** ครั้ง") 
 
         with st.expander("🧬 Developer View"):
@@ -342,16 +359,18 @@ if len(engine.history) >= 20:
             )
             st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
             st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
-            st.write(f"Current Drawdown (from backtest): {backtest_summary['current_drawdown']} misses") # Also show in backtest summary
+            st.write(f"Current Drawdown (live): {st.session_state.live_drawdown} misses") # Display live drawdown here
     else:
         st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
         # Ensure last_prediction_data is reset if there's an error or no prediction
-        st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
+        st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+        st.session_state.live_drawdown = 0 # Reset live_drawdown on error
 else:
     st.markdown("— (ประวัติไม่ครบ)")
     # Ensure last_prediction_data is reset if history is insufficient
-    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty', 'current_drawdown': 0}
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+    st.session_state.live_drawdown = 0 # Reset live_drawdown if history is insufficient
 
 
 # --- Big Road Display ---
