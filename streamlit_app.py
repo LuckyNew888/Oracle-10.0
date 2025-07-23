@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import math
 import json # Import json for parsing structured responses from LLM
+import asyncio # For running async functions
 
 # Import OracleEngine and helper functions
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
@@ -73,6 +74,16 @@ st.markdown("""
     .prediction-text.super6 {
         color: #FF8C00; /* Orange for Super6 */
     }
+    /* New style for Tie Opportunity prediction */
+    .tie-opportunity-text {
+        font-size: 1.5rem; /* Slightly smaller than main prediction */
+        font-weight: bold;
+        color: #28a745; /* Green for Tie */
+        text-align: center;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
 
     /* Reduce button margin */
     div.stButton > button {
@@ -231,6 +242,13 @@ else:
         st.session_state.oracle_engine.super6_weights = {
             'Super6 After B Streak': 0.6, 'Super6 After P Cut': 0.5,
         }
+    # New: Ensure get_tie_opportunity_analysis method is present
+    if not hasattr(st.session_state.oracle_engine, 'get_tie_opportunity_analysis'):
+        # This is a bit tricky for methods. Re-initializing the engine is safest.
+        # Or, if we're sure the class definition has been updated, we can just pass.
+        # For robustness, if a critical method is missing, re-init the engine.
+        st.session_state.oracle_engine = OracleEngine()
+        st.session_state.oracle_engine.reset_history()
 
 
 # --- Session State Initialization (other variables) ---
@@ -244,6 +262,8 @@ if "live_drawdown" not in st.session_state: # Live consecutive loss counter
     st.session_state.live_drawdown = 0
 if "gemini_analysis_result" not in st.session_state: # To store Gemini's analysis
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini"
+if "tie_opportunity_data" not in st.session_state: # To store Tie opportunity analysis
+    st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'}
 
 
 # --- Callback Functions for History and Betting Management ---
@@ -254,6 +274,7 @@ def remove_last_from_history():
         st.session_state.oracle_engine.reset_learning_states_on_undo()
         # Reset live_drawdown on undo, as the history has changed
         st.session_state.live_drawdown = 0 
+        st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
     
 
 def reset_all_history(): # This is now "Start New Shoe"
@@ -264,6 +285,7 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
     st.session_state.live_drawdown = 0 # Reset live_drawdown on new shoe
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
+    st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
 
 
 def record_bet_result(actual_result): # Simplified signature
@@ -379,7 +401,7 @@ async def get_gemini_analysis(history_data):
     # result = response.json()
 
     # For now, simulate a response to avoid breaking the app without a real API call setup.
-    await st.sleep(2) # Simulate network latency
+    await asyncio.sleep(2) # Simulate network latency
     
     # Mock Gemini response for demonstration
     mock_response = {
@@ -394,7 +416,7 @@ async def get_gemini_analysis(history_data):
                             2. **แนวโน้มปัจจุบัน:** แนวโน้มยังคงผันผวน แต่ Banker มีโอกาสที่จะสร้าง Streak ได้อีกครั้ง
                             3. **โอกาสของ Tie/Super6:**
                                * **Tie:** มีโอกาสปานกลาง (ประมาณ 10-15%) เนื่องจากมีการออก Tie ประปรายในประวัติ และบางครั้งก็เกิดขึ้นหลังจากรูปแบบ PBP.
-                               * **Super6:** โอกาสค่อนข้างต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา
+                               * **Super6:** โอกาสค่อนข้างต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา.
                             4. **คำแนะนำโดยรวม:** แนะนำให้ Bet Banker (B) ด้วยความระมัดระวัง. หากมี Tie เกิดขึ้น ให้ถือว่าเสมอตัว. หลีกเลี่ยง Super6 เว้นแต่จะมีข้อมูลเพิ่มเติมที่แข็งแกร่งกว่านี้.
                             """
                         }
@@ -420,10 +442,6 @@ engine.history = st.session_state.history
 # --- Sidebar for Settings and API Key ---
 st.sidebar.markdown("### ⚙️ การตั้งค่า")
 
-# Removed st.text_input for API key for security reasons.
-# API key should be managed via Streamlit Secrets.
-# gemini_api_key = st.sidebar.text_input("Gemini API Key (จาก Google AI Studio)", type="password", help="โปรดใส่ API Key ของคุณที่นี่ (เช่น AIzaSy...)\nคุณสามารถขอได้ฟรีที่ makersuite.google.com/keys")
-
 # Check if GEMINI_API_KEY is available in Streamlit Secrets
 gemini_api_key_available = "GEMINI_API_KEY" in st.secrets
 
@@ -437,27 +455,16 @@ if st.sidebar.button("✨ วิเคราะห์เชิงลึก (Gemi
         with st.spinner("กำลังให้ Gemini วิเคราะห์..."):
             # Pass a copy of the history to avoid modifying the live history during analysis
             # Call the async function using Streamlit's async support
-            st.session_state.gemini_analysis_result = st.session_state.get_gemini_analysis_wrapper(list(st.session_state.history))
+            st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
     else:
         st.sidebar.error("โปรดตั้งค่า Gemini API Key ใน Streamlit Secrets ก่อน")
-
-# Create a wrapper for the async function to be callable in Streamlit's sync context
-# This is a common pattern for Streamlit to handle async functions.
-# We cache this wrapper to ensure it's only created once per session.
-@st.cache_data(ttl=3600) # Cache for 1 hour, or until inputs change
-def get_gemini_analysis_wrapper_cached(history_data):
-    import asyncio
-    return asyncio.run(get_gemini_analysis(history_data))
-
-# Assign the cached wrapper to session state for easy access in callbacks
-if "get_gemini_analysis_wrapper" not in st.session_state:
-    st.session_state.get_gemini_analysis_wrapper = get_gemini_analysis_wrapper_cached
 
 
 if len(st.session_state.history) < 20:
     st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(st.session_state.history)}** ตา)")
 
-st.markdown("#### 🔮 ทำนายตาถัดไป:")
+# --- Main Prediction Section ---
+st.markdown("#### 🔮 ทำนายตาถัดไป (หลัก):")
 prediction_data = None # Initialize for the current run
 next_pred_side = '?'
 conf = 0
@@ -467,7 +474,8 @@ recommendation_status = "—"
 current_drawdown_display = st.session_state.live_drawdown
 
 if len(engine.history) >= 20:
-    prediction_data = engine.predict_next() # Calculate prediction for current state
+    prediction_data = engine.predict_next() # Calculate primary prediction for current state
+    st.session_state.tie_opportunity_data = engine.get_tie_opportunity_analysis(engine.history) # Calculate Tie opportunity
 
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
         next_pred_side = prediction_data['prediction']
@@ -498,38 +506,8 @@ if len(engine.history) >= 20:
         else:
             st.markdown(f"**📉 แพ้ติดกัน:** **0** ครั้ง") # Removed explanatory text
 
-        with st.expander("🧬 Developer View"):
-            st.text(prediction_data['developer_view'])
-            st.write("--- Pattern Success Rates ---")
-            st.write(engine.pattern_stats)
-            st.write("--- Momentum Success Rates ---")
-            st.write(engine.momentum_stats)
-            st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
-            st.write(engine.sequence_memory_stats)
-            st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
-            st.write(engine.tie_stats)
-            st.write("--- Super6 Prediction Stats ---") # New: Display Super6 stats
-            st.write(engine.super6_stats)
-            st.write("--- Failed Pattern Instances ---")
-            st.write(engine.failed_pattern_instances)
-            st.write("--- Backtest Results ---")
-            backtest_summary = _cached_backtest_accuracy(
-                engine.history,
-                engine.pattern_stats,
-                engine.momentum_stats,
-                engine.failed_pattern_instances,
-                engine.sequence_memory_stats,
-                engine.tie_stats, # Pass tie stats
-                engine.super6_stats # Pass super6 stats
-            )
-            st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
-            st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
-            st.write(f"Current Drawdown (live): {st.session_state.live_drawdown} misses") # Display live drawdown here
-            
-            st.markdown("--- 🧠 Gemini Analysis ---")
-            st.write(st.session_state.gemini_analysis_result) # Display Gemini's analysis here
     else:
-        st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
+        st.error("❌ เกิดข้อผิดพลาดในการรับผลการทำนายหลักจาก OracleEngine. กรุณาตรวจสอบ 'oracle_engine.py'")
         st.markdown("— (ไม่สามารถทำนายได้)")
         # Ensure last_prediction_data is reset if there's an error or no prediction
         st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
@@ -539,6 +517,57 @@ else:
     # Ensure last_prediction_data is reset if history is insufficient
     st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
     st.session_state.live_drawdown = 0 # Reset live_drawdown if history is insufficient
+
+
+# --- Tie Opportunity Section ---
+st.markdown("---") # Separator
+st.markdown("#### 🟢 โอกาสเสมอ (Tie Opportunity):")
+if len(engine.history) >= 20:
+    tie_data = st.session_state.tie_opportunity_data
+    tie_pred_side = tie_data['prediction']
+    tie_conf = tie_data['confidence']
+    tie_reason = tie_data['reason']
+
+    if tie_pred_side == 'T':
+        st.markdown(f'<div class="tie-opportunity-text">🟢 Tie (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
+        st.markdown(f"**💡 เหตุผล:** {tie_reason}")
+    else:
+        st.markdown(f'<div class="tie-opportunity-text">— ไม่มีคำแนะนำ Tie ที่แข็งแกร่ง (Confidence: {tie_conf}%)</div>', unsafe_allow_html=True)
+        st.markdown(f"**💡 เหตุผล:** {tie_reason}")
+else:
+    st.markdown("— (ประวัติไม่ครบ)")
+
+
+with st.expander("🧬 Developer View"):
+    st.text(prediction_data['developer_view'] if prediction_data else "No primary prediction data available.")
+    st.write("--- Pattern Success Rates ---")
+    st.write(engine.pattern_stats)
+    st.write("--- Momentum Success Rates ---")
+    st.write(engine.momentum_stats)
+    st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
+    st.write(engine.sequence_memory_stats)
+    st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
+    st.write(engine.tie_stats)
+    st.write("--- Super6 Prediction Stats ---") # New: Display Super6 stats
+    st.write(engine.super6_stats)
+    st.write("--- Failed Pattern Instances ---")
+    st.write(engine.failed_pattern_instances)
+    st.write("--- Backtest Results ---")
+    backtest_summary = _cached_backtest_accuracy(
+        engine.history,
+        engine.pattern_stats,
+        engine.momentum_stats,
+        engine.failed_pattern_instances,
+        engine.sequence_memory_stats,
+        engine.tie_stats, # Pass tie stats
+        engine.super6_stats # Pass super6 stats
+    )
+    st.write(f"Accuracy: {backtest_summary['accuracy_percent']:.2f}% ({backtest_summary['hits']}/{backtest_summary['total_bets']})")
+    st.write(f"Max Drawdown: {backtest_summary['max_drawdown']} misses")
+    st.write(f"Current Drawdown (live): {st.session_state.live_drawdown} misses") # Display live drawdown here
+    
+    st.markdown("--- 🧠 Gemini Analysis ---")
+    st.write(st.session_state.gemini_analysis_result) # Display Gemini's analysis here
 
 
 # --- Big Road Display ---
