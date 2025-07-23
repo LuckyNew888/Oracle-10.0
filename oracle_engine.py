@@ -180,7 +180,7 @@ class OracleEngine:
     # Define the version of the OracleEngine class
     # Increment this version whenever there are significant changes to the class structure
     # or its internal attributes/methods that might cause caching issues.
-    __version__ = "1.1" 
+    __version__ = "1.2" # Updated version to 1.2 for this fix
 
     def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None, initial_tie_stats=None, initial_super6_stats=None):
         self.history = []
@@ -306,19 +306,19 @@ class OracleEngine:
             s_last_4 = streaks[-4:]
             # Example: B(1) P(2) B(1) P(2) or B(2) P(1) B(2) P(1)
             # Check for alternating characters
-            if s_last_4[0][0] != s_last_4[1][0] and \
-               s_last_4[1][0] != s_last_4[2][0] and \
-               s_last_4[2][0] != s_last_4[3][0]:
+            if (s_last_4[0][0] != s_last_4[1][0] and
+                s_last_4[1][0] != s_last_4[2][0] and
+                s_last_4[2][0] != s_last_4[3][0]):
                 
                 # Check for 1-2-1-2 like pattern (short-long-short-long)
                 # Allowing some flexibility in streak lengths (e.g., 1-2-1-3 or 1-3-1-2)
-                if (s_last_4[0][1] <= 2 and s_last_4[1][1] >= 2 and s_last_4[1][1] <= 3 and \
+                if (s_last_4[0][1] <= 2 and s_last_4[1][1] >= 2 and s_last_4[1][1] <= 3 and
                     s_last_4[2][1] <= 2 and s_last_4[3][1] >= 2 and s_last_4[3][1] <= 3):
                     patterns_detected.append(('One-Two Pattern (Flexible)', tuple(h[-sum(s[1] for s in s_last_4):])))
                 
                 # Check for 2-1-2-1 like pattern (long-short-long-short)
                 # Allowing some flexibility in streak lengths (e.g., 2-1-3-1 or 3-1-2-1)
-                elif (s_last_4[0][1] >= 2 and s_last_4[0][1] <= 3 and s_last_4[1][1] <= 2 and \
+                elif (s_last_4[0][1] >= 2 and s_last_4[0][1] <= 3 and s_last_4[1][1] <= 2 and
                       s_last_4[2][1] >= 2 and s_last_4[2][1] <= 3 and s_last_4[3][1] <= 2):
                     patterns_detected.append(('Two-One Pattern (Flexible)', tuple(h[-sum(s[1] for s in s_last_4):])))
 
@@ -389,7 +389,8 @@ class OracleEngine:
                 prev_prev_prev_col_actual = [cell for cell in big_road_data[-4] if cell is not None]
                 if last_col_actual and prev_prev_prev_col_actual:
                     last_col_first_outcome = 'B' if last_col_actual[0][0] == 'S6' else last_col_actual[0][0]
-                    prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_first_outcome
+                    # FIX: Corrected UnboundLocalError here
+                    prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_actual[0][0] 
                     if len(last_col_actual) == len(prev_prev_prev_col_actual) and last_col_first_outcome == prev_prev_prev_col_first_outcome:
                         patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-4:]):])))
 
