@@ -180,7 +180,12 @@ class OracleEngine:
     # Define the version of the OracleEngine class
     # Increment this version whenever there are significant changes to the class structure
     # or its internal attributes/methods that might cause caching issues.
-    __version__ = "1.2" # Updated version to 1.2 for this fix
+    __version__ = "1.4" # Updated version to 1.4 for theoretical probability for Tie/Super6
+
+    # Define theoretical probabilities for Tie and Super6
+    THEORETICAL_TIE_PROB = 0.0951  # ~9.51%
+    THEORETICAL_SUPER6_PROB = 0.0128 # ~1.28%
+    MIN_HANDS_FOR_EMPIRICAL_TIE_SUPER6 = 20 # Minimum hands to start relying heavily on empirical frequency
 
     def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None, initial_tie_stats=None, initial_super6_stats=None):
         self.history = []
@@ -189,7 +194,7 @@ class OracleEngine:
         self.failed_pattern_instances = initial_failed_pattern_instances if initial_failed_pattern_instances is not None else {}
         self.sequence_memory_stats = initial_sequence_memory_stats if initial_sequence_memory_stats is not None else {}
         
-        # New: Stats for Tie and Super6 predictions
+        # New: Stats for Tie and Super6 predictions (still needed for tracking, not for pattern weights)
         self.tie_stats = initial_tie_stats if initial_tie_stats is not None else {}
         self.super6_stats = initial_super6_stats if initial_super6_stats is not None else {}
 
@@ -222,17 +227,8 @@ class OracleEngine:
             4: 0.7, # Weight for 4-bit sequences
             5: 0.8, # Weight for 5-bit sequences
         }
-        # New: Weights for Tie and Super6 patterns (can be adjusted)
-        self.tie_weights = {
-            'Tie After PBP': 0.7,
-            'Tie After BBP': 0.7,
-            'Consecutive Tie': 0.8,
-            'Tie Frequency Pattern': 0.6, # Placeholder for more advanced freq analysis
-        }
-        self.super6_weights = {
-            'Super6 After B Streak': 0.6, # Placeholder, highly dependent on actual card data
-            'Super6 After P Cut': 0.5, # Placeholder
-        }
+        # Removed tie_weights and super6_weights as they are no longer used for pattern-based confidence.
+        # Tie/Super6 confidence will now be based on empirical frequency.
 
 
     # --- Data Management (for the Engine itself) ---
@@ -312,13 +308,13 @@ class OracleEngine:
                 
                 # Check for 1-2-1-2 like pattern (short-long-short-long)
                 # Allowing some flexibility in streak lengths (e.g., 1-2-1-3 or 1-3-1-2)
-                if (s_last_4[0][1] <= 2 and s_last_4[1][1] >= 2 and s_last_4[1][1] <= 3 and
+                if (s_last_4[0][1] <= 2 and s_last_4[1][1] >= 2 and s_last_4[1][1] <= 3 and \
                     s_last_4[2][1] <= 2 and s_last_4[3][1] >= 2 and s_last_4[3][1] <= 3):
                     patterns_detected.append(('One-Two Pattern (Flexible)', tuple(h[-sum(s[1] for s in s_last_4):])))
                 
                 # Check for 2-1-2-1 like pattern (long-short-long-short)
                 # Allowing some flexibility in streak lengths (e.g., 2-1-3-1 or 3-1-2-1)
-                elif (s_last_4[0][1] >= 2 and s_last_4[0][1] <= 3 and s_last_4[1][1] <= 2 and
+                elif (s_last_4[0][1] >= 2 and s_last_4[0][1] <= 3 and s_last_4[1][1] <= 2 and \
                       s_last_4[2][1] >= 2 and s_last_4[2][1] <= 3 and s_last_4[3][1] <= 2):
                     patterns_detected.append(('Two-One Pattern (Flexible)', tuple(h[-sum(s[1] for s in s_last_4):])))
 
@@ -389,7 +385,6 @@ class OracleEngine:
                 prev_prev_prev_col_actual = [cell for cell in big_road_data[-4] if cell is not None]
                 if last_col_actual and prev_prev_prev_col_actual:
                     last_col_first_outcome = 'B' if last_col_actual[0][0] == 'S6' else last_col_actual[0][0]
-                    # FIX: Corrected UnboundLocalError here
                     prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_actual[0][0] 
                     if len(last_col_actual) == len(prev_prev_prev_col_actual) and last_col_first_outcome == prev_prev_prev_col_first_outcome:
                         patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-4:]):])))
@@ -449,10 +444,12 @@ class OracleEngine:
 
         return momentum_detected
 
-    # --- New: Tie and Super6 Pattern Detection ---
+    # --- New: Tie and Super6 Pattern Detection (No longer used for confidence directly) ---
     def detect_tie_super6_patterns(self, current_history):
         """
         Detects patterns that might indicate a Tie or Super6.
+        This function is now primarily for _update_learning and debugging,
+        as get_tie_opportunity_analysis will use empirical frequency.
         Returns a list of (pattern_name, sequence_snapshot) tuples.
         """
         h = _get_pb_history(current_history) # Only P/B history for most patterns
@@ -489,7 +486,7 @@ class OracleEngine:
         # --- Super6 Patterns (Highly speculative without card data) ---
         # Super6 after a Banker streak (very simple, needs refinement with card data)
         # This pattern implies a Banker win, and we are looking for a Super6 specific win.
-        # For now, it's a simple pattern based on previous Banker outcomes.
+        # For now, if actual_result is 'S6', it will be treated as 'S6'.
         if len(h) >= 3 and h[-1] == 'B' and h[-2] == 'B' and h[-3] == 'B':
             # This is a very weak indicator without knowing the exact score
             tie_super6_patterns_detected.append(('Super6 After B Streak (Simple)', tuple(h[-3:])))
@@ -514,7 +511,7 @@ class OracleEngine:
         patterns = self.detect_patterns(current_history, big_road_data)
         momentum = self.detect_momentum(current_history, big_road_data)
         sequences = self._detect_sequences(current_history) # New: Detected sequences
-        tie_super6_patterns = self.detect_tie_super6_patterns(current_history) # New: Tie/Super6 patterns
+        # tie_super6_patterns = self.detect_tie_super6_patterns(current_history) # No longer used for confidence directly
         
         score = 75 # Increased base confidence to be even more proactive
 
@@ -554,28 +551,8 @@ class OracleEngine:
             else:
                 score += seq_weight * 30 # Boost for new sequences
 
-        # New: Incorporate Tie/Super6 Pattern Stats into Confidence (for overall confidence)
-        for ts_name, ts_snapshot in tie_super6_patterns:
-            if ts_name.startswith('Tie'):
-                stats = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                total = stats['hits'] + stats['misses']
-                base_weight = self.tie_weights.get(ts_name, 0.3) # Lower base weight for Tie patterns
-
-                if total > 0:
-                    success_rate = stats['hits'] / total
-                    score += success_rate * base_weight * 60 # Scaled contribution
-                else:
-                    score += base_weight * 20
-            elif ts_name.startswith('Super6'):
-                stats = self.super6_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                total = stats['hits'] + stats['misses']
-                base_weight = self.super6_weights.get(ts_name, 0.2) # Even lower base weight for Super6
-
-                if total > 0:
-                    success_rate = stats['hits'] / total
-                    score += success_rate * base_weight * 50 # Scaled contribution
-                else:
-                    score += base_weight * 15
+        # Removed Tie/Super6 Pattern Stats from overall confidence calculation here,
+        # as their confidence will now be derived from empirical frequency in get_tie_opportunity_analysis.
 
         score = max(0, min(100, score))
         return int(score)
@@ -628,26 +605,15 @@ class OracleEngine:
             else:
                 self.sequence_memory_stats[sequence_tuple]['misses'] += 1
         
-        # New: Update Tie and Super6 Stats
+        # New: Update Tie and Super6 Stats (still useful for get_tie_opportunity_analysis empirical frequency)
         # Re-detect patterns for the *current* state (including the just-added actual_outcome)
         # This is crucial for learning from the very last hand.
-        tie_super6_patterns_detected_for_learning = self.detect_tie_super6_patterns(self.history) 
-        for ts_name, ts_snapshot in tie_super6_patterns_detected_for_learning:
-            if ts_name.startswith('Tie'):
-                if ts_name not in self.tie_stats:
-                    self.tie_stats[ts_name] = {'hits': 0, 'misses': 0}
-                if actual_outcome == 'T': # Only count hit if actual outcome was Tie
-                    self.tie_stats[ts_name]['hits'] += 1
-                else: # Count as miss if actual outcome was not Tie
-                    self.tie_stats[ts_name]['misses'] += 1
-            elif ts_name.startswith('Super6'):
-                if ts_name not in self.super6_stats:
-                    self.super6_stats[ts_name] = {'hits': 0, 'misses': 0}
-                # Assuming 'S6' is a distinct outcome in actual_outcome for learning
-                if actual_outcome == 'S6': 
-                    self.super6_stats[ts_name]['hits'] += 1
-                else:
-                    self.super6_stats[ts_name]['misses'] += 1
+        all_outcomes_in_history = [item['main_outcome'] for item in self.history]
+        
+        # Update Tie stats
+        # We're no longer tracking hit/miss for specific Tie patterns, just overall count for empirical freq.
+        # So no direct update to self.tie_stats or self.super6_stats based on predicted_outcome here.
+        # The counts for tie_count and super6_count are done directly in get_tie_opportunity_analysis.
 
 
     # --- 6. 🧠 Adaptive Intuition Logic (Deep Logic when no clear Pattern) ---
@@ -666,13 +632,14 @@ class OracleEngine:
         last3_pb = tuple(h[-3:])
         
         # Specific Tie patterns (check full history for 'T' presence)
+        # These are now primarily for conceptual understanding, not direct prediction.
         last3_full = [item['main_outcome'] for item in full_h[-3:] if item and 'main_outcome' in item]
         if 'T' in last3_full and last3_full.count('T') == 1 and last3_full[0] != last3_full[1] and last3_full[1] != last3_full[2]:
-            return 'T'
+            return 'T' # This will be overridden by main prediction logic if P/B is strong
         if len(full_h) >= 4:
             last4_full = [item['main_outcome'] for item in full_h[-4:] if item and 'main_outcome' in item]
             if Counter(last4_full)['T'] >= 2:
-                return 'T'
+                return 'T' # This will be overridden by main prediction logic if P/B is strong
 
         # Adaptive Logic based on streak length and recent history
         if streaks:
@@ -754,7 +721,7 @@ class OracleEngine:
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
             "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)],
-            "Raw Tie/Super6 Patterns Detected": [ts[0] for ts in self.detect_tie_super6_patterns(self.history)], # New debug info
+            "Raw Tie/Super6 Patterns Detected (for learning/debug)": [ts[0] for ts in self.detect_tie_super6_patterns(self.history)], # New debug info
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown'],
             "Current Live Drawdown (from UI)": current_live_drawdown, # Add live drawdown to debug info
@@ -795,63 +762,18 @@ class OracleEngine:
             patterns = self.detect_patterns(self.history, big_road_data)
             momentum = self.detect_momentum(self.history, big_road_data)
             sequences = self._detect_sequences(self.history)
-            tie_super6_patterns = self.detect_tie_super6_patterns(self.history) # Re-detect for current prediction cycle
+            # tie_super6_patterns = self.detect_tie_super6_patterns(self.history) # No longer used for primary prediction logic here
 
             active_patterns_for_learning = []
             active_momentum_for_learning = []
             active_sequences_for_learning = []
-            active_tie_super6_for_learning = [] # New: For Tie/Super6 patterns
+            active_tie_super6_for_learning = [] # Still for learning/debug logging
 
             predicted_by_rule = False
             
-            # --- Prioritize Tie/Super6 patterns if they are very strong ---
-            if tie_super6_patterns:
-                decision_path.append("Evaluating Tie/Super6 Patterns for prediction:")
-                for ts_name, ts_snapshot in tie_super6_patterns:
-                    active_tie_super6_for_learning.append((ts_name, ts_snapshot))
-                    
-                    if self._is_pattern_instance_failed(ts_name, ts_snapshot): 
-                        decision_path.append(f"  - Tie/Super6 Pattern '{ts_name}' instance previously failed. Skipping for prediction.")
-                        continue
-
-                    # Predict Tie
-                    if ts_name.startswith('Tie'):
-                        tie_stats_current = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                        tie_total = tie_stats_current['hits'] + tie_stats_current['misses']
-                        if tie_total > 0 and tie_stats_current['hits'] / tie_total > 0.65: # Only predict if Tie pattern has good success rate
-                            prediction_result = 'T'
-                            predicted_by_rule = True
-                            decision_path.append(f"  - Matched {ts_name}. Predicting Tie ({prediction_result}).")
-                            break
-                    # Predict Super6
-                    elif ts_name.startswith('Super6'):
-                        super6_stats_current = self.super6_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                        super6_total = super6_stats_current['hits'] + super6_stats_current['misses']
-                        if super6_total > 0 and super6_stats_current['hits'] / super6_total > 0.65: # Only predict if Super6 pattern has good success rate
-                            prediction_result = 'S6' # Use 'S6' as the prediction outcome
-                            predicted_by_rule = True
-                            decision_path.append(f"  - Matched {ts_name}. Predicting Super6 ({prediction_result}).")
-                            break
-                if predicted_by_rule: # If a Tie or Super6 was predicted, we stop here for primary prediction
-                    developer_view += "\n".join(decision_path)
-                    return {
-                        "developer_view": developer_view,
-                        "prediction": prediction_result,
-                        "accuracy": backtest_stats['accuracy_percent'],
-                        "risk": risk_level,
-                        "recommendation": recommendation,
-                        "active_patterns": active_patterns_for_learning, # Still pass all detected for dev view
-                        "active_momentum": active_momentum_for_learning,
-                        "active_sequences": active_sequences_for_learning,
-                        "active_tie_super6": active_tie_super6_for_learning,
-                    }
-                else:
-                    decision_path.append("  - Tie/Super6 patterns detected but no strong prediction made or instances failed.")
-
-
-            # If no prediction from strong Tie/Super6 patterns, proceed with P/B patterns
+            # --- Primary Prediction Focus: Player/Banker patterns/momentum/sequences ---
             if patterns:
-                decision_path.append("Evaluating Patterns for prediction:")
+                decision_path.append("Evaluating Patterns for primary P/B prediction:")
                 for p_name, p_snapshot in patterns:
                     active_patterns_for_learning.append((p_name, p_snapshot))
 
@@ -881,9 +803,6 @@ class OracleEngine:
                     elif 'One-Two Pattern' in p_name: # Covers both strict and flexible
                         if len(current_pb_history) >= 3: # Need at least 3 results for 1-2-1 or 2-1-2 logic
                             last_outcome = current_pb_history[-1]
-                            # If the last outcome is the same as the outcome two steps back (e.g., P B P) -> predict B
-                            # Or if the last outcome is different from the outcome two steps back (e.g., P P B) -> predict P
-                            # This is a simplified logic for 1-2-1 / 2-1-2 type patterns
                             if len(current_pb_history) >= 3:
                                 if current_pb_history[-1] == current_pb_history[-3]: # P B P -> predict B
                                     prediction_result = 'P' if last_outcome == 'B' else 'B'
@@ -897,9 +816,6 @@ class OracleEngine:
                     elif 'Two-One Pattern' in p_name: # Covers both strict and flexible
                         if len(current_pb_history) >= 3: # Need at least 3 results for 1-2-1 or 2-1-2 logic
                             last_outcome = current_pb_history[-1]
-                            # If the last outcome is the same as the outcome two steps back (e.g., B P B) -> predict P
-                            # Or if the last outcome is different from the outcome two steps back (e.g., B B P) -> predict B
-                            # This is a simplified logic for 1-2-1 / 2-1-2 type patterns
                             if len(current_pb_history) >= 3:
                                 if current_pb_history[-1] == current_pb_history[-3]: # B P B -> predict P
                                     prediction_result = 'P' if last_outcome == 'B' else 'B'
@@ -921,7 +837,7 @@ class OracleEngine:
 
             # If no prediction from patterns, try momentum
             if not predicted_by_rule and momentum:
-                decision_path.append("Evaluating Momentum for prediction:")
+                decision_path.append("Evaluating Momentum for primary P/B prediction:")
                 for m_name, m_snapshot in momentum:
                     active_momentum_for_learning.append((m_name, m_snapshot))
 
@@ -961,7 +877,7 @@ class OracleEngine:
 
             # If no prediction from patterns or momentum, try memory-based sequences
             if not predicted_by_rule and sequences:
-                decision_path.append("Evaluating Memory-based Sequences for prediction:")
+                decision_path.append("Evaluating Memory-based Sequences for primary P/B prediction:")
                 sequences.sort(key=lambda x: (x[0], self.sequence_memory_stats.get(x[1], {'hits':0, 'misses':0}).get('hits',0)), reverse=True)
                 
                 for length, sequence_tuple in sequences:
@@ -991,15 +907,12 @@ class OracleEngine:
             if not predicted_by_rule:
                 decision_path.append("Applying Intuition Logic (No strong patterns/momentum/sequences):")
                 intuitive_guess = self.intuition_predict(self.history)
-                if intuitive_guess == 'T':
-                    prediction_result = 'T'
-                    decision_path.append("  - Intuition Logic: Specific Tie pattern identified.")
-                elif intuitive_guess in ['P', 'B']:
+                if intuitive_guess in ['P', 'B']: # Intuition should only give P/B for primary prediction
                     prediction_result = intuitive_guess
                     decision_path.append(f"  - Intuition Logic: Predicting {intuitive_guess} based on subtle patterns/context.")
                 else:
-                    prediction_result = '?' # If intuition can't give a strong P/B/T, then no prediction
-                    decision_path.append("  - Intuition Logic: No strong P/B/T prediction from intuition.")
+                    prediction_result = '?' # If intuition can't give a strong P/B, then no prediction
+                    decision_path.append("  - Intuition Logic: No strong P/B prediction from intuition.")
         else: # Confidence < 60%
             recommendation = "Avoid ❌"
             risk_level = "Low Confidence"
@@ -1058,36 +971,12 @@ class OracleEngine:
         patterns = self.detect_patterns(self.history, big_road_data)
         momentum = self.detect_momentum(self.history, big_road_data)
         sequences = self._detect_sequences(self.history)
-        tie_super6_patterns = self.detect_tie_super6_patterns(self.history) # For backtest
+        # tie_super6_patterns = self.detect_tie_super6_patterns(self.history) # Not for primary prediction in backtest
 
         predicted_by_rule_for_backtest = False
 
-        # --- Prioritize Tie/Super6 for backtest prediction ---
-        if tie_super6_patterns:
-            for ts_name, ts_snapshot in tie_super6_patterns:
-                # Using generic failed pattern check for now
-                if self._is_pattern_instance_failed(ts_name, ts_snapshot):
-                    continue
-
-                if ts_name.startswith('Tie'):
-                    tie_stats_current = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                    tie_total = tie_stats_current['hits'] + tie_stats_current['misses']
-                    if tie_total > 0 and tie_stats_current['hits'] / tie_total > 0.65:
-                        prediction_result = 'T'
-                        predicted_by_rule_for_backtest = True
-                        break
-                elif ts_name.startswith('Super6'):
-                    super6_stats_current = self.super6_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                    super6_total = super6_stats_current['hits'] + super6_stats_current['misses']
-                    if super6_total > 0 and super6_stats_current['hits'] / super6_total > 0.65:
-                        prediction_result = 'S6'
-                        predicted_by_rule_for_backtest = True
-                        break
-            if predicted_by_rule_for_backtest:
-                return {"prediction": prediction_result, "recommendation": recommendation}
-
         # Prioritize patterns for backtest prediction
-        if not predicted_by_rule_for_backtest and patterns:
+        if patterns:
             for p_name, p_snapshot in patterns:
                 if self._is_pattern_instance_failed(p_name, p_snapshot):
                     continue
@@ -1182,10 +1071,10 @@ class OracleEngine:
         # If still no prediction, use intuition logic for backtest
         if not predicted_by_rule_for_backtest:
             intuitive_guess = self.intuition_predict(self.history)
-            if intuitive_guess in ['P', 'B', 'T']:
+            if intuitive_guess in ['P', 'B']: # Intuition should only give P/B for primary prediction
                 prediction_result = intuitive_guess
             else:
-                recommendation = "Avoid ❌" # If intuition can't give a strong P/B/T, avoid
+                recommendation = "Avoid ❌" # If intuition can't give a strong P/B, avoid
 
         # No protection system override for backtest recommendation either
         if prediction_result == '?':
@@ -1197,46 +1086,69 @@ class OracleEngine:
 
     def get_tie_opportunity_analysis(self, current_history):
         """
-        Analyzes the history specifically for Tie opportunities and returns a confidence.
-        Returns a dict: {'prediction': 'T' or '?', 'confidence': int, 'reason': str}
+        Analyzes the history specifically for Tie and Super6 opportunities
+        based on their empirical frequency in the current history, blending with theoretical
+        probabilities when history is short.
+        Returns a dict: {'prediction': 'T' or 'S6' or '?', 'confidence': int, 'reason': str}
         """
-        tie_patterns = self.detect_tie_super6_patterns(current_history)
-        tie_confidence = 0
-        reason = "ไม่มีรูปแบบ Tie ที่โดดเด่น"
-        predicted_tie = '?'
-
-        strong_tie_patterns = []
-
-        for ts_name, ts_snapshot in tie_patterns:
-            if ts_name.startswith('Tie'):
-                stats = self.tie_stats.get(ts_name, {'hits': 0, 'misses': 0})
-                total = stats['hits'] + stats['misses']
-                base_weight = self.tie_weights.get(ts_name, 0.3)
-
-                if total > 0:
-                    success_rate = stats['hits'] / total
-                    # Scale confidence contribution by success rate and base weight
-                    current_pattern_confidence = success_rate * base_weight * 100
-                    if current_pattern_confidence > 30: # Only consider if it contributes significantly
-                        strong_tie_patterns.append((ts_name, current_pattern_confidence))
-                        tie_confidence += current_pattern_confidence
-                else:
-                    # Give a small boost for new, undetected Tie patterns
-                    tie_confidence += base_weight * 10 # Smaller boost for unknown patterns
-
-        tie_confidence = min(100, max(0, int(tie_confidence)))
-
-        if tie_confidence >= 50: # Threshold for recommending Tie
-            predicted_tie = 'T'
-            if strong_tie_patterns:
-                # Sort by confidence to get the strongest pattern for the reason
-                strong_tie_patterns.sort(key=lambda x: x[1], reverse=True)
-                reason = f"พบรูปแบบ Tie ที่โดดเด่น: {strong_tie_patterns[0][0]} (ความมั่นใจจากรูปแบบ: {int(strong_tie_patterns[0][1])}%)"
-            else:
-                reason = "ความมั่นใจ Tie สูงจากแนวโน้มทั่วไป"
-        elif tie_confidence > 0:
-            reason = f"มีแนวโน้ม Tie เล็กน้อย (ความมั่นใจ: {tie_confidence}%)"
+        total_hands = len(current_history)
+        
+        # Use theoretical probabilities if history is too short
+        if total_hands < self.MIN_HANDS_FOR_EMPIRICAL_TIE_SUPER6:
+            tie_frequency = self.THEORETICAL_TIE_PROB
+            super6_frequency = self.THEORETICAL_SUPER6_PROB
+            reason_suffix = " (อิงตามความน่าจะเป็นทางทฤษฎี)"
         else:
-            reason = "ยังไม่พบแนวโน้ม Tie ที่ชัดเจน"
+            # Calculate empirical frequencies
+            tie_count = sum(1 for item in current_history if item['main_outcome'] == 'T')
+            super6_count = sum(1 for item in current_history if item['main_outcome'] == 'S6')
+            tie_frequency = tie_count / total_hands
+            super6_frequency = super6_count / total_hands
+            reason_suffix = " (อิงตามความถี่ในขอนปัจจุบัน)"
 
-        return {'prediction': predicted_tie, 'confidence': tie_confidence, 'reason': reason}
+        # Scale frequency to a 0-100 confidence score
+        # Base confidence for Tie: if frequency is above 9.51% (avg), scale up.
+        # Base confidence for Super6: if frequency is above 1.28% (avg), scale up.
+        # Using a scaling factor to make 9.51% map to a decent confidence, e.g., 50-70%
+        # And 1.28% map to a lower but still present confidence.
+        
+        # Let's adjust scaling:
+        # If actual frequency is THEORETICAL_TIE_PROB, confidence should be around 50%
+        # If actual frequency is 2x THEORETICAL_TIE_PROB, confidence should be higher.
+        
+        # Simple linear scaling:
+        # If frequency is 0, confidence is 0.
+        # If frequency is THEORETICAL_TIE_PROB, confidence is 50.
+        # If frequency is 2 * THEORETICAL_TIE_PROB, confidence is 100.
+        # Max scaling factor for confidence to prevent extremely high confidence from tiny fluctuations
+        MAX_CONFIDENCE_SCALING_FACTOR_TIE = 100 / (2 * self.THEORETICAL_TIE_PROB * 100) # Scale so 2x theoretical is 100%
+        MAX_CONFIDENCE_SCALING_FACTOR_SUPER6 = 100 / (2 * self.THEORETICAL_SUPER6_PROB * 100) # Scale so 2x theoretical is 100%
+
+        tie_confidence = int(min(100, max(0, tie_frequency * 100 * MAX_CONFIDENCE_SCALING_FACTOR_TIE)))
+        super6_confidence = int(min(100, max(0, super6_frequency * 100 * MAX_CONFIDENCE_SCALING_FACTOR_SUPER6)))
+
+        predicted_outcome = '?'
+        reason = "ยังไม่พบแนวโน้ม Tie/Super6 ที่ชัดเจน" + reason_suffix
+        overall_confidence = 0
+
+        # Decide which (if any) to recommend based on their scaled confidence
+        # Prioritize Super6 if its confidence is very high, otherwise Tie
+        # Use a random choice if both have similar high confidence to simulate "randomness"
+        
+        # Thresholds for recommending Tie/Super6
+        TIE_RECOMMENDATION_THRESHOLD = 50
+        SUPER6_RECOMMENDATION_THRESHOLD = 60 # Higher threshold for Super6 due to rarity
+
+        if super6_confidence >= SUPER6_RECOMMENDATION_THRESHOLD and tie_confidence < SUPER6_RECOMMENDATION_THRESHOLD:
+            predicted_outcome = 'S6'
+            overall_confidence = super6_confidence
+            reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({super6_frequency:.2%}){reason_suffix}"
+        elif tie_confidence >= TIE_RECOMMENDATION_THRESHOLD:
+            predicted_outcome = 'T'
+            overall_confidence = tie_confidence
+            reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({tie_frequency:.2%}){reason_suffix}"
+        elif tie_confidence > 0 or super6_confidence > 0:
+            overall_confidence = max(tie_confidence, super6_confidence)
+            reason = f"มีแนวโน้ม Tie ({tie_frequency:.2%}) หรือ Super6 ({super6_frequency:.2%}) เล็กน้อย{reason_suffix}"
+        
+        return {'prediction': predicted_outcome, 'confidence': overall_confidence, 'reason': reason}
