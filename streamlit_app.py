@@ -7,6 +7,11 @@ import asyncio # For running async functions
 # Import OracleEngine and helper functions
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
 
+# Define the current expected version of OracleEngine
+# Increment this value whenever OracleEngine.py has significant structural changes
+# that might cause caching issues.
+CURRENT_ENGINE_VERSION = "1.1"
+
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
 
@@ -208,31 +213,16 @@ def get_oracle_engine():
 if "oracle_engine" not in st.session_state:
     st.session_state.oracle_engine = get_oracle_engine()
 
-# --- More Robust Cache compatibility check for new attributes and methods ---
-# This ensures that if a cached OracleEngine instance is loaded from a previous version
-# that didn't have certain attributes or methods, or if their types are wrong,
-# it gets re-initialized or updated.
+# --- Robust Cache compatibility check using __version__ ---
+# This ensures that if a cached OracleEngine instance is loaded from a previous version,
+# it gets re-initialized.
 reinitialize_engine = False
-# Check for a critical method that was recently added/changed
-if not hasattr(st.session_state.oracle_engine, '_detect_sequences'):
+if not hasattr(st.session_state.oracle_engine, '__version__') or \
+   st.session_state.oracle_engine.__version__ != CURRENT_ENGINE_VERSION:
     reinitialize_engine = True
-# Check for core attributes and their types
-elif not isinstance(st.session_state.oracle_engine.pattern_stats, dict):
-    reinitialize_engine = True
-elif not isinstance(st.session_state.oracle_engine.momentum_stats, dict):
-    reinitialize_engine = True
-elif not isinstance(st.session_state.oracle_engine.sequence_memory_stats, dict):
-    reinitialize_engine = True
-elif not isinstance(st.session_state.oracle_engine.tie_stats, dict):
-    reinitialize_engine = True
-elif not isinstance(st.session_state.oracle_engine.super6_stats, dict):
-    reinitialize_engine = True
-# Add more checks for other critical attributes if needed, e.g., if a list should be a list:
-# elif not isinstance(st.session_state.oracle_engine.history, list):
-#     reinitialize_engine = True
 
 if reinitialize_engine:
-    st.warning("⚠️ ตรวจพบโครงสร้าง AI ที่ไม่เข้ากันกับเวอร์ชันปัจจุบัน! ระบบกำลังรีเซ็ตข้อมูลเพื่อความถูกต้อง.")
+    st.warning(f"⚠️ ตรวจพบโครงสร้าง AI เวอร์ชันเก่า (v{getattr(st.session_state.oracle_engine, '__version__', 'Unknown')}) ไม่เข้ากันกับเวอร์ชันปัจจุบัน (v{CURRENT_ENGINE_VERSION})! ระบบกำลังรีเซ็ตข้อมูลเพื่อความถูกต้อง.")
     st.session_state.oracle_engine = OracleEngine()
     st.session_state.oracle_engine.reset_history()
     # Reset all relevant session state variables that depend on the engine
