@@ -93,14 +93,14 @@ def _build_big_road_data(full_history_list):
 @st.cache_data(ttl=60*5) # Cache for 5 minutes, or until inputs change
 def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pattern_instances, sequence_memory_stats):
     """
-    Calculates the system's accuracy from historical predictions and tracks drawdown.
+    Calculates the system's accuracy from historical predictions and tracks max drawdown.
     This is a global cached function to improve performance.
     """
     hits = 0
     misses = 0
-    current_drawdown_tracker = 0 # This tracks consecutive misses for the current streak
-    max_drawdown = 0 # This tracks the maximum drawdown observed
-    total_bets_counted = 0 # This counts total bets where a 'Play' recommendation was given
+    temp_drawdown_for_max = 0 # This tracks consecutive misses for max_drawdown calculation
+    max_drawdown = 0
+    total_bets_counted = 0
 
     # Find the starting index for backtest. It should be where the engine can first make a prediction.
     pb_count = 0
@@ -113,7 +113,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
             break
     
     if start_index_for_backtest == 0:
-        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0, "current_drawdown": 0}
+        return {"accuracy_percent": 0, "max_drawdown": 0, "hits": 0, "misses": 0, "total_bets": 0}
 
     # Iterate through the history from the point where predictions can start
     for i in range(start_index_for_backtest, len(history)):
@@ -143,18 +143,18 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
             else:
                 misses += 1
         
-        # --- Separate logic for current_drawdown_tracker (consecutive misses) ---
-        # This tracker counts consecutive losses *only when a P/B/T prediction was made and it was wrong*.
-        # It resets on a correct P/B/T prediction OR if no specific P/B/T prediction was made ('?').
-        if simulated_predicted_outcome in ['P', 'B', 'T']: # If a specific prediction (P, B, T) was made
+        # --- Logic for max_drawdown calculation within backtest ---
+        # This counts consecutive hands where a P/B/T prediction was made and was wrong.
+        # It resets only on a correct P/B/T prediction.
+        if simulated_predicted_outcome in ['P', 'B', 'T']:
             if simulated_predicted_outcome == actual_main_outcome:
-                current_drawdown_tracker = 0 # Reset on a correct P/B/T prediction
+                temp_drawdown_for_max = 0 # Reset on a correct P/B/T prediction
             else:
-                current_drawdown_tracker += 1 # Increment on an incorrect P/B/T prediction
-        else: # If simulated_predicted_outcome is '?' (no specific prediction)
-            current_drawdown_tracker = 0 # Reset if AI made no specific prediction (breaks the "miss" streak)
+                temp_drawdown_for_max += 1 # Increment on an incorrect P/B/T prediction
+        else: # If simulated_predicted_outcome is '?'
+            temp_drawdown_for_max = 0 # Reset if AI made no specific prediction for this hand
 
-        max_drawdown = max(max_drawdown, current_drawdown_tracker) 
+        max_drawdown = max(max_drawdown, temp_drawdown_for_max) 
     
     accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0
 
@@ -164,7 +164,6 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         "hits": hits,
         "misses": misses,
         "total_bets": total_bets_counted,
-        "current_drawdown": current_drawdown_tracker # Return the final value
     }
 
 
@@ -615,7 +614,7 @@ class OracleEngine:
             "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)], # New debug info
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown'],
-            "Current Consecutive Misses": backtest_stats['current_drawdown'] # New: Add current consecutive misses
+            # "Current Consecutive Misses" is now handled in Streamlit app state
         }
         developer_view_parts = []
         for key, value in debug_info.items():
@@ -821,7 +820,7 @@ class OracleEngine:
             "active_patterns": active_patterns_for_learning,
             "active_momentum": active_momentum_for_learning,
             "active_sequences": active_sequences_for_learning,
-            "current_drawdown": backtest_stats['current_drawdown'] # Pass current drawdown
+            # "current_drawdown" is no longer passed from here
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
@@ -863,7 +862,7 @@ class OracleEngine:
                 elif 'Pingpong' in p_name:
                     last = current_pb_history[-1]
                     prediction_result = 'P' if last == 'B' else 'B'
-                    predicted_by_rule = True
+                    predicted_by_rule_for_backtest = True
                     break
                 elif 'Two-Cut' in p_name or 'Triple-Cut' in p_name:
                     if len(current_pb_history) >= 2:
