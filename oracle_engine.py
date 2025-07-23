@@ -135,7 +135,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
             initial_failed_pattern_instances=failed_pattern_instances,
             initial_sequence_memory_stats=sequence_memory_stats,
             initial_tie_stats=tie_stats, # Pass tie stats
-            initial_super6_stats=super6_stats # Pass super6 stats
+            initial_super6_stats=super6_stats
         )
         temp_sim_engine.history = simulated_history
 
@@ -177,6 +177,11 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
 
 
 class OracleEngine:
+    # Define the version of the OracleEngine class
+    # Increment this version whenever there are significant changes to the class structure
+    # or its internal attributes/methods that might cause caching issues.
+    __version__ = "1.1" 
+
     def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None, initial_tie_stats=None, initial_super6_stats=None):
         self.history = []
         self.pattern_stats = initial_pattern_stats if initial_pattern_stats is not None else {}
@@ -384,7 +389,7 @@ class OracleEngine:
                 prev_prev_prev_col_actual = [cell for cell in big_road_data[-4] if cell is not None]
                 if last_col_actual and prev_prev_prev_col_actual:
                     last_col_first_outcome = 'B' if last_col_actual[0][0] == 'S6' else last_col_actual[0][0]
-                    prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_actual[0][0]
+                    prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_first_outcome
                     if len(last_col_actual) == len(prev_prev_prev_col_actual) and last_col_first_outcome == prev_prev_prev_col_first_outcome:
                         patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-4:]):])))
 
@@ -717,7 +722,7 @@ class OracleEngine:
         return '?'
 
     # --- Main function for predicting the next result (for UI display) ---
-    def predict_next(self):
+    def predict_next(self, current_live_drawdown=0): # Added current_live_drawdown parameter
         """
         Main function for analyzing and predicting the next outcome for UI display.
         Returns a dictionary with prediction, risk, recommendation, developer_view.
@@ -751,11 +756,34 @@ class OracleEngine:
             "Raw Tie/Super6 Patterns Detected": [ts[0] for ts in self.detect_tie_super6_patterns(self.history)], # New debug info
             "Calculated Confidence Score (Layer 1)": self.confidence_score(self.history, big_road_data),
             "Backtest Max Drawdown": backtest_stats['max_drawdown'],
+            "Current Live Drawdown (from UI)": current_live_drawdown, # Add live drawdown to debug info
         }
         developer_view_parts = []
         for key, value in debug_info.items():
             developer_view_parts.append(f"{key}: {value}")
         developer_view = "\n".join(developer_view_parts) + "\n--- Prediction Logic ---\n"
+
+        # --- NEW: Drawdown Protection System ---
+        # If live_drawdown is 5 or more, recommend Avoid.
+        # This allows a prediction attempt at live_drawdown = 4 (for the 5th hand).
+        DRAWDOWN_LIMIT_FOR_AVOID = 5 
+        if current_live_drawdown >= DRAWDOWN_LIMIT_FOR_AVOID:
+            prediction_result = '?' # No specific prediction
+            recommendation = "Avoid ❌ (ป้องกันแพ้ติดกัน)"
+            risk_level = "High Drawdown"
+            decision_path.append(f"PROTECTION: Live drawdown ({current_live_drawdown}) reached limit ({DRAWDOWN_LIMIT_FOR_AVOID}). Recommending Avoid.")
+            developer_view += "\n".join(decision_path)
+            return {
+                "developer_view": developer_view,
+                "prediction": prediction_result,
+                "accuracy": backtest_stats['accuracy_percent'],
+                "risk": risk_level,
+                "recommendation": recommendation,
+                "active_patterns": [],
+                "active_momentum": [],
+                "active_sequences": [],
+                "active_tie_super6": [],
+            }
 
 
         # --- Main Prediction Logic (Attempt to predict if confidence is high enough) ---
