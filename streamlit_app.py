@@ -10,7 +10,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 # Define the current expected version of OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.6" # Updated version to 1.6
+CURRENT_ENGINE_VERSION = "1.7" # Updated version to 1.7
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
@@ -294,13 +294,15 @@ def record_bet_result(actual_result): # Simplified signature
     # live_drawdown should ONLY reset to 0 if a specific prediction was made AND it was correct.
     # If the system recommended '?' (Avoid), live_drawdown should NOT change.
     if predicted_side != '?': # AI made a specific prediction (P, B, T, S6)
-        if predicted_side == actual_result:
-            st.session_state.live_drawdown = 0 # Reset on a direct hit
+        # Corrected logic for drawdown to account for Super6
+        if predicted_side == actual_result or \
+           (predicted_side == 'B' and actual_result == 'S6'): # If predicted Banker and actual was Super6
+            st.session_state.live_drawdown = 0 # Reset on a direct hit (or B vs S6)
             st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode
         elif actual_result == 'T': # If actual is Tie, and AI predicted P/B/S6, it's not a loss, so reset. If AI predicted T, it's a hit.
             st.session_state.live_drawdown = 0
             st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode
-        else: # AI made a specific prediction (P, B, T, S6) AND it was a clear miss (not T)
+        else: # AI made a specific prediction (P, B, T, S6) AND it was a clear miss (not T, not B vs S6)
             st.session_state.live_drawdown += 1 # Increment on a clear miss
             # Do NOT set gemini_continuous_analysis_mode to False here, as we want it to continue if still losing
     # else: If predicted_side was '?' (system recommended Avoid), live_drawdown remains unchanged.
@@ -651,7 +653,7 @@ if big_road_display_data:
                     f"{tie_html}"
                 )
             
-            big_road_html_parts.append(f"<div class='big-road-cell'>{cell_content}</div>")
+            big_road_html_parts.append(f"<div classt='big-road-cell'>{cell_content}</div>")
         big_road_html_parts.append("</div>")
     big_road_html_parts.append("</div>")
 
