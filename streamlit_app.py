@@ -269,25 +269,15 @@ def record_bet_result(actual_result): # Simplified signature
     
     outcome_status = "Recorded" # Default outcome status for log
 
-    # --- DEBUG: Print values before drawdown update ---
-    st.write(f"DEBUG: record_bet_result called. Predicted: '{predicted_side}', Actual: '{actual_result}'")
-    st.write(f"DEBUG: live_drawdown BEFORE update: {st.session_state.live_drawdown}")
-
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
     if predicted_side in ['P', 'B', 'T', 'S6']: # If AI made a specific prediction (P, B, T, S6)
         if predicted_side == actual_result:
             st.session_state.live_drawdown = 0 # Reset on a hit
-            st.write("DEBUG: Prediction HIT. live_drawdown RESET to 0.")
         else:
             st.session_state.live_drawdown += 1 # Increment on a miss
-            st.write(f"DEBUG: Prediction MISS. live_drawdown INCREMENTED to {st.session_state.live_drawdown}.")
     else: # If AI predicted '?' (no specific prediction)
         st.session_state.live_drawdown = 0 # Reset if AI made no specific prediction for this hand
-        st.write("DEBUG: No specific prediction ('?'). live_drawdown RESET to 0.")
     
-    st.write(f"DEBUG: live_drawdown AFTER update: {st.session_state.live_drawdown}")
-    # --- END DEBUG ---
-
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "Predict": predicted_side,
@@ -383,9 +373,9 @@ if len(engine.history) >= 20:
         # As per the new logic, live_drawdown is 0 if next_pred_side is '?'.
         # So this condition ensures it only shows when there's an actual P/B/T/S6 prediction.
         if next_pred_side != '?': 
-            st.markdown(f"**📉 แพ้ติดกัน:** **{current_drawdown_display}** ครั้ง (นับเมื่อ AI ทำนายเฉพาะเจาะจงและผิดพลาด)") 
+            st.markdown(f"**📉 แพ้ติดกัน:** **{current_drawdown_display}** ครั้ง") 
         else:
-            st.markdown(f"**📉 แพ้ติดกัน:** **0** ครั้ง (AI ยังไม่ทำนายเฉพาะเจาะจง)")
+            st.markdown(f"**📉 แพ้ติดกัน:** **0** ครั้ง") # Removed explanatory text
 
         with st.expander("🧬 Developer View"):
             st.text(prediction_data['developer_view'])
@@ -396,7 +386,6 @@ if len(engine.history) >= 20:
             st.write("--- Sequence Memory Stats ---") # New: Display sequence memory
             st.write(engine.sequence_memory_stats)
             st.write("--- Tie Prediction Stats ---") # New: Display Tie stats
-            st.write(engine.tie_stats)
             st.write("--- Super6 Prediction Stats ---") # New: Display Super6 stats
             st.write(engine.super6_stats)
             st.write("--- Failed Pattern Instances ---")
