@@ -62,19 +62,24 @@ st.markdown("""
     .prediction-text {
         font-size: 2rem;
         font-weight: bold;
-        color: #4CAF50;
+        color: #4CAF50; /* Default green, will be overridden by specific classes */
         text-align: center;
         margin-top: 0.5rem;
         margin-bottom: 0.5rem;
     }
-    /* Specific styles for Tie and Super6 predictions */
-    .prediction-text.tie {
-        color: #28a745; /* Green for Tie */
+    .prediction-text.player {
+        color: #007bff; /* Blue for Player */
+    }
+    .prediction-text.banker {
+        color: #dc3545; /* Red for Banker */
     }
     .prediction-text.super6 {
         color: #FF8C00; /* Orange for Super6 */
     }
-    /* New style for Tie Opportunity prediction */
+    .prediction-text.no-prediction {
+        color: #999; /* Grey for no prediction */
+    }
+
     .tie-opportunity-text {
         font-size: 1.5rem; /* Slightly smaller than main prediction */
         font-weight: bold;
@@ -82,6 +87,9 @@ st.markdown("""
         text-align: center;
         margin-top: 0.5rem;
         margin-bottom: 0.5rem;
+    }
+    .tie-opportunity-text.no-recommendation {
+        color: #999; /* Grey for no Tie recommendation */
     }
 
 
@@ -244,9 +252,6 @@ else:
         }
     # New: Ensure get_tie_opportunity_analysis method is present
     if not hasattr(st.session_state.oracle_engine, 'get_tie_opportunity_analysis'):
-        # This is a bit tricky for methods. Re-initializing the engine is safest.
-        # Or, if we're sure the class definition has been updated, we can just pass.
-        # For robustness, if a critical method is missing, re-init the engine.
         st.session_state.oracle_engine = OracleEngine()
         st.session_state.oracle_engine.reset_history()
 
@@ -264,6 +269,8 @@ if "gemini_analysis_result" not in st.session_state: # To store Gemini's analysi
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini"
 if "tie_opportunity_data" not in st.session_state: # To store Tie opportunity analysis
     st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'}
+if "hands_since_last_gemini_analysis" not in st.session_state: # Counter for auto Gemini analysis
+    st.session_state.hands_since_last_gemini_analysis = 0
 
 
 # --- Callback Functions for History and Betting Management ---
@@ -275,7 +282,9 @@ def remove_last_from_history():
         # Reset live_drawdown on undo, as the history has changed
         st.session_state.live_drawdown = 0 
         st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
-    
+        st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on undo
+        st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
+
 
 def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.history = []
@@ -286,6 +295,7 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.live_drawdown = 0 # Reset live_drawdown on new shoe
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
     st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
+    st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on new shoe
 
 
 def record_bet_result(actual_result): # Simplified signature
@@ -353,6 +363,18 @@ def record_bet_result(actual_result): # Simplified signature
     
     _cached_backtest_accuracy.clear()
 
+    # --- Auto-trigger Gemini Analysis ---
+    st.session_state.hands_since_last_gemini_analysis += 1
+    gemini_api_key_available = "GEMINI_API_KEY" in st.secrets # Check API key availability for auto-trigger
+
+    if (st.session_state.hands_since_last_gemini_analysis >= 12 and
+        len(st.session_state.history) >= 20 and # Ensure enough history for meaningful analysis
+        gemini_api_key_available):
+        
+        st.toast("✨ กำลังให้ Gemini วิเคราะห์อัตโนมัติ...", icon="✨")
+        st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
+        st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter after analysis
+
 
 # --- Gemini Analysis Function ---
 # This function is designed to be called asynchronously.
@@ -382,23 +404,6 @@ async def get_gemini_analysis(history_data):
     3. โอกาสของ Tie หรือ Super6 ในตาถัดไป โดยให้เหตุผลสั้นๆ
     4. คำแนะนำโดยรวมสำหรับตาถัดไป (Player, Banker, Tie, Super6, หรือ No Bet)
     """
-
-    # For `fetch` and `JSON.stringify` to work, this code needs to be in a context
-    # where JavaScript's fetch API is available, which is typically in a web browser
-    # environment, not directly in Streamlit's Python backend.
-    # To make an actual API call from Streamlit's backend, we need to use Python's `requests` library.
-
-    # Placeholder for actual API call using Python's requests library
-    # The `fetch` and `JSON.stringify` are for client-side JS, not server-side Python.
-    # We will simulate the API call for now.
-    
-    # Example of how you would typically make a request in Python:
-    # import requests
-    # headers = { "Content-Type": "application/json" }
-    # payload_py = { "contents": [{"role": "user", "parts": [{"text": prompt}]}] }
-    # response = requests.post(api_url, headers=headers, json=payload_py)
-    # response.raise_for_status() # Raise an exception for HTTP errors
-    # result = response.json()
 
     # For now, simulate a response to avoid breaking the app without a real API call setup.
     await asyncio.sleep(2) # Simulate network latency
@@ -450,12 +455,13 @@ if not gemini_api_key_available:
 else:
     st.sidebar.success("✅ Gemini API Key พร้อมใช้งาน (จาก Streamlit Secrets)")
 
-if st.sidebar.button("✨ วิเคราะห์เชิงลึก (Gemini)", use_container_width=True):
+if st.sidebar.button("✨ วิเคราะห์เชิงลึก (Gemini) (กดเอง)", use_container_width=True): # Renamed button to clarify
     if gemini_api_key_available:
         with st.spinner("กำลังให้ Gemini วิเคราะห์..."):
             # Pass a copy of the history to avoid modifying the live history during analysis
             # Call the async function using Streamlit's async support
             st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
+            st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter if manually triggered
     else:
         st.sidebar.error("โปรดตั้งค่า Gemini API Key ใน Streamlit Secrets ก่อน")
 
