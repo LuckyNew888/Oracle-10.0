@@ -208,55 +208,46 @@ def get_oracle_engine():
 if "oracle_engine" not in st.session_state:
     st.session_state.oracle_engine = get_oracle_engine()
 
-# --- Cache compatibility check for new attributes and methods ---
+# --- More Robust Cache compatibility check for new attributes and methods ---
 # This ensures that if a cached OracleEngine instance is loaded from a previous version
-# that didn't have certain attributes or methods, it gets re-initialized or updated.
-# More robust check for critical methods like _detect_sequences
+# that didn't have certain attributes or methods, or if their types are wrong,
+# it gets re-initialized or updated.
+reinitialize_engine = False
+# Check for a critical method that was recently added/changed
 if not hasattr(st.session_state.oracle_engine, '_detect_sequences'):
-    st.session_state.oracle_engine = OracleEngine() # This is the line that re-initializes
-    st.session_state.oracle_engine.reset_history() # Reset all learning states
-    # No need for individual attribute checks below if we just re-initialized the whole engine.
-    # The new OracleEngine() instance will have all the latest attributes.
-else:
-    # If the engine wasn't re-initialized, ensure all new attributes are present.
-    # This handles cases where the class structure changed but not so drastically as to remove core methods.
-    if not hasattr(st.session_state.oracle_engine, 'sequence_memory_stats'):
-        st.session_state.oracle_engine.sequence_memory_stats = {}
-    if not hasattr(st.session_state.oracle_engine, 'pattern_weights'):
-        st.session_state.oracle_engine.pattern_weights = {
-            'Dragon': 1.0, 'FollowStreak': 0.95, 'Pingpong': 0.9, 'Two-Cut': 0.8,
-            'Triple-Cut': 0.8, 'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7,
-            'Big Eye Boy (2D Simple - Follow)': 0.9, 'Big Eye Boy (2D (2D Simple - Break)': 0.8,
-            'Small Road (2D Simple - Chop)': 0.75, 'Cockroach Pig (2D Simple - Chop)': 0.7,
-            'Broken Pattern': 0.3,
-        }
-    if not hasattr(st.session_state.oracle_engine, 'momentum_weights'):
-        st.session_state.oracle_engine.momentum_weights = {
-            'B3+ Momentum': 0.9, 'P3+ Momentum': 0.9, 'Steady Repeat Momentum': 0.85,
-            'Ladder Momentum (1-2-3)': 0.7, 'Ladder Momentum (X-Y-XX-Y)': 0.6,
-        }
-    if not hasattr(st.session_state.oracle_engine, 'sequence_weights'):
-        st.session_state.oracle_engine.sequence_weights = {3: 0.6, 4: 0.7, 5: 0.8}
-    # New: Ensure Tie/Super6 stats and weights are present for existing cached engine
-    if not hasattr(st.session_state.oracle_engine, 'tie_stats'):
-        st.session_state.oracle_engine.tie_stats = {}
-    if not hasattr(st.session_state.oracle_engine, 'super6_stats'):
-        st.session_state.oracle_engine.super6_stats = {}
-    if not hasattr(st.session_state.oracle_engine, 'tie_weights'):
-        st.session_state.oracle_engine.tie_weights = {
-            'Tie After PBP': 0.7, 'Tie After BBP': 0.7, 'Consecutive Tie': 0.8, 'Tie Frequency Pattern': 0.6,
-        }
-    if not hasattr(st.session_state.oracle_engine, 'super6_weights'):
-        st.session_state.oracle_engine.super6_weights = {
-            'Super6 After B Streak': 0.6, 'Super6 After P Cut': 0.5,
-        }
-    # New: Ensure get_tie_opportunity_analysis method is present
-    if not hasattr(st.session_state.oracle_engine, 'get_tie_opportunity_analysis'):
-        st.session_state.oracle_engine = OracleEngine()
-        st.session_state.oracle_engine.reset_history()
+    reinitialize_engine = True
+# Check for core attributes and their types
+elif not isinstance(st.session_state.oracle_engine.pattern_stats, dict):
+    reinitialize_engine = True
+elif not isinstance(st.session_state.oracle_engine.momentum_stats, dict):
+    reinitialize_engine = True
+elif not isinstance(st.session_state.oracle_engine.sequence_memory_stats, dict):
+    reinitialize_engine = True
+elif not isinstance(st.session_state.oracle_engine.tie_stats, dict):
+    reinitialize_engine = True
+elif not isinstance(st.session_state.oracle_engine.super6_stats, dict):
+    reinitialize_engine = True
+# Add more checks for other critical attributes if needed, e.g., if a list should be a list:
+# elif not isinstance(st.session_state.oracle_engine.history, list):
+#     reinitialize_engine = True
+
+if reinitialize_engine:
+    st.warning("⚠️ ตรวจพบโครงสร้าง AI ที่ไม่เข้ากันกับเวอร์ชันปัจจุบัน! ระบบกำลังรีเซ็ตข้อมูลเพื่อความถูกต้อง.")
+    st.session_state.oracle_engine = OracleEngine()
+    st.session_state.oracle_engine.reset_history()
+    # Reset all relevant session state variables that depend on the engine
+    st.session_state.history = []
+    st.session_state.bet_log = []
+    st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+    st.session_state.live_drawdown = 0
+    st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini"
+    st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'}
+    st.session_state.hands_since_last_gemini_analysis = 0
+    st.session_state.gemini_continuous_analysis_mode = False
 
 
 # --- Session State Initialization (other variables) ---
+# Ensure these are always initialized AFTER the engine compatibility check
 if "history" not in st.session_state:
     st.session_state.history = []
 if "bet_log" not in st.session_state:
