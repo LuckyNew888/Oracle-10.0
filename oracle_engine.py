@@ -147,7 +147,10 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         # This counts bets only when the system would have recommended "Play ✅"
         if simulated_recommendation == "Play ✅" and simulated_predicted_outcome in ['P', 'B', 'T', 'S6']: # Include S6
             total_bets_counted += 1
+            # Corrected logic for hits/misses to account for Super6
             if simulated_predicted_outcome == actual_main_outcome:
+                hits += 1
+            elif simulated_predicted_outcome == 'B' and actual_main_outcome == 'S6': # If predicted Banker and actual was Super6 (Banker win)
                 hits += 1
             else:
                 misses += 1
@@ -156,8 +159,10 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
         # This counts consecutive hands where a P/B/T/S6 prediction was made and was wrong.
         # It resets only on a correct P/B/T/S6 prediction.
         if simulated_predicted_outcome in ['P', 'B', 'T', 'S6']: # If a specific prediction (P, B, T, S6) was made
-            if simulated_predicted_outcome == actual_main_outcome:
-                temp_drawdown_for_max = 0 # Reset on a correct P/B/T/S6 prediction
+            # Corrected logic for drawdown to account for Super6
+            if simulated_predicted_outcome == actual_main_outcome or \
+               (simulated_predicted_outcome == 'B' and actual_main_outcome == 'S6'): # If predicted Banker and actual was Super6
+                temp_drawdown_for_max = 0 # Reset on a correct P/B/T/S6 prediction (or B vs S6)
             else:
                 temp_drawdown_for_max += 1 # Increment on an incorrect P/B/T/S6 prediction
         else: # If simulated_predicted_outcome is '?'
@@ -180,7 +185,7 @@ class OracleEngine:
     # Define the version of the OracleEngine class
     # Increment this version whenever there are significant changes to the class structure
     # or its internal attributes/methods that might cause caching issues.
-    __version__ = "1.6" # Updated version to 1.6 for blending Tie/Super6 confidence
+    __version__ = "1.7" # Updated version to 1.7 for fixing Super6 drawdown and Tie/Super6 blending
 
     # Define theoretical probabilities for Tie and Super6
     THEORETICAL_TIE_PROB = 0.0951  # ~9.51%
@@ -945,10 +950,10 @@ class OracleEngine:
             "accuracy": backtest_stats['accuracy_percent'],
             "risk": risk_level, # Risk level is now informational, and simplified
             "recommendation": recommendation, # Recommendation based on prediction availability
-            "active_patterns": active_patterns_for_learning,
-            "active_momentum": active_momentum_for_learning,
-            "active_sequences": active_sequences_for_learning,
-            "active_tie_super6": active_tie_super6_for_learning, # New: Pass active Tie/Super6 patterns
+            "active_patterns": [],
+            "active_momentum": [],
+            "active_sequences": [],
+            "active_tie_super6": [],
         }
 
     # Special predict method for backtesting to avoid infinite recursion with predict_next
@@ -1104,23 +1109,15 @@ class OracleEngine:
         empirical_super6_frequency = super6_count / total_hands if total_hands > 0 else 0
 
         # Determine blending weight: more history = more weight to empirical
-        # Use a sigmoid-like curve or linear ramp for blending weight
-        # For simplicity, let's use a linear ramp for blending weight
-        blending_weight = min(1.0, total_hands / self.MIN_HANDS_FOR_BLENDING_TIE_SUPER6) # 0.0 to 1.0
+        # Use a linear ramp for blending weight from 0 to MIN_HANDS_FOR_BLENDING_TIE_SUPER6
+        blending_weight = min(1.0, total_hands / self.MIN_HANDS_FOR_BLENDING_TIE_SUPER6)
 
         # Blended frequency = (empirical * blending_weight) + (theoretical * (1 - blending_weight))
         blended_tie_frequency = (empirical_tie_frequency * blending_weight) + (self.THEORETICAL_TIE_PROB * (1 - blending_weight))
         blended_super6_frequency = (empirical_super6_frequency * blending_weight) + (self.THEORETICAL_SUPER6_PROB * (1 - blending_weight))
 
         # Scale blended frequency to a 0-100 confidence score
-        # Using a scaling factor so that theoretical probability gives around 50% confidence
-        # And 2x theoretical probability gives around 100% confidence.
-        
         # Scaling factor to map theoretical prob to 50% confidence, and 2x theoretical to 100%
-        # (X * scale) = 50 => scale = 50 / X
-        # (2X * scale) = 100 => scale = 100 / (2X) = 50 / X
-        # So, the scaling factor is 50 / THEORETICAL_PROB
-        
         SCALING_FACTOR_TIE = 50 / self.THEORETICAL_TIE_PROB
         SCALING_FACTOR_SUPER6 = 50 / self.THEORETICAL_SUPER6_PROB
 
@@ -1145,7 +1142,9 @@ class OracleEngine:
         TIE_RECOMMENDATION_THRESHOLD = 50
         SUPER6_RECOMMENDATION_THRESHOLD = 60 # Higher threshold for Super6 due to rarity
 
-        if super6_confidence >= SUPER6_RECOMMENDATION_THRESHOLD and tie_confidence < SUPER6_RECOMMENDATION_THRESHOLD:
+        # New logic: If both are above threshold, pick the one with higher confidence.
+        # If Super6 is recommended, it takes precedence.
+        if super6_confidence >= SUPER6_RECOMMENDATION_THRESHOLD and super6_confidence >= tie_confidence:
             predicted_outcome = 'S6'
             overall_confidence = super6_confidence
             reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({blended_super6_frequency:.2%}){reason_suffix}"
@@ -1155,6 +1154,7 @@ class OracleEngine:
             reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({blended_tie_frequency:.2%}){reason_suffix}"
         elif tie_confidence > 0 or super6_confidence > 0:
             overall_confidence = max(tie_confidence, super6_confidence)
+            # Adjust reason to reflect blended frequency if no strong recommendation
             reason = f"มีแนวโน้ม Tie ({blended_tie_frequency:.2%}) หรือ Super6 ({blended_super6_frequency:.2%}) เล็กน้อย{reason_suffix}"
         
         return {'prediction': predicted_outcome, 'confidence': overall_confidence, 'reason': reason}
