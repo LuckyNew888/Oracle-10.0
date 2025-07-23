@@ -180,12 +180,15 @@ class OracleEngine:
     # Define the version of the OracleEngine class
     # Increment this version whenever there are significant changes to the class structure
     # or its internal attributes/methods that might cause caching issues.
-    __version__ = "1.5" # Updated version to 1.5 for fixing AttributeError
+    __version__ = "1.6" # Updated version to 1.6 for blending Tie/Super6 confidence
 
     # Define theoretical probabilities for Tie and Super6
     THEORETICAL_TIE_PROB = 0.0951  # ~9.51%
     THEORETICAL_SUPER6_PROB = 0.0128 # ~1.28%
-    MIN_HANDS_FOR_EMPIRICAL_TIE_SUPER6 = 20 # Minimum hands to start relying heavily on empirical frequency
+    
+    # Minimum hands to start blending empirical frequency more heavily
+    # Below this, theoretical probability has more weight.
+    MIN_HANDS_FOR_BLENDING_TIE_SUPER6 = 20 
 
     def __init__(self, initial_pattern_stats=None, initial_momentum_stats=None, initial_failed_pattern_instances=None, initial_sequence_memory_stats=None, initial_tie_stats=None, initial_super6_stats=None):
         self.history = []
@@ -1093,43 +1096,50 @@ class OracleEngine:
         """
         total_hands = len(current_history)
         
-        # Use theoretical probabilities if history is too short
-        if total_hands < self.MIN_HANDS_FOR_EMPIRICAL_TIE_SUPER6:
-            tie_frequency = self.THEORETICAL_TIE_PROB
-            super6_frequency = self.THEORETICAL_SUPER6_PROB
-            reason_suffix = " (อิงตามความน่าจะเป็นทางทฤษฎี)"
-        else:
-            # Calculate empirical frequencies
-            tie_count = sum(1 for item in current_history if item['main_outcome'] == 'T')
-            super6_count = sum(1 for item in current_history if item['main_outcome'] == 'S6')
-            tie_frequency = tie_count / total_hands
-            super6_frequency = super6_count / total_hands
-            reason_suffix = " (อิงตามความถี่ในขอนปัจจุบัน)"
-
-        # Scale frequency to a 0-100 confidence score
-        # Base confidence for Tie: if frequency is above 9.51% (avg), scale up.
-        # Base confidence for Super6: if frequency is above 1.28% (avg), scale up.
-        # Using a scaling factor to make 9.51% map to a decent confidence, e.g., 50-70%
-        # And 1.28% map to a lower but still present confidence.
+        # Calculate empirical frequencies
+        tie_count = sum(1 for item in current_history if item['main_outcome'] == 'T')
+        super6_count = sum(1 for item in current_history if item['main_outcome'] == 'S6')
         
-        # Simple linear scaling:
-        # If frequency is 0, confidence is 0.
-        # If frequency is THEORETICAL_TIE_PROB, confidence is 50.
-        # If frequency is 2 * THEORETICAL_TIE_PROB, confidence is 100.
-        # Max scaling factor for confidence to prevent extremely high confidence from tiny fluctuations
-        MAX_CONFIDENCE_SCALING_FACTOR_TIE = 100 / (2 * self.THEORETICAL_TIE_PROB * 100) # Scale so 2x theoretical is 100%
-        MAX_CONFIDENCE_SCALING_FACTOR_SUPER6 = 100 / (2 * self.THEORETICAL_SUPER6_PROB * 100) # Scale so 2x theoretical is 100%
+        empirical_tie_frequency = tie_count / total_hands if total_hands > 0 else 0
+        empirical_super6_frequency = super6_count / total_hands if total_hands > 0 else 0
 
-        tie_confidence = int(min(100, max(0, tie_frequency * 100 * MAX_CONFIDENCE_SCALING_FACTOR_TIE)))
-        super6_confidence = int(min(100, max(0, super6_frequency * 100 * MAX_CONFIDENCE_SCALING_FACTOR_SUPER6)))
+        # Determine blending weight: more history = more weight to empirical
+        # Use a sigmoid-like curve or linear ramp for blending weight
+        # For simplicity, let's use a linear ramp for blending weight
+        blending_weight = min(1.0, total_hands / self.MIN_HANDS_FOR_BLENDING_TIE_SUPER6) # 0.0 to 1.0
+
+        # Blended frequency = (empirical * blending_weight) + (theoretical * (1 - blending_weight))
+        blended_tie_frequency = (empirical_tie_frequency * blending_weight) + (self.THEORETICAL_TIE_PROB * (1 - blending_weight))
+        blended_super6_frequency = (empirical_super6_frequency * blending_weight) + (self.THEORETICAL_SUPER6_PROB * (1 - blending_weight))
+
+        # Scale blended frequency to a 0-100 confidence score
+        # Using a scaling factor so that theoretical probability gives around 50% confidence
+        # And 2x theoretical probability gives around 100% confidence.
+        
+        # Scaling factor to map theoretical prob to 50% confidence, and 2x theoretical to 100%
+        # (X * scale) = 50 => scale = 50 / X
+        # (2X * scale) = 100 => scale = 100 / (2X) = 50 / X
+        # So, the scaling factor is 50 / THEORETICAL_PROB
+        
+        SCALING_FACTOR_TIE = 50 / self.THEORETICAL_TIE_PROB
+        SCALING_FACTOR_SUPER6 = 50 / self.THEORETICAL_SUPER6_PROB
+
+        tie_confidence = int(min(100, max(0, blended_tie_frequency * SCALING_FACTOR_TIE)))
+        super6_confidence = int(min(100, max(0, blended_super6_frequency * SCALING_FACTOR_SUPER6)))
 
         predicted_outcome = '?'
-        reason = "ยังไม่พบแนวโน้ม Tie/Super6 ที่ชัดเจน" + reason_suffix
+        reason = "ยังไม่พบแนวโน้ม Tie/Super6 ที่ชัดเจน"
         overall_confidence = 0
+
+        # Add blending explanation to reason
+        if total_hands < self.MIN_HANDS_FOR_BLENDING_TIE_SUPER6:
+            reason_suffix = f" (ผสมผสานความน่าจะเป็นทางทฤษฎีและข้อมูล {total_hands} ตา)"
+        else:
+            reason_suffix = f" (อิงตามความถี่ในขอนปัจจุบัน {total_hands} ตา)"
+
 
         # Decide which (if any) to recommend based on their scaled confidence
         # Prioritize Super6 if its confidence is very high, otherwise Tie
-        # Use a random choice if both have similar high confidence to simulate "randomness"
         
         # Thresholds for recommending Tie/Super6
         TIE_RECOMMENDATION_THRESHOLD = 50
@@ -1138,13 +1148,13 @@ class OracleEngine:
         if super6_confidence >= SUPER6_RECOMMENDATION_THRESHOLD and tie_confidence < SUPER6_RECOMMENDATION_THRESHOLD:
             predicted_outcome = 'S6'
             overall_confidence = super6_confidence
-            reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({super6_frequency:.2%}){reason_suffix}"
+            reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({blended_super6_frequency:.2%}){reason_suffix}"
         elif tie_confidence >= TIE_RECOMMENDATION_THRESHOLD:
             predicted_outcome = 'T'
             overall_confidence = tie_confidence
-            reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({tie_frequency:.2%}){reason_suffix}"
+            reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({blended_tie_frequency:.2%}){reason_suffix}"
         elif tie_confidence > 0 or super6_confidence > 0:
             overall_confidence = max(tie_confidence, super6_confidence)
-            reason = f"มีแนวโน้ม Tie ({tie_frequency:.2%}) หรือ Super6 ({super6_frequency:.2%}) เล็กน้อย{reason_suffix}"
+            reason = f"มีแนวโน้ม Tie ({blended_tie_frequency:.2%}) หรือ Super6 ({blended_super6_frequency:.2%}) เล็กน้อย{reason_suffix}"
         
         return {'prediction': predicted_outcome, 'confidence': overall_confidence, 'reason': reason}
