@@ -10,7 +10,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 # Define the current expected version of OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.5" # Updated version to 1.5
+CURRENT_ENGINE_VERSION = "1.6" # Updated version to 1.6
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
