@@ -10,7 +10,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 # Define the current expected version of OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.4" # Updated version to 1.4
+CURRENT_ENGINE_VERSION = "1.5" # Updated version to 1.5
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
@@ -435,9 +435,10 @@ async def get_gemini_analysis(history_data):
     result = mock_response
 
     if result.get("candidates") and len(result["candidates"]) > 0 and result["candidates"][0].get("content") and result["candidates"][0]["content"].get("parts") and len(result["candidates"][0]["content"]["parts"]) > 0:
-        return result["candidates"][0]["content"].parts[0].text
+        # FIX: Changed .parts[0].text to ["parts"][0]["text"] for dictionary access
+        return result["candidates"][0]["content"]["parts"][0]["text"]
     else:
-        return f"❌ ไม่สามารถรับการวิเคราะห์จาก Gemini ได้: {result.get('error', {}).get('message', 'Unknown error')}"
+        return f"❌ ไม่สามารถรับการวิเคราะห์จาก Gemini ได้: โครงสร้างการตอบกลับไม่ถูกต้องหรือไม่มีเนื้อหาข้อความ."
 
 
 # --- Main Streamlit App Logic ---
