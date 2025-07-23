@@ -30,13 +30,13 @@ def _build_big_road_data(full_history_list):
     """
     Builds the Big Road data structure with a fixed vertical height of 6 rows.
     If a streak exceeds 6, it wraps to the next column at the top.
-    Returns a list of columns, where each column is a list of (outcome, ties, is_natural) tuples,
+    Returns a list of columns, where each column is a list of (outcome, ties, is_natural, is_super6) tuples,
     or None for empty cells to maintain grid structure.
     """
     big_road_columns = []
     
-    # Track the last P/B outcome to determine if a new streak/column starts
-    last_main_pb_outcome = None
+    # Track the last P/B outcome (or S6 treated as B) to determine if a new streak/column starts
+    last_main_pb_outcome_for_streak = None
     
     # Track the current column and row index for placing the next result
     current_col_idx = -1
@@ -48,15 +48,17 @@ def _build_big_road_data(full_history_list):
         main_outcome = entry['main_outcome']
         ties = entry.get('ties', 0)
         is_natural = entry.get('is_any_natural', False)
+        is_super6 = (main_outcome == 'S6') # New flag to indicate if it's a Super6 outcome
 
         if main_outcome == 'T':
-            # Ties are attached to the most recent P/B outcome in the grid.
-            # Find the last actual P/B cell and increment its tie count.
+            # Ties are attached to the most recent P/B/S6 outcome in the grid.
+            # Find the last actual P/B/S6 cell and increment its tie count.
             found_pb_for_tie = False
             for c_idx in reversed(range(len(big_road_columns))):
                 for r_idx in reversed(range(len(big_road_columns[c_idx]))):
                     cell = big_road_columns[c_idx][r_idx]
-                    if cell is not None and cell[0] in ['P', 'B']:
+                    # Check if the cell is not None and its original outcome was P, B, or S6
+                    if cell is not None and cell[0] in ['P', 'B', 'S6']: 
                         updated_cell = list(cell)
                         updated_cell[1] += 1 # Increment ties
                         big_road_columns[c_idx][r_idx] = tuple(updated_cell)
@@ -66,9 +68,14 @@ def _build_big_road_data(full_history_list):
                     break
             continue # Ties do not create new cells or affect column/row placement
 
-        # Handle P/B outcomes
-        if big_road_columns and main_outcome == last_main_pb_outcome:
-            # Same outcome as the previous P/B, so continue the streak
+        # Determine outcome for streak comparison (S6 is treated as B for this purpose)
+        outcome_for_streak_comparison = main_outcome
+        if main_outcome == 'S6':
+            outcome_for_streak_comparison = 'B' # Treat S6 as B for streak logic
+
+        # Logic to decide if a new column starts or if the streak continues
+        if big_road_columns and outcome_for_streak_comparison == last_main_pb_outcome_for_streak:
+            # Same outcome as the previous P/B (or S6 treated as B), so continue the streak
             if current_row_idx < MAX_ROWS - 1: # If not yet at the bottom row (0-5)
                 current_row_idx += 1
             else: # Column is full (row_idx is MAX_ROWS - 1), need to start a new column
@@ -78,14 +85,14 @@ def _build_big_road_data(full_history_list):
             # New streak or first entry
             current_col_idx += 1
             current_row_idx = 0 # Start at the top of a new column
-            last_main_pb_outcome = main_outcome # Update the outcome for the new streak
+            last_main_pb_outcome_for_streak = outcome_for_streak_comparison # Update the outcome for the new streak
 
         # Ensure big_road_columns has enough columns
         while len(big_road_columns) <= current_col_idx:
             big_road_columns.append([None] * MAX_ROWS) # Add an empty column, pre-filled with None for 6 rows
         
-        # Place the current result
-        big_road_columns[current_col_idx][current_row_idx] = (main_outcome, ties, is_natural)
+        # Place the current result: store original main_outcome, ties, natural flag, and new super6 flag
+        big_road_columns[current_col_idx][current_row_idx] = (main_outcome, ties, is_natural, is_super6)
         
     return big_road_columns
 
@@ -344,6 +351,7 @@ class OracleEngine:
         num_cols = len(big_road_data)
         if num_cols >= 3: # Need at least 3 columns for meaningful 2D patterns
             # Note: big_road_data now includes None for bending, so we need to filter for actual cells
+            # When retrieving from big_road_data, remember it now returns (outcome, ties, is_natural, is_super6)
             last_col_actual = [cell for cell in big_road_data[-1] if cell is not None]
             prev_col_actual = [cell for cell in big_road_data[-2] if cell is not None]
             
@@ -351,9 +359,14 @@ class OracleEngine:
             # If the current column's depth is similar to the previous column's depth, it's a "follow"
             # This is a key characteristic of Big Eye Boy.
             if last_col_actual and prev_col_actual: # Ensure columns are not empty after filtering None
-                if len(last_col_actual) == len(prev_col_actual) and last_col_actual[0][0] == prev_col_actual[0][0]: # Same depth, same outcome (implies follow)
+                # Compare the *original* outcome or a normalized 'P'/'B' for comparison
+                # If S6 is treated as B for streak, then we should compare 'B' for S6.
+                last_col_first_outcome = 'B' if last_col_actual[0][0] == 'S6' else last_col_actual[0][0]
+                prev_col_first_outcome = 'B' if prev_col_actual[0][0] == 'S6' else prev_col_actual[0][0]
+
+                if len(last_col_actual) == len(prev_col_actual) and last_col_first_outcome == prev_col_first_outcome: # Same depth, same outcome (implies follow)
                     patterns_detected.append(('Big Eye Boy (2D Simple - Follow)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-2:]):])))
-                elif len(last_col_actual) == 1 and len(prev_col_actual) > 1 and last_col_actual[0][0] != prev_col_actual[0][0]: # Single cut after a streak (implies break)
+                elif len(last_col_actual) == 1 and len(prev_col_actual) > 1 and last_col_first_outcome != prev_col_first_outcome: # Single cut after a streak (implies break)
                     patterns_detected.append(('Big Eye Boy (2D Simple - Break)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-2:]):])))
 
             # Small Road (Simplified): Check if the current column is the same as the column two columns back (alternating)
@@ -361,14 +374,18 @@ class OracleEngine:
             if num_cols >= 3:
                 prev_prev_col_actual = [cell for cell in big_road_data[-3] if cell is not None]
                 if last_col_actual and prev_prev_col_actual:
-                    if len(last_col_actual) == len(prev_prev_col_actual) and last_col_actual[0][0] == prev_prev_col_actual[0][0]:
+                    last_col_first_outcome = 'B' if last_col_actual[0][0] == 'S6' else last_col_actual[0][0]
+                    prev_prev_col_first_outcome = 'B' if prev_prev_col_actual[0][0] == 'S6' else prev_prev_col_actual[0][0]
+                    if len(last_col_actual) == len(prev_prev_col_actual) and last_col_first_outcome == prev_prev_col_first_outcome:
                         patterns_detected.append(('Small Road (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-3:]):])))
 
             # Cockroach Pig (Simplified): Similar to Small Road, but looking at 3 columns back
             if num_cols >= 4:
                 prev_prev_prev_col_actual = [cell for cell in big_road_data[-4] if cell is not None]
                 if last_col_actual and prev_prev_prev_col_actual:
-                    if len(last_col_actual) == len(prev_prev_prev_col_actual) and last_col_actual[0][0] == prev_prev_prev_col_actual[0][0]:
+                    last_col_first_outcome = 'B' if last_col_actual[0][0] == 'S6' else last_col_actual[0][0]
+                    prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_actual[0][0]
+                    if len(last_col_actual) == len(prev_prev_prev_col_actual) and last_col_first_outcome == prev_prev_prev_col_first_outcome:
                         patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-sum(len([c for c in col if c is not None]) for col in big_road_data[-4:]):])))
 
 
@@ -465,6 +482,8 @@ class OracleEngine:
 
         # --- Super6 Patterns (Highly speculative without card data) ---
         # Super6 after a Banker streak (very simple, needs refinement with card data)
+        # This pattern implies a Banker win, and we are looking for a Super6 specific win.
+        # For now, it's a simple pattern based on previous Banker outcomes.
         if len(h) >= 3 and h[-1] == 'B' and h[-2] == 'B' and h[-3] == 'B':
             # This is a very weak indicator without knowing the exact score
             tie_super6_patterns_detected.append(('Super6 After B Streak (Simple)', tuple(h[-3:])))
@@ -606,7 +625,6 @@ class OracleEngine:
         # New: Update Tie and Super6 Stats
         # Re-detect patterns for the *current* state (including the just-added actual_outcome)
         # This is crucial for learning from the very last hand.
-        # We need to pass the full history to detect_tie_super6_patterns
         tie_super6_patterns_detected_for_learning = self.detect_tie_super6_patterns(self.history) 
         for ts_name, ts_snapshot in tie_super6_patterns_detected_for_learning:
             if ts_name.startswith('Tie'):
@@ -726,7 +744,7 @@ class OracleEngine:
         # --- Debugging Info for Developer View ---
         debug_info = {
             "Current PB History Length": len(current_pb_history),
-            "Big Road Columns (P/B only)": [[cell[0] for cell in col if cell is not None] for col in big_road_data], # Adjusted for None cells
+            "Big Road Columns (P/B/S6 only)": [[cell[0] for cell in col if cell is not None] for col in big_road_data], # Adjusted for None cells
             "Raw Patterns Detected": [p[0] for p in self.detect_patterns(self.history, big_road_data)],
             "Raw Momentum Detected": [m[0] for m in self.detect_momentum(self.history, big_road_data)],
             "Raw Sequences Detected": [f"{l}-bit: {s}" for l, s in self._detect_sequences(self.history)],
@@ -758,18 +776,12 @@ class OracleEngine:
             predicted_by_rule = False
             
             # --- Prioritize Tie/Super6 patterns if they are very strong ---
-            # This is a critical decision point: should Tie/Super6 override P/B?
-            # For now, let's give them a chance if their specific patterns are detected.
-            # We can refine this prioritization later.
             if tie_super6_patterns:
                 decision_path.append("Evaluating Tie/Super6 Patterns for prediction:")
                 for ts_name, ts_snapshot in tie_super6_patterns:
                     active_tie_super6_for_learning.append((ts_name, ts_snapshot))
                     
-                    # Check if this specific Tie/Super6 pattern instance has failed before
-                    # For simplicity, we'll use failed_pattern_instances for now, but
-                    # ideally Tie/Super6 patterns should have their own failure tracking.
-                    if self._is_pattern_instance_failed(ts_name, ts_snapshot): # Using generic failed pattern
+                    if self._is_pattern_instance_failed(ts_name, ts_snapshot): 
                         decision_path.append(f"  - Tie/Super6 Pattern '{ts_name}' instance previously failed. Skipping for prediction.")
                         continue
 
