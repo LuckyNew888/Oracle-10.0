@@ -143,6 +143,10 @@ st.markdown("""
     .banker-circle {
         background-color: #dc3545;
     }
+    /* New CSS for Tie circle if you want 'T' inside */
+    .tie-circle {
+        background-color: #28a745; /* Green for Tie */
+    }
 
     .tie-oval {
         position: absolute;
@@ -289,7 +293,7 @@ def record_bet_result(actual_result): # Simplified signature
     if actual_result == 'T':
         found_pb_for_tie = False
         for i in reversed(range(len(st.session_state.history))):
-            if st.session_state.history[i]['main_outcome'] in ['P', 'B']:
+            if st.session_state.history[i]['main_outcome'] in ['P', 'B', 'S6']: # Ties can attach to S6 too
                 st.session_state.history[i]['ties'] += 1
                 found_pb_for_tie = True
                 break
@@ -305,14 +309,17 @@ def record_bet_result(actual_result): # Simplified signature
     # The _update_learning function now takes the full history for pattern detection
     # so we pass st.session_state.history directly.
     if predicted_side != '?':
+        # When updating learning, we use the history *before* the current result was added
+        # to detect patterns that led to the prediction.
+        history_for_pattern_detection = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
+        big_road_data_for_pattern_detection = _build_big_road_data(history_for_pattern_detection)
+
         st.session_state.oracle_engine._update_learning(
             predicted_outcome=predicted_side,
             actual_outcome=actual_result,
-            # Pass the full history to detect_patterns, momentum, sequences for learning
-            # The methods themselves will handle slicing if needed.
-            patterns_detected=st.session_state.oracle_engine.detect_patterns(st.session_state.history[:-1], _build_big_road_data(st.session_state.history[:-1])),
-            momentum_detected=st.session_state.oracle_engine.detect_momentum(st.session_state.history[:-1], _build_big_road_data(st.session_state.history[:-1])),
-            sequences_detected=st.session_state.oracle_engine._detect_sequences(st.session_state.history[:-1])
+            patterns_detected=st.session_state.oracle_engine.detect_patterns(history_for_pattern_detection, big_road_data_for_pattern_detection),
+            momentum_detected=st.session_state.oracle_engine.detect_momentum(history_for_pattern_detection, big_road_data_for_pattern_detection),
+            sequences_detected=st.session_state.oracle_engine._detect_sequences(history_for_pattern_detection)
         )
     
     _cached_backtest_accuracy.clear()
@@ -432,31 +439,39 @@ if big_road_display_data:
             cell_content = ""
             # Check if there's data for this cell in the current column
             if row_idx < len(col) and col[row_idx] is not None:
-                cell_result, tie_count, natural_flag = col[row_idx]
-                emoji_color_class = "player-circle" if cell_result == "P" else "banker-circle"
+                # Unpack the tuple with the new is_super6 flag
+                # The tuple now contains (main_outcome, ties, is_natural, is_super6)
+                cell_result, tie_count, natural_flag, is_super6 = col[row_idx]
+                
+                emoji_color_class = ""
+                main_text_in_circle = "" # What text goes inside the circle
+
+                if cell_result == "P":
+                    emoji_color_class = "player-circle"
+                    main_text_in_circle = "" 
+                elif cell_result == "B":
+                    emoji_color_class = "banker-circle"
+                    main_text_in_circle = ""
+                elif cell_result == "T":
+                    emoji_color_class = "tie-circle" # Using a dedicated tie-circle class
+                    main_text_in_circle = "T" # Display 'T' for Tie inside the circle
+                elif cell_result == "S6":
+                    emoji_color_class = "banker-circle" # Super6 should be red like Banker
+                    main_text_in_circle = "6" # Display '6' for Super6 inside the circle
                 
                 tie_html = ""
                 if tie_count > 0:
                     tie_html = f"<div class='tie-oval'>{tie_count}</div>"
                 
-                natural_indicator = ""
-                if natural_flag:
-                    natural_indicator = f"<span class='natural-indicator'>N</span>"
-                
-                # Special handling for Super6 display in Big Road (if we decide to show it there)
-                # For now, Super6 is just another outcome like P/B/T in history.
-                # If 'S6' is a main_outcome, it will be displayed as a new circle.
-                # You might want to customize its appearance (e.g., a different color/icon).
-                if cell_result == 'S6':
-                    # Add a new CSS class for Super6 circles if you want a distinct visual
-                    # For now, it will use banker-circle but add an S6 indicator.
-                    # You can define .super6-circle { background-color: orange; } in CSS if desired.
-                    emoji_color_class = "banker-circle" # Default to banker color for now
-                    natural_indicator = f"<span class='natural-indicator'>S6</span>" # Indicate Super6
+                natural_indicator_html = ""
+                # Only show 'N' if it's natural AND NOT a Super6 (since S6 has '6' inside)
+                if natural_flag and not is_super6: 
+                    natural_indicator_html = f"<span class='natural-indicator'>N</span>"
 
                 cell_content = (
                     f"<div class='big-road-circle {emoji_color_class}'>"
-                    f"{natural_indicator}"
+                    f"{main_text_in_circle}" # Display the main text (e.g., 'T' or '6')
+                    f"{natural_indicator_html}" # Display 'N' if applicable
                     f"</div>"
                     f"{tie_html}"
                 )
