@@ -13,7 +13,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 CURRENT_ENGINE_VERSION = "1.10" # Version must match OracleEngine.__version__
 
 # --- Streamlit App Setup and CSS ---
-st.set_page_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
+st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered") # FIX: Changed set_page_page_config to set_page_config
 
 st.markdown("""
     <style>
@@ -343,28 +343,33 @@ def record_bet_result(actual_result): # Simplified signature
     st.session_state.debug_log.append(f"  Drawdown BEFORE calculation: {drawdown_before_this_hand}")
 
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    # User's refined logic:
+    # User's refined logic for live_drawdown:
     # Reset drawdown to 0 IF:
-    # 1. Specific prediction (P/B/S6) was made AND actual result HIT (P/B/S6)
-    # 2. Specific prediction (P/B/S6) was made AND actual result was T (Tie - neutral break)
+    # 1. Specific prediction (P/B/S6/T) was made AND actual result HIT
+    # 2. Specific prediction (P/B/S6/T) was made AND actual result was T (Tie - neutral break for P/B/S6)
     # Increment drawdown BY 1 IF:
-    # 1. Specific prediction (P/B/S6/T) was made AND actual result MISSED (P/B/S6/T)
+    # 1. Specific prediction (P/B/S6/T) was made AND actual result MISSED
     # Leave drawdown UNCHANGED IF:
     # 1. No specific prediction ('?') was made (AI recommended Avoid)
 
     if predicted_side != '?': # Only update drawdown if a specific prediction was made by AI
-        # Check if the prediction was a HIT (to reset drawdown)
         is_hit_for_drawdown_reset = False
+        is_miss_for_drawdown = False
+
         if predicted_side == 'P':
             if actual_result == 'P': is_hit_for_drawdown_reset = True
-            elif actual_result == 'T': is_hit_for_drawdown_reset = True # P predicted, T actual = reset drawdown
+            elif actual_result == 'T': is_hit_for_drawdown_reset = True # P predicted, T actual = reset drawdown (neutral break)
+            elif actual_result == 'B' or actual_result == 'S6': is_miss_for_drawdown = True
         elif predicted_side == 'B':
-            if actual_result == 'B' or actual_result == 'S6': is_hit_for_drawdown_reset = True # S6 is B win
-            elif actual_result == 'T': is_hit_for_drawdown_reset = True # B predicted, T actual = reset drawdown
+            if actual_result == 'B' or actual_result == 'S6': is_hit_for_drawdown_reset = True # B predicted, B or S6 actual = hit
+            elif actual_result == 'T': is_hit_for_drawdown_reset = True # B predicted, T actual = reset drawdown (neutral break)
+            elif actual_result == 'P': is_miss_for_drawdown = True
         elif predicted_side == 'T':
             if actual_result == 'T': is_hit_for_drawdown_reset = True
+            elif actual_result in ['P', 'B', 'S6']: is_miss_for_drawdown = True
         elif predicted_side == 'S6':
             if actual_result == 'S6': is_hit_for_drawdown_reset = True
+            elif actual_result in ['P', 'B', 'T']: is_miss_for_drawdown = True
         
         if is_hit_for_drawdown_reset:
             st.session_state.live_drawdown = 0
@@ -424,7 +429,7 @@ def record_bet_result(actual_result): # Simplified signature
             actual_outcome=actual_result,
             patterns_detected=st.session_state.oracle_engine.detect_patterns(history_for_pattern_detection, big_road_data_for_pattern_detection),
             momentum_detected=st.session_state.oracle_engine.detect_momentum(history_for_pattern_detection, big_road_data_for_pattern_detection),
-            sequences_detected=st.session_state.oracle_engine._detect_sequences(history_for_pattern_detection)
+            sequences_detected=st.session_session_state.oracle_engine._detect_sequences(history_for_pattern_detection)
         )
     
     _cached_backtest_accuracy.clear()
