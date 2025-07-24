@@ -13,7 +13,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 CURRENT_ENGINE_VERSION = "1.10" # Version must match OracleEngine.__version__
 
 # --- Streamlit App Setup and CSS ---
-st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
+st.set_page_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
 
 st.markdown("""
     <style>
@@ -243,8 +243,10 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "bet_log" not in st.session_state:
     st.session_state.bet_log = []
-if "last_prediction_data" not in st.session_state: # Store last prediction data for record_bet_result
+# Ensure last_prediction_data is always initialized properly
+if "last_prediction_data" not in st.session_state or st.session_state.last_prediction_data is None:
     st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+
 if "live_drawdown" not in st.session_state: # Live consecutive loss counter
     st.session_state.live_drawdown = 0
 if "gemini_analysis_result" not in st.session_state: # To store Gemini's analysis
@@ -323,6 +325,11 @@ def reset_all_history(): # This is now "Start New Shoe"
 
 def record_bet_result(actual_result): # Simplified signature
     # Retrieve predicted_side and recommendation_status from session state
+    # Ensure last_prediction_data is set before accessing
+    if "last_prediction_data" not in st.session_state or st.session_state.last_prediction_data is None:
+        st.session_state.last_prediction_data = {'prediction': '?', 'recommendation': 'Avoid ❌', 'risk': 'Uncertainty'}
+        st.session_state.debug_log.append(f"RECORD: last_prediction_data was reset/initialized.")
+
     predicted_side = st.session_state.last_prediction_data['prediction']
     recommendation_status = st.session_state.last_prediction_data['recommendation']
     
@@ -336,44 +343,37 @@ def record_bet_result(actual_result): # Simplified signature
     st.session_state.debug_log.append(f"  Drawdown BEFORE calculation: {drawdown_before_this_hand}")
 
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    # User's logic:
-    # 1. If AI predicts P/B/S6 and actual is P/B/S6 (hit) -> live_drawdown = 0
-    # 2. If AI predicts P/B/S6 and actual is T -> live_drawdown = 0 (Tie is a neutral break, reset drawdown)
-    # 3. If AI predicts T and actual is T -> live_drawdown = 0
-    # 4. If AI predicts T and actual is P/B/S6 -> live_drawdown += 1
-    # 5. If AI predicts S6 and actual is P/B/T -> live_drawdown += 1
-    # 6. If AI predicts P/B/S6 and actual is P/B/S6 (miss) -> live_drawdown += 1
-    # 7. If predicted_side is '?' -> live_drawdown remains unchanged.
+    # User's refined logic:
+    # Reset drawdown to 0 IF:
+    # 1. Specific prediction (P/B/S6) was made AND actual result HIT (P/B/S6)
+    # 2. Specific prediction (P/B/S6) was made AND actual result was T (Tie - neutral break)
+    # Increment drawdown BY 1 IF:
+    # 1. Specific prediction (P/B/S6/T) was made AND actual result MISSED (P/B/S6/T)
+    # Leave drawdown UNCHANGED IF:
+    # 1. No specific prediction ('?') was made (AI recommended Avoid)
 
-    if predicted_side != '?': # Only update drawdown if a specific prediction was made
-        is_hit_for_drawdown = False
-        is_miss_for_drawdown = False
-
+    if predicted_side != '?': # Only update drawdown if a specific prediction was made by AI
+        # Check if the prediction was a HIT (to reset drawdown)
+        is_hit_for_drawdown_reset = False
         if predicted_side == 'P':
-            if actual_result == 'P': is_hit_for_drawdown = True
-            elif actual_result == 'T': is_hit_for_drawdown = True # P predicted, T actual = reset drawdown
-            elif actual_result == 'B' or actual_result == 'S6': is_miss_for_drawdown = True
+            if actual_result == 'P': is_hit_for_drawdown_reset = True
+            elif actual_result == 'T': is_hit_for_drawdown_reset = True # P predicted, T actual = reset drawdown
         elif predicted_side == 'B':
-            if actual_result == 'B' or actual_result == 'S6': is_hit_for_drawdown = True
-            elif actual_result == 'T': is_hit_for_drawdown = True # B predicted, T actual = reset drawdown
-            elif actual_result == 'P': is_miss_for_drawdown = True
+            if actual_result == 'B' or actual_result == 'S6': is_hit_for_drawdown_reset = True # S6 is B win
+            elif actual_result == 'T': is_hit_for_drawdown_reset = True # B predicted, T actual = reset drawdown
         elif predicted_side == 'T':
-            if actual_result == 'T': is_hit_for_drawdown = True
-            elif actual_result in ['P', 'B', 'S6']: is_miss_for_drawdown = True
+            if actual_result == 'T': is_hit_for_drawdown_reset = True
         elif predicted_side == 'S6':
-            if actual_result == 'S6': is_hit_for_drawdown = True
-            elif actual_result in ['P', 'B', 'T']: is_miss_for_drawdown = True
+            if actual_result == 'S6': is_hit_for_drawdown_reset = True
         
-        if is_hit_for_drawdown:
+        if is_hit_for_drawdown_reset:
             st.session_state.live_drawdown = 0
             st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode on a hit
             st.session_state.debug_log.append(f"  Drawdown Logic: HIT! Drawdown reset to 0.")
-        elif is_miss_for_drawdown:
+        else: # Prediction was made but it was a MISS
             st.session_state.live_drawdown += 1
             st.session_state.debug_log.append(f"  Drawdown Logic: MISS! Drawdown incremented to {st.session_state.live_drawdown}.")
             # gemini_continuous_analysis_mode remains True if already active, or activates at drawdown 3
-        else: # This case should not be reached for specific predictions
-            st.session_state.debug_log.append(f"  Drawdown Logic: No change to drawdown (unexpected specific prediction path).")
     else: # If predicted_side is '?', live_drawdown remains unchanged.
         st.session_state.debug_log.append(f"  Drawdown Logic: No prediction ('?'). Drawdown remains {st.session_state.live_drawdown}.")
     
