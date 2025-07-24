@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.4" # System version identifier - Maximum Predict, very loose avoidance
+    VERSION = "Final V1.5 (Fast Detect)" # System version identifier - Faster detection, single avoid criteria
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -124,24 +124,24 @@ class OracleEngine:
             list: List of detected pattern names.
         """
         patterns = []
-        if len(history) < 4:
+        # Changed min history from 4 to 3 for faster initial detection
+        if len(history) < 3: 
             return patterns
 
         # Get last 15 outcomes for robust pattern detection, excluding Ties
         seq = ''.join([item['main_outcome'] for item in history[-15:] if item['main_outcome'] != 'T']) 
-        if len(seq) < 4: return patterns # Need enough non-tie outcomes
+        # Changed min seq length from 4 to 3
+        if len(seq) < 3: return patterns 
 
-        # Dragon (e.g., BBBBB..., PPPPP... - at least 4 consecutive)
-        if len(seq) >= 4:
-            if seq.endswith('BBBB'): patterns.append('Dragon')
-            if seq.endswith('PPPP'): patterns.append('Dragon')
+        # Dragon (e.g., BBB, PPP - at least 3 consecutive for faster detection)
+        if len(seq) >= 3:
+            if seq.endswith('BBB'): patterns.append('Dragon')
+            if seq.endswith('PPP'): patterns.append('Dragon')
         
-        # Pingpong (B-P-B-P - at least 3 alternations)
-        if len(seq) >= 6 and (seq.endswith('PBPBPB') or seq.endswith('BPBPBP')):
+        # Pingpong (B-P-B-P - at least 3 alternations for faster detection)
+        if len(seq) >= 3 and (seq.endswith('PBP') or seq.endswith('BPB')):
             patterns.append('Pingpong')
-        elif len(seq) >= 4 and (seq.endswith('PBPB') or seq.endswith('BPBP')):
-            patterns.append('Pingpong')
-
+        
         # Two-Cut (BB-PP-BB-PP - at least 2 pairs)
         if len(seq) >= 4:
             if seq.endswith('BBPP'): patterns.append('Two-Cut')
@@ -187,7 +187,7 @@ class OracleEngine:
             list: List of detected momentum names.
         """
         momentum = []
-        if len(history) < 3:
+        if len(history) < 3: # Keep 3 as X3+ Momentum needs it
             return momentum
 
         # Exclude Ties for streak calculation
@@ -207,10 +207,10 @@ class OracleEngine:
         if streak >= 3:
             momentum.append(f"{last_outcome}{streak}+ Momentum")
 
-        # Steady Repeat Momentum (e.g., PBPBPBP -> expect P)
-        if len(relevant_history) >= 6:
-            recent_seq = ''.join(relevant_history[-6:])
-            if recent_seq == 'PBPBPB' or recent_seq == 'BPBPBP':
+        # Steady Repeat Momentum (e.g., PBPBPB -> expect P) - reduced length for faster detection
+        if len(relevant_history) >= 4: # Changed from 6 to 4 for PBPB/BPBP
+            recent_seq = ''.join(relevant_history[-4:])
+            if recent_seq == 'PBPB' or recent_seq == 'BPBP':
                 momentum.append('Steady Repeat Momentum')
 
         return list(set(momentum))
@@ -240,11 +240,12 @@ class OracleEngine:
                 if recent_nontie_outcomes[i] != recent_nontie_outcomes[i+1]:
                     changes += 1
             if changes >= 4:
+                # Trap Timer now only sets the skip counter, does not force '⚠️' prediction directly
                 self.hands_to_skip_due_to_trap_timer = self.TRAP_TIMER_THRESHOLD
                 self.trap_zone_active = True
                 return 'Trap Timer Activated (Skip 2 bets)'
 
-        # General Trap Zone conditions (P1-B1, B3-P1, Pingpong Breaking)
+        # General Trap Zone conditions (P1-B1, B3-P1, Pingpong Breaking) - Still detected for risk string
         seq_last_3_nontie = ''.join(recent_nontie_outcomes[-3:]) if len(recent_nontie_outcomes) >= 3 else ''
         seq_last_4_nontie = ''.join(recent_nontie_outcomes[-4:]) if len(recent_nontie_outcomes) >= 4 else ''
         seq_last_7_nontie = ''.join(recent_nontie_outcomes[-7:]) if len(recent_nontie_outcomes) >= 7 else ''
@@ -532,14 +533,14 @@ class OracleEngine:
         confidence = 0 # Initialize confidence
 
         # --- High Priority Overrides (Forces Prediction to '⚠️') ---
-        # ONLY Low Confidence makes prediction ⚠️ now. Trap Timer only affects Risk string.
+        # ONLY Low Confidence makes prediction ⚠️ now. Other risks only affect Risk string.
         
-        # Core Avoid Condition 2: Confidence Threshold Override (<50%)
+        # Core Avoid Condition 2: Confidence Threshold Override (<60%)
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
-        if confidence < 50: # If confidence is low, it's always a strong avoid.
+        if confidence < 60: # Changed threshold from 50 to 60 as per request
              prediction = '⚠️'
-             risk = f'Low Confidence (<50%)'
+             risk = f'Low Confidence (<60%)'
              predicted_by_logic = f"Avoid (Confidence {confidence}%)"
 
 
@@ -603,7 +604,7 @@ class OracleEngine:
 
         # --- Set Risk Flags based on conditions (applies to P/B/⚠️ predictions) ---
         # These flags are for informative purposes in 'risk' string.
-        # They no longer force 'Avoid' recommendation, unless prediction is '⚠️'
+        # They no longer force 'Avoid' recommendation, unless prediction is '⚠️' (only by Low Confidence)
 
         # Trap Timer (Risk only, no longer forces ⚠️ prediction directly)
         if self.hands_to_skip_due_to_trap_timer > 0:
@@ -707,40 +708,29 @@ class OracleEngine:
         # Handle Trap Timer decrement first
         if self.hands_to_skip_due_to_trap_timer > 0:
             self.hands_to_skip_due_to_trap_timer -= 1
-            # If skipping due to timer, don't update prediction performance or new pattern count
-            # but *do* reset new pattern related flags so it can start fresh after timer
-            self.new_pattern_confirmation_count = 0 
-            self.last_dominant_pattern_id = None 
-            self.skip_first_bet_of_new_pattern_flag = False 
-            self.last_prediction_context = { # Clear context for next round
-                'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
-            }
-            return # Exit early if skipping
+        
+        # New pattern confirmation flags should still be managed regardless of Trap Timer.
+        # This logic determines if the new pattern count increments or resets.
+        # It's not directly related to the prediction outcome but to pattern recognition continuity.
+        if dominant_pattern_at_prediction is not None: # Ensure a pattern was identified
+            if dominant_pattern_at_prediction == self.last_dominant_pattern_id:
+                self.new_pattern_confirmation_count += 1
+            else:
+                self.new_pattern_confirmation_count = 1 # New dominant pattern, reset count to 1
+            self.last_dominant_pattern_id = dominant_pattern_at_prediction # Update for next round
+        else: # No clear dominant pattern in this round's context
+            self.new_pattern_confirmation_count = 0 # Reset if no dominant pattern
+            self.last_dominant_pattern_id = None
 
-        # Handle New Pattern First Bet Avoidance flag (This was only a flag for current hand)
+
+        # Clear the skip_first_bet_of_new_pattern_flag after one hand if it was active.
         if self.skip_first_bet_of_new_pattern_flag:
-            self.skip_first_bet_of_new_pattern_flag = False # Turn off the flag after this hand
-            # New Pattern confirmation starts from 1 after the skip, if the pattern persists
-            self.new_pattern_confirmation_count = 1 
-            self.last_dominant_pattern_id = dominant_pattern_at_prediction # Set for future comparisons
-            self.last_prediction_context = { # Clear context for next round
-                'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
-            }
-            return # Exit early if this hand was skipped for first bet
+            self.skip_first_bet_of_new_pattern_flag = False 
+            # If it was skipped, the new pattern confirmation might have just started
+            # We already handled new_pattern_confirmation_count above.
 
-        # Update New Pattern Confirmation count if not skipped
-        # This logic needs to check if the current dominant pattern (from last prediction context)
-        # matches the one from the previous hand, if so, increment. Else, reset.
-        if dominant_pattern_at_prediction is not None and dominant_pattern_at_prediction == self.last_dominant_pattern_id:
-             self.new_pattern_confirmation_count += 1
-        else:
-             self.new_pattern_confirmation_count = 1 # New dominant pattern, reset count to 1
-
-        self.last_dominant_pattern_id = dominant_pattern_at_prediction # Update for next round
-
-
-        # Only update learning for success/fail if a valid prediction (P/B) was made by the engine's core logic.
-        # If prediction_context was '⚠️', it implies the system chose to avoid, so don't learn success/fail from that.
+        # Only update learning for success/fail if a valid prediction (P/B) was made
+        # and it wasn't due to fundamental data insufficiency or critically low confidence.
         if predicted_outcome_context in ['P', 'B']: # Only learn if the system actually predicted P or B
             if actual_outcome == predicted_outcome_context:
                 # Prediction was correct
