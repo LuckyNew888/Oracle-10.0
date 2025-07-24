@@ -1,15 +1,16 @@
 import streamlit as st
-import asyncio
+import asyncio # Not directly used for API calls anymore, but can be kept for future async needs
 import time
-from oracle_engine import OracleEngine # ตรวจสอบให้แน่ใจว่าไฟล์ oracle_engine.py อยู่ในไดเรกทอรีเดียวกัน
+from oracle_engine import OracleEngine # Ensure oracle_engine.py is in the same directory
 
-# กำหนดค่าเริ่มต้นของหน้า Streamlit
-st.set_page_config(page_title="ORACLE Baccarat Predictor", layout="centered") # เปลี่ยน title ใน browser tab
+# Set Streamlit page configuration
+st.set_page_config(page_title="ORACLE Baccarat Predictor", layout="centered")
 
-# Custom CSS for centered gold title and reduced spacing
+# Custom CSS for centered gold title, reduced spacing, and prediction text size
 st.markdown("""
 <style>
 /* Font import from Google Fonts - This might be blocked by CSP in some environments */
+/* Attempt to use Inter font if available on system */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&display=swap');
 
 .center-gold-title {
@@ -20,7 +21,9 @@ st.markdown("""
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     margin-bottom: 0.5rem; /* Reduced space below title */
     padding-bottom: 0px;
-    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Attempt to change font */
+    /* Prioritize system fonts like Inter, Segoe UI, Roboto, Arial.
+       If Inter from Google Fonts is blocked, system fonts will be used. */
+    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
 }
 h3 {
     margin-top: 0.5rem; /* Reduced space above h3 */
@@ -33,6 +36,7 @@ h3 {
 .stButton>button {
     margin-top: 0.2rem; /* Reduced space around buttons */
     margin-bottom: 0.2rem;
+    line-height: 1.2; /* Adjust line height for button text if needed */
 }
 
 /* Prediction text will now use h1 tag for main sizing */
@@ -44,39 +48,45 @@ h3 {
 }
 
 /* Reduce padding around columns to make buttons closer */
-/* This class name might change based on Streamlit versions */
-.st-emotion-cache-1colbu6 { 
+/* This class name might change based on Streamlit versions (e.g., st-emotion-cache-xxxx) */
+div[data-testid="stColumns"] > div {
     padding-left: 0.2rem;
     padding-right: 0.2rem;
 }
-
+/* Ensure the history display also has less padding */
+.stMarkdown.st-emotion-cache-xyz p { /* Placeholder for actual p tag selector within stMarkdown */
+    padding: 0px;
+    margin: 0px;
+}
 </style>
 """, unsafe_allow_html=True)
 
+# Main title of the app
 st.markdown('<h1 class="center-gold-title">🔮 ORACLE</h1>', unsafe_allow_html=True)
 
-# --- การจัดการสถานะของ OracleEngine ---
+# --- State Management for OracleEngine ---
+# Initialize OracleEngine only once
 if 'oracle_engine' not in st.session_state:
     st.session_state.oracle_engine = OracleEngine()
+# Initialize history
 if 'oracle_history' not in st.session_state:
     st.session_state.oracle_history = []
+# Initialize losing streak counter for the system's predictions
 if 'losing_streak_prediction' not in st.session_state:
     st.session_state.losing_streak_prediction = 0
 
-# ดึง instance ของ OracleEngine จาก session_state มาใช้งาน
+# Retrieve the OracleEngine instance from session_state
 oracle = st.session_state.oracle_engine
 
-# --- ส่วนการแสดงผลการทำนาย ---
-st.markdown("<h3>ผลวิเคราะห์:</h3>", unsafe_allow_html=True) # เปลี่ยนหัวข้อ
+# --- Prediction Display Section ---
+st.markdown("<h3>ผลวิเคราะห์:</h3>", unsafe_allow_html=True) # Shortened title
 
+# Check if enough history is available for analysis
 if len(st.session_state.oracle_history) >= 20: 
-    # ส่ง history จาก session_state ให้ Engine ทำนาย
+    # Pass the full history to the engine for prediction
     result = oracle.predict_next(st.session_state.oracle_history)
 
-    # แสดงผลการทำนายในรูปแบบที่กำหนด
-    emoji_map = {'P': '🟦', 'B': '🟥', 'T': '⚪️', '⚠️': '⚠️'}
-    
-    # Text for prediction based on result['prediction']
+    # Prepare prediction text with emojis and style
     prediction_text = ""
     if result['prediction'] == 'P':
         prediction_text = f"🔵 P"
@@ -87,132 +97,127 @@ if len(st.session_state.oracle_history) >= 20:
     else:
         prediction_text = result['prediction'] # Fallback for '?'
 
-    # Adjust font size for prediction using HTML/CSS
-    # Using <h1> tag directly for larger size
+    # Display prediction using h1 tag for large size
     st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
     
+    # Display Accuracy, Risk, Recommendation, and Losing Streak
     st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
     st.markdown(f"**📍 Risk:** {result['risk']}")
     st.markdown(f"**🧾 Recommendation:** {result['recommendation']}")
     
-    # แสดงผลแพ้ติดกันของระบบ
+    # Display the system's losing streak
     if st.session_state.losing_streak_prediction > 0:
         st.warning(f"**❌ แพ้ติดกัน:** {st.session_state.losing_streak_prediction} ครั้ง")
     else:
-        st.success(f"**✅ แพ้ติดกัน:** 0 ครั้ง") # แสดงเป็น 0 เมื่อไม่แพ้ติดกัน
+        st.success(f"**✅ แพ้ติดกัน:** 0 ครั้ง")
 else:
-    # แก้ไขข้อความแจ้งเตือนตามที่ร้องขอ
+    # Message when not enough data for analysis
     st.info(f"🔮 ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย 20 ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
 
-# --- ส่วนแสดงผลย้อนหลัง ---
+# --- History Display Section ---
 st.markdown("<h3>📋 ประวัติผลลัพธ์</h3>", unsafe_allow_html=True)
 if st.session_state.oracle_history:
     emoji_history = {'P': '🟦', 'B': '🟥', 'T': '⚪️'}
+    # Display history as a single string of emojis for compactness
     st.write(' '.join(emoji_history.get(item['main_outcome'], '') for item in st.session_state.oracle_history))
 else:
     st.info("ยังไม่มีผลลัพธ์ในประวัติ")
 
-# --- ปุ่มควบคุมการเพิ่มผลลัพธ์ ---
+# --- Record Outcome Buttons Section ---
 st.markdown("<h3>➕ บันทึกผลลัพธ์</h3>", unsafe_allow_html=True)
 col1, col2, col3, col4 = st.columns(4)
 
-with col1:
-    if st.button("🟦 P", use_container_width=True, key="add_p"):
-        actual_outcome_for_prev_pred = 'P'
-        # ต้องมีข้อมูลเพียงพอสำหรับการทำนายในรอบก่อนหน้าก่อนที่จะอัปเดต losing streak
-        if len(st.session_state.oracle_history) >= 20 and oracle.last_prediction_context['prediction'] != '?' and oracle.last_prediction_context['prediction'] != '⚠️':
-            prev_predicted_outcome = oracle.last_prediction_context['prediction']
-            
-            if actual_outcome_for_prev_pred == 'T': # Tie, no change to streak
+# Function to handle adding a new result and updating learning/streak
+def add_new_result(outcome):
+    # Check if there was a previous prediction from the system for this hand
+    # This logic runs before adding the new outcome to history,
+    # as last_prediction_context stores the prediction *for the current (last) state*
+    # before the new outcome is added.
+    if len(st.session_state.oracle_history) >= 20: # Only update streak if prediction was active
+        prev_predicted_outcome = oracle.last_prediction_context['prediction']
+        
+        # Update losing streak based on the *previous* prediction and the *current* actual outcome
+        if prev_predicted_outcome not in ['?', '⚠️']: # If system made a valid prediction
+            if outcome == 'T': # Tie, losing streak does not change
                 pass
-            elif prev_predicted_outcome == actual_outcome_for_prev_pred: # Correct prediction
+            elif prev_predicted_outcome == outcome: # Correct prediction
                 st.session_state.losing_streak_prediction = 0
             else: # Incorrect prediction
                 st.session_state.losing_streak_prediction += 1
-        
-        st.session_state.oracle_history.append({'main_outcome': actual_outcome_for_prev_pred}) # เพิ่มลง history
-        oracle.update_learning_state(actual_outcome_for_prev_pred) # อัปเดตการเรียนรู้ของ Engine
-        st.rerun() 
+    
+    st.session_state.oracle_history.append({'main_outcome': outcome}) # Add the actual outcome to history
+    oracle.update_learning_state(outcome) # Update engine's internal learning state
+    st.rerun() # Rerun the app to update UI
+
+with col1:
+    if st.button("🟦 P", use_container_width=True, key="add_p"):
+        add_new_result('P')
 with col2:
     if st.button("🟥 B", use_container_width=True, key="add_b"):
-        actual_outcome_for_prev_pred = 'B'
-        if len(st.session_state.oracle_history) >= 20 and oracle.last_prediction_context['prediction'] != '?' and oracle.last_prediction_context['prediction'] != '⚠️':
-            prev_predicted_outcome = oracle.last_prediction_context['prediction']
-            if actual_outcome_for_prev_pred == 'T':
-                pass
-            elif prev_predicted_outcome == actual_outcome_for_prev_pred:
-                st.session_state.losing_streak_prediction = 0
-            else:
-                st.session_state.losing_streak_prediction += 1
-        
-        st.session_state.oracle_history.append({'main_outcome': actual_outcome_for_prev_pred})
-        oracle.update_learning_state(actual_outcome_for_prev_pred)
-        st.rerun()
+        add_new_result('B')
 with col3:
     if st.button("⚪️ T", use_container_width=True, key="add_t"):
-        actual_outcome_for_prev_pred = 'T'
-        # Ties do not affect losing streak, so only update learning state
-        # No need to check for len(history) here, as update_learning_state will handle prediction context
-        
-        st.session_state.oracle_history.append({'main_outcome': actual_outcome_for_prev_pred})
-        oracle.update_learning_state(actual_outcome_for_prev_pred)
-        st.rerun()
+        add_new_result('T')
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
-            st.session_state.oracle_history.pop() # ลบจาก history ใน session_state
+            st.session_state.oracle_history.pop() # Remove last outcome from history
             
-            # เมื่อลบประวัติ ต้องรีเซ็ต Engine และให้มัน "เรียนรู้" ใหม่จากประวัติที่เหลือ
-            # สร้าง OracleEngine instance ใหม่ เพื่อล้างสถานะการเรียนรู้ทั้งหมด
-            st.session_state.oracle_engine = OracleEngine() 
-            st.session_state.losing_streak_prediction = 0 # Reset for recalculation during replay
+            # When removing an item, we must re-initialize the engine
+            # and replay the remaining history to correctly rebuild its learning state.
+            st.session_state.oracle_engine = OracleEngine() # Create a fresh engine instance
+            st.session_state.losing_streak_prediction = 0 # Reset streak, it will be recalculated
             
-            # ลูปเพิ่มผลลัพธ์ที่เหลือกลับเข้าไปใน Engine ทีละตัวเพื่อให้มัน "เรียนรู้" ใหม่
+            # Replay history to rebuild the engine's state and recalculate losing streak
             for i in range(len(st.session_state.oracle_history)):
-                # Simulate the process: predict, then update learning
-                current_history_segment_for_replay = st.session_state.oracle_history[:i+1] # History up to this point
-                
-                # We need to simulate the prediction process for each hand to correctly
-                # update the internal state for losing streak and learning
-                temp_result = None
-                if len(current_history_segment_for_replay) >= 20:
-                    temp_result = st.session_state.oracle_engine.predict_next(current_history_segment_for_replay)
+                current_sub_history = st.session_state.oracle_history[:i+1]
+                actual_outcome_for_replay = current_sub_history[-1]['main_outcome']
+
+                # Predict for this sub-history point if enough data
+                if len(current_sub_history) >= 20:
+                    temp_result = st.session_state.oracle_engine.predict_next(current_sub_history, is_backtest=False) # Not truly backtest for single step
+                    
                     # Manually set last_prediction_context for learning
                     st.session_state.oracle_engine.last_prediction_context = {
                         'prediction': temp_result['prediction'],
-                        'patterns': temp_result['developer_view'].split(';')[1].replace('DNA Patterns: ', '').split(', ') if 'DNA Patterns: ' in temp_result['developer_view'] else [],
-                        'momentum': temp_result['developer_view'].split(';')[2].replace('Momentum: ', '').split(', ') if 'Momentum: ' in temp_result['developer_view'] else [],
-                        'intuition_applied': 'Intuition:' in temp_result['developer_view']
+                        'patterns': temp_result['developer_view'].split('DNA Patterns: ')[1].split(';')[0].split(', ') if 'DNA Patterns: ' in temp_result['developer_view'] else [],
+                        'momentum': temp_result['developer_view'].split('Momentum: ')[1].split(';')[0].split(', ') if 'Momentum: ' in temp_result['developer_view'] else [],
+                        'intuition_applied': 'Intuition' in temp_result['developer_view'], # Simplified check
+                        'predicted_by': temp_result['developer_view'].split('Predicted by: ')[1].split(';')[0] if 'Predicted by: ' in temp_result['developer_view'] else 'None'
                     }
-                    
-                    # Update losing streak during replay
-                    if temp_result['prediction'] != '?' and temp_result['prediction'] != '⚠️':
-                        if current_history_segment_for_replay[-1]['main_outcome'] == 'T':
+
+                    # Re-calculate losing streak for replay
+                    # Compare the prediction just made with the actual outcome for this specific hand
+                    if oracle.last_prediction_context['prediction'] not in ['?', '⚠️']:
+                        if actual_outcome_for_replay == 'T':
                             pass
-                        elif temp_result['prediction'] == current_history_segment_for_replay[-1]['main_outcome']:
+                        elif oracle.last_prediction_context['prediction'] == actual_outcome_for_replay:
                             st.session_state.losing_streak_prediction = 0
                         else:
                             st.session_state.losing_streak_prediction += 1
-                else: # Clear last_prediction_context if not enough data for this hand
+                else:
+                    # Clear last_prediction_context if not enough data for this hand during replay
                     st.session_state.oracle_engine.last_prediction_context = {
-                        'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False
+                        'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None
                     }
                 
                 # Update learning state after each hand in replay
-                st.session_state.oracle_engine.update_learning_state(current_history_segment_for_replay[-1]['main_outcome'])
+                st.session_state.oracle_engine.update_learning_state(actual_outcome_for_replay)
             st.rerun()
 
-# --- ปุ่มรีเซ็ตเต็มจอ ---
+# --- Reset All Button ---
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
-    st.session_state.oracle_history.clear() # ล้างประวัติทั้งหมด
-    st.session_state.oracle_engine = OracleEngine() # สร้าง OracleEngine instance ใหม่เพื่อรีเซ็ตสถานะทั้งหมด
+    st.session_state.oracle_history.clear() # Clear all history
+    st.session_state.oracle_engine = OracleEngine() # Create a fresh OracleEngine instance to reset all its states
     st.session_state.losing_streak_prediction = 0 # Reset losing streak
     st.rerun()
 
-# --- Developer View (Moved to bottom and in expander) ---
-# Call predict_next again just to get the developer_view string
-# This is a bit redundant but ensures dev view is always fresh after all updates
+# --- Developer View (Moved to bottom and in an expander) ---
+# Only show if enough history is present
 if len(st.session_state.oracle_history) >= 20: 
+    # Recalculate prediction context just to get the full developer_view string for display
+    # This might be slightly redundant but ensures the dev view is always fresh after all updates
     current_prediction_info = oracle.predict_next(st.session_state.oracle_history)
     with st.expander("🧬 Developer View: คลิกเพื่อดูรายละเอียด"):
         st.code(current_prediction_info['developer_view'], language='text')
+
