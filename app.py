@@ -36,7 +36,7 @@ h3 {
 }
 /* Specific style for prediction text to make it larger */
 .prediction-text {
-    font-size: 1.5em; /* Larger font size for prediction */
+    font-size: 2.0em; /* Increased font size for prediction */
     font-weight: bold;
 }
 /* Reduce padding around columns to make buttons closer */
