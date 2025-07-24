@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.9 (Pattern Fix)" # System version identifier - Maximum Predict, very loose avoidance, Fixed Pattern Detection
+    VERSION = "Final V1.10 (Advanced Pattern Fix)" # System version identifier - Fixed 1/2 and 2/1 Pattern Detection
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -152,17 +152,17 @@ class OracleEngine:
             if seq.endswith('BBBPPP'): patterns.append('Triple-Cut')
             if seq.endswith('PPPBBB'): patterns.append('Triple-Cut')
 
-        # One-Two Pattern (P-BB-P or B-PP-B) - corrected linear detection for "1/2"
-        # This pattern has a length of 4 characters: XYYX
-        if len(seq) >= 4:
-            if seq[-4:] == 'PBBP': patterns.append('One-Two Pattern') # P-BB-P
-            if seq[-4:] == 'BPPB': patterns.append('One-Two Pattern') # B-PP-B
+        # One-Two Pattern (1/2) - Corrected: PBB PBB or BPP BPP
+        # Needs at least 6 characters for the repeating pattern XYYXYY
+        if len(seq) >= 6:
+            if seq[-6:] == 'PBBPBB': patterns.append('One-Two Pattern') # P-BB-P-BB
+            if seq[-6:] == 'BPPBPP': patterns.append('One-Two Pattern') # B-PP-B-PP
 
-        # Two-One Pattern (PP-B-PP or BB-P-BB) - corrected linear detection for "2/1"
-        # This pattern has a length of 5 characters: XXYXX
-        if len(seq) >= 5: 
-            if seq[-5:] == 'PPBPP': patterns.append('Two-One Pattern') # PP-B-PP
-            if seq[-5:] == 'BBPBB': patterns.append('Two-One Pattern') # BB-P-BB
+        # Two-One Pattern (2/1) - Corrected: PPB PPB or BBP BBP
+        # Needs at least 6 characters for the repeating pattern XXYXXY
+        if len(seq) >= 6: 
+            if seq[-6:] == 'PPBPPB': patterns.append('Two-One Pattern') # PP-B-PP
+            if seq[-6:] == 'BBPBBP': patterns.append('Two-One Pattern') # BB-P-BB
         
         # Broken Pattern (e.g., PPPPBB, BBPPBB) - indicates disruption in streak/pattern
         if len(seq) >= 4:
