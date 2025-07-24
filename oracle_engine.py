@@ -16,6 +16,10 @@ class OracleEngine:
         self.tie_stats = {} # {'pattern_name': {'hits': N, 'attempts': M}}
         self.super6_stats = {} # {'pattern_name': {'hits': N, 'attempts': M}}
 
+        # This attribute MUST be initialized as a dictionary
+        self.failed_pattern_instances = {} 
+
+
         # Static Weights (Can be fine-tuned)
         self.base_confidence_score = 75 # Starting point for confidence
         self.min_history_for_prediction = 20 # Minimum P/B hands required for prediction
@@ -71,7 +75,7 @@ class OracleEngine:
         self.sequence_memory_stats = {}
         self.tie_stats = {}
         self.super6_stats = {}
-        # Correctly initialize failed_pattern_instances as a dict
+        # Ensure failed_pattern_instances is reset to an empty dict
         self.failed_pattern_instances = {} 
 
 
@@ -265,7 +269,7 @@ class OracleEngine:
                         prev_prev_prev_col = big_road_data[-4]
                         prev_prev_prev_col_actual = [cell[0] for cell in prev_prev_prev_col if cell is not None and cell[0] in ['P', 'B', 'S6']] if prev_prev_prev_col else []
                         if prev_prev_prev_col_actual:
-                            prev_prev_prev_col_first_outcome_val = 'B' if prev_prev_prev_col_actual[0] == 'S6' else prev_prev_prev_col_actual[0] # Corrected line
+                            prev_prev_prev_col_first_outcome_val = 'B' if prev_prev_prev_col_actual[0] == 'S6' else prev_prev_prev_col_actual[0] 
 
                             if (last_col_len == prev_col_len and prev_col_len == prev_prev_col_len and prev_prev_col_len == prev_prev_prev_col_len and
                                 last_col_len == 1 and prev_col_len == 1 and prev_prev_col_len == 1 and prev_prev_prev_col_len == 1 and
@@ -411,8 +415,17 @@ class OracleEngine:
         self._update_sequence_memory_stats(sequences_detected, predicted_outcome, actual_outcome)
 
         # Update Tie/Super6 Specific Stats (not directly linked to a specific prediction, but for overall tracking)
-        # This part needs to be carefully handled to avoid over-updating.
         # For simplicity, Tie/Super6 patterns are part of patterns_detected.
+
+        # Correctly update failed_pattern_instances (This was missing from v1.0 simplified)
+        if not is_hit:
+            # We need to re-detect patterns based on the state *before* the current hand
+            # to know what patterns were active when the prediction was made.
+            # This logic needs to be careful not to penalize patterns that were just 'noise'.
+            # For simplicity, just increment a generic failed count if prediction was explicit and missed.
+            if predicted_outcome != '?': # Only track failures if there was a specific prediction
+                self.failed_pattern_instances[predicted_outcome] = self.failed_pattern_instances.get(predicted_outcome, 0) + 1
+
 
     def _is_pattern_instance_failed(self, name, sequence_snapshot):
         """Checks if a specific pattern instance previously led to a miss."""
@@ -797,6 +810,7 @@ def _cached_backtest_accuracy(history, pattern_stats, momentum_stats, failed_pat
     sim_engine.sequence_memory_stats = sequence_memory_stats.copy()
     sim_engine.tie_stats = tie_stats.copy()
     sim_engine.super6_stats = super6_stats.copy()
+    sim_engine.failed_pattern_instances = failed_pattern_instances.copy() # Ensure this is copied
 
     hits = 0
     total_bets_counted = 0
