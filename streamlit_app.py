@@ -349,7 +349,7 @@ def record_bet_result(actual_result): # Simplified signature
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
     # User's refined logic for live_drawdown:
     # Reset drawdown to 0 IF:
-    # 1. Specific prediction (P/B/S6/T) was made AND actual result HIT
+    # 1. Specific prediction (P/B/S6) was made AND actual result HIT
     # 2. Specific prediction (P/B/S6) was made AND actual result was T (Tie - neutral break for P/B/S6)
     # Increment drawdown BY 1 IF:
     # 1. Specific prediction (P/B/S6/T) was made AND actual result MISSED
@@ -510,7 +510,7 @@ async def get_gemini_analysis(history_data):
                             2. **แนวโน้มปัจจุบัน:** แนวโน้มยังคงผันผวน แต่ Banker มีโอกาสที่จะสร้าง Streak ได้อีกครั้ง
                             3. **โอกาสของ Tie/Super6:**
                                * **Tie:** มีโอกาสปานกลาง (ประมาณ 10-15%) เนื่องจากมีการออก Tie ประปรายในประวัติ และบางครั้งก็เกิดขึ้นหลังจากรูปแบบ PBP.
-                               * **Super6:** โอกาสค่อนต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา.
+                               * **Super6:** โอกาสค่อนข้างต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา.
                             4. **คำแนะนำโดยรวม:** แนะนำให้ Bet Banker (B) ด้วยความระมัดระวัง. หากมี Tie เกิดขึ้น ให้ถือว่าเสมอตัว. หลีกเลี่ยง Super6 เว้นแต่จะมีข้อมูลเพิ่มเติมที่แข็งแกร่งกว่านี้.
                             """
                         }
