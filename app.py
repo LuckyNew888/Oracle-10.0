@@ -4,8 +4,8 @@ import time
 from oracle_engine import OracleEngine # ตรวจสอบให้แน่ใจว่าไฟล์ oracle_engine.py อยู่ในไดเรกทอรีเดียวกัน
 
 # กำหนดค่าเริ่มต้นของหน้า Streamlit
-st.set_page_config(page_title="SYNAPSE VISION Baccarat", layout="centered")
-st.title("🧠 SYNAPSE VISION Baccarat Predictor")
+st.set_page_config(page_title="ORACLE Baccarat Predictor", layout="centered") # เปลี่ยน title ใน browser tab
+st.markdown("<h1>🔮 ORACLE</h1>", unsafe_allow_html=True) # เปลี่ยนชื่อระบบและใช้ H1 เพื่อฟอนต์ที่สวยงาม
 st.markdown("---")
 
 # --- การจัดการสถานะของ OracleEngine ---
@@ -19,10 +19,8 @@ if 'gemini_analysis_result' not in st.session_state:
 
 # ดึง instance ของ OracleEngine จาก session_state มาใช้งาน
 oracle = st.session_state.oracle_engine
-# อัปเดต history ใน OracleEngine ด้วยข้อมูลจาก session_state
-oracle.history = st.session_state.oracle_history
 
-# ====== คำนวณสตรีคปัจจุบันของ P หรือ B (ไม่รวม T) =======
+# ====== คำนวณสตรีคปัจจุบันของ P หรือ B (ไม่นับ T) =======
 def get_current_pb_streak(history_data):
     """
     Calculates the current streak length of P or B, ignoring T.
@@ -61,8 +59,9 @@ def get_current_pb_streak(history_data):
 st.markdown("### 🔮 ผลการวิเคราะห์และทำนาย")
 
 # oracle.predict_next() มีเงื่อนไขว่าต้องมีประวัติอย่างน้อย 20 ตา
-if len(oracle.history) >= 20: 
-    result = oracle.predict_next()
+if len(st.session_state.oracle_history) >= 20: 
+    # ส่ง history จาก session_state ให้ Engine ทำนาย
+    result = oracle.predict_next(st.session_state.oracle_history)
 
     # แสดงผลตามโครงสร้าง Developer Mode
     emoji_map = {'P': '🟦', 'B': '🟥', 'T': '⚪️', '⚠️': '⚠️'}
@@ -76,14 +75,15 @@ if len(oracle.history) >= 20:
     st.markdown(f"🧾 **Recommendation:** {result['recommendation']}")
     
     # แสดงสตรีคปัจจุบัน (P/B)
-    current_streak_type, current_streak_length = get_current_pb_streak(oracle.history)
+    current_streak_type, current_streak_length = get_current_pb_streak(st.session_state.oracle_history)
     if current_streak_type and current_streak_length > 0:
         st.info(f"📈 ห้องนี้กำลังมีสตรีค **{current_streak_type}** ติดกัน **{current_streak_length}** ตา (ไม่นับเสมอ)")
     else:
         st.info("📊 ยังไม่มีสตรีค P/B ที่ชัดเจน (ไม่นับเสมอ)")
 
 else:
-    st.info(f"กรุณาใส่ผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ SYNAPSE VISION Baccarat เริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(oracle.history)} ตา)")
+    # แก้ไขข้อความแจ้งเตือนตามที่ร้องขอ
+    st.info(f"🔮ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย 20 ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
 
 # --- ส่วนแสดงผลย้อนหลัง ---
 st.markdown("---")
@@ -101,40 +101,40 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button("🟦 P", use_container_width=True, key="add_p"):
-        oracle.add_result('P')
-        st.session_state.oracle_history.append({'main_outcome': 'P'}) # อัปเดต UI history
+        st.session_state.oracle_history.append({'main_outcome': 'P'}) # เพิ่มลง session_state ก่อน
+        oracle.add_result('P') # แล้วเรียก add_result ของ Engine เพื่ออัปเดตการเรียนรู้
         st.session_state.gemini_analysis_result = None # Clear previous Gemini analysis
-        st.rerun() # บังคับให้ Streamlit refresh เพื่อแสดงผลล่าสุด
+        st.rerun() 
 with col2:
     if st.button("🟥 B", use_container_width=True, key="add_b"):
-        oracle.add_result('B')
-        st.session_state.oracle_history.append({'main_outcome': 'B'})
+        st.session_state.oracle_history.append({'main_outcome': 'B'}) # เพิ่มลง session_state ก่อน
+        oracle.add_result('B') # แล้วเรียก add_result ของ Engine เพื่ออัปเดตการเรียนรู้
         st.session_state.gemini_analysis_result = None
         st.rerun()
 with col3:
     if st.button("⚪️ T", use_container_width=True, key="add_t"):
-        oracle.add_result('T')
-        st.session_state.oracle_history.append({'main_outcome': 'T'})
+        st.session_state.oracle_history.append({'main_outcome': 'T'}) # เพิ่มลง session_state ก่อน
+        oracle.add_result('T') # แล้วเรียก add_result ของ Engine เพื่ออัปเดตการเรียนรู้
         st.session_state.gemini_analysis_result = None
         st.rerun()
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
-            # เพื่อให้สถานะของ OracleEngine สอดคล้องกับการลบ
-            # วิธีที่ดีที่สุดคือ reset Engine แล้วใส่ประวัติใหม่ที่ไม่รวมตัวที่ถูกลบ
-            st.session_state.oracle_history.pop() # ลบจาก UI history
-            oracle.reset_history() # รีเซ็ต Engine ทั้งหมด
-            # ใส่ประวัติที่เหลือกลับเข้าไปใน Engine ทีละตัวเพื่อให้มัน "เรียนรู้" ใหม่
+            st.session_state.oracle_history.pop() # ลบจาก history ใน session_state
+            # เมื่อลบประวัติ ต้องรีเซ็ต Engine และให้มัน "เรียนรู้" ใหม่จากประวัติที่เหลือ
+            # สร้าง OracleEngine instance ใหม่ เพื่อล้างสถานะการเรียนรู้ทั้งหมด
+            st.session_state.oracle_engine = OracleEngine() 
+            # ลูปเพิ่มผลลัพธ์ที่เหลือกลับเข้าไปใน Engine เพื่อให้เรียนรู้ใหม่
             for item in st.session_state.oracle_history:
-                oracle.add_result(item['main_outcome'])
+                st.session_state.oracle_engine.add_result(item['main_outcome'])
             st.session_state.gemini_analysis_result = None # Clear previous Gemini analysis
             st.rerun()
 
 # --- ปุ่มรีเซ็ตเต็มจอ ---
 st.markdown("---")
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
-    st.session_state.oracle_history.clear()
-    st.session_state.oracle_engine.reset_history() # เรียก reset_history ของ OracleEngine ด้วย
+    st.session_state.oracle_history.clear() # ล้างประวัติทั้งหมด
+    st.session_state.oracle_engine = OracleEngine() # สร้าง OracleEngine instance ใหม่เพื่อรีเซ็ตสถานะทั้งหมด
     st.session_state.gemini_analysis_result = None # Clear previous Gemini analysis
     st.rerun()
 
@@ -155,31 +155,6 @@ async def call_gemini_analysis(history_data):
         # Prepare context for Gemini (mocked for now)
         history_str = ' '.join([item['main_outcome'] for item in history_data[-30:]]) # last 30 hands for context
         
-        # --- Conceptual Real API Call (Not runnable in this environment) ---
-        # import requests
-        # payload = {
-        #     "contents": [
-        #         {
-        #             "role": "user",
-        #             "parts": [
-        #                 {"text": f"Based on this Baccarat history: {history_str}. Provide a concise analysis of patterns, momentum, and potential risks. Focus on actionable insights for prediction. Use Thai language. Format as a markdown summary."},
-        #             ]
-        #         }
-        #     ],
-        #     "generationConfig": {
-        #         "responseMimeType": "text/plain", # or "application/json" if you need structured output
-        #     }
-        # }
-        # api_key = "" # API key provided by environment
-        # api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key={api_key}"
-        # response = requests.post(api_url, json=payload)
-        # if response.status_code == 200:
-        #     response_data = response.json()
-        #     gemini_analysis = response_data['candidates'][0]['content']['parts'][0]['text']
-        # else:
-        #     gemini_analysis = "เกิดข้อผิดพลาดในการเชื่อมต่อกับ Gemini หรือ API Key ไม่ถูกต้อง."
-        # --- End of Conceptual Real API Call ---
-
         # Mocked Gemini Analysis for demonstration
         mock_analysis = f"""
 **การวิเคราะห์โดย Gemini AI (จากประวัติ {len(history_data)} ตา):**
@@ -195,11 +170,10 @@ async def call_gemini_analysis(history_data):
         return mock_analysis
 
 if st.button("✨ เรียก Gemini เพื่อวิเคราะห์สถานการณ์ปัจจุบัน", use_container_width=True, key="call_gemini_btn"):
-    if len(oracle.history) > 0: # Only call if there's some history
-        st.session_state.gemini_analysis_result = asyncio.run(call_gemini_analysis(oracle.history))
+    if len(st.session_state.oracle_history) > 0: # Only call if there's some history
+        st.session_state.gemini_analysis_result = asyncio.run(call_gemini_analysis(st.session_state.oracle_history))
     else:
         st.warning("กรุณาใส่ผลลัพธ์อย่างน้อยหนึ่งตา เพื่อให้ Gemini มีข้อมูลสำหรับวิเคราะห์")
 
 if st.session_state.gemini_analysis_result:
     st.markdown(st.session_state.gemini_analysis_result)
-
