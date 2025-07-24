@@ -257,7 +257,8 @@ if "hands_since_last_gemini_analysis" not in st.session_state: # Counter for aut
     st.session_state.hands_since_last_gemini_analysis = 0
 if "gemini_continuous_analysis_mode" not in st.session_state: # New: Flag for continuous Gemini analysis during drawdown
     st.session_state.gemini_continuous_analysis_mode = False
-if "debug_log" not in st.session_state: # Initialize debug log
+# FIX: Ensure debug_log is initialized first before any appends
+if "debug_log" not in st.session_state:
     st.session_state.debug_log = []
 
 
@@ -346,7 +347,7 @@ def record_bet_result(actual_result): # Simplified signature
     # User's refined logic for live_drawdown:
     # Reset drawdown to 0 IF:
     # 1. Specific prediction (P/B/S6/T) was made AND actual result HIT
-    # 2. Specific prediction (P/B/S6/T) was made AND actual result was T (Tie - neutral break for P/B/S6)
+    # 2. Specific prediction (P/B/S6) was made AND actual result was T (Tie - neutral break for P/B/S6)
     # Increment drawdown BY 1 IF:
     # 1. Specific prediction (P/B/S6/T) was made AND actual result MISSED
     # Leave drawdown UNCHANGED IF:
@@ -429,7 +430,7 @@ def record_bet_result(actual_result): # Simplified signature
             actual_outcome=actual_result,
             patterns_detected=st.session_state.oracle_engine.detect_patterns(history_for_pattern_detection, big_road_data_for_pattern_detection),
             momentum_detected=st.session_state.oracle_engine.detect_momentum(history_for_pattern_detection, big_road_data_for_pattern_detection),
-            sequences_detected=st.session_session_state.oracle_engine._detect_sequences(history_for_pattern_detection)
+            sequences_detected=st.session_state.oracle_engine._detect_sequences(history_for_pattern_detection)
         )
     
     _cached_backtest_accuracy.clear()
