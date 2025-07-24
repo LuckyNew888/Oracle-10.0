@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.10 (Advanced Pattern Fix)" # System version identifier - Fixed 1/2 and 2/1 Pattern Detection
+    VERSION = "Final V2.0 (Enhanced Predict)" # System version identifier - Lower Data Threshold, Enhanced Pattern Fixes
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -429,7 +429,7 @@ class OracleEngine:
         Returns:
             tuple: (accuracy_percentage_str, hit_count, miss_count, max_drawdown_alert)
         """
-        if len(full_history) < 20:
+        if len(full_history) < 20: # Backtest still needs 20 for meaningful results
             return "N/A", 0, 0, False
 
         # Create a temporary, clean engine for backtesting
@@ -500,15 +500,15 @@ class OracleEngine:
         Returns:
             dict: Contains prediction, recommendation, risk, developer_view, accuracy, confidence.
         """
-        # Core Avoid Condition 1: Not Enough Data
-        if len(history) < 20: 
+        # Core Avoid Condition 1: Not Enough Data (Now 15 hands)
+        if len(history) < 15: 
             if not is_backtest: 
                 self.last_prediction_context = {'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None}
             return {
                 'prediction': '?',
                 'recommendation': 'Avoid ❌', 
                 'risk': 'Not enough data',
-                'developer_view': 'Not enough data for full analysis. Requires at least 20 hands.',
+                'developer_view': f'Not enough data for full analysis. Requires at least 15 hands. (Current: {len(history)} hands)',
                 'accuracy': self._cached_accuracy_str, 
                 'confidence': 'N/A'
             }
@@ -535,14 +535,13 @@ class OracleEngine:
         confidence = 0 # Initialize confidence
 
         # --- High Priority Overrides (Forces Prediction to '⚠️') ---
-        # ONLY Low Confidence makes prediction ⚠️ now. Other risks only affect Risk string.
+        # ONLY Low Confidence (<50%) makes prediction ⚠️ now.
         
-        # Core Avoid Condition 2: Confidence Threshold Override (<50%)
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
-        if confidence < 50: # Threshold is 50% as per request
+        if confidence < 50: # Threshold is 50% as per request (Previously 60%)
              prediction = '⚠️'
-             risk = f'Low Confidence (<50%)'
+             risk = f'Low Confidence ({confidence}%)'
              predicted_by_logic = f"Avoid (Confidence {confidence}%)"
 
 
@@ -561,15 +560,20 @@ class OracleEngine:
                 prediction = 'B' if last_outcome == 'P' else 'P'
                 predicted_by_logic = "Pingpong"
             elif 'Two-Cut' in patterns:
+                # Two-Cut prediction: If the last two are same, predict opposite
+                # e.g., PPBB -> predicts P (continuation of second pair)
+                # If current history is BB, predict P
                 if len(history) >= 2 and history[-1]['main_outcome'] == history[-2]['main_outcome']:
                     prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
-                else: 
+                else: # Default to following last outcome if no clear pair-cut formed
                     prediction = last_outcome
                 predicted_by_logic = "Two-Cut"
             elif 'Triple-Cut' in patterns:
+                # Triple-Cut prediction: Similar to Two-Cut, but for three
+                # e.g., BBBPPP -> predicts B
                 if len(history) >= 3 and history[-1]['main_outcome'] == history[-2]['main_outcome'] == history[-3]['main_outcome']:
                     prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
-                else: 
+                else:
                     prediction = last_outcome 
                 predicted_by_logic = "Triple-Cut"
             elif 'B3+ Momentum' in momentum and last_outcome == 'B':
@@ -578,10 +582,32 @@ class OracleEngine:
             elif 'P3+ Momentum' in momentum and last_outcome == 'P':
                 prediction = 'P'
                 predicted_by_logic = "P3+ Momentum"
-            elif 'Steady Repeat Momentum' in momentum:
+            elif 'Steady Repeat Momentum' in momentum: # PBPB -> predict P
                 prediction = 'P' if last_outcome == 'B' else 'B' 
                 predicted_by_logic = "Steady Repeat Momentum"
             
+            # One-Two Pattern (1/2) - PBB PBB -> predicts P for continuation of pattern XYY
+            elif 'One-Two Pattern' in patterns:
+                if len(history) >= 3: # To check last 3 outcomes for XYY part
+                    last_three = [item['main_outcome'] for item in history[-3:] if item['main_outcome'] != 'T']
+                    if len(last_three) == 3 and last_three[0] != last_three[1] and last_three[1] == last_three[2]: # PBB or BPP
+                        prediction = last_three[0] # Predict P for PBB, or B for BPP
+                        predicted_by_logic = "One-Two Pattern"
+                    else: # Fallback if specific part not found
+                        prediction = last_outcome # Simple fallback
+                        predicted_by_logic = "One-Two Pattern (Fallback)"
+            
+            # Two-One Pattern (2/1) - PPB PPB -> predicts P for continuation of pattern XXY
+            elif 'Two-One Pattern' in patterns:
+                if len(history) >= 3: # To check last 3 outcomes for XXY part
+                    last_three = [item['main_outcome'] for item in history[-3:] if item['main_outcome'] != 'T']
+                    if len(last_three) == 3 and last_three[0] == last_three[1] and last_three[1] != last_three[2]: # PPB or BBP
+                        prediction = last_three[0] # Predict P for PPB, or B for BBP
+                        predicted_by_logic = "Two-One Pattern"
+                    else: # Fallback if specific part not found
+                        prediction = last_outcome # Simple fallback
+                        predicted_by_logic = "Two-One Pattern (Fallback)"
+
             # Intuition Logic (If no specific pattern prediction yet)
             if prediction == '?': 
                 intuition_result = self.apply_intuition_logic(history)
@@ -615,9 +641,12 @@ class OracleEngine:
         
         # New Pattern Confirmation & First Bet Avoidance
         if not is_backtest and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
+            # If the current dominant pattern is different from the last dominant pattern the system remembered
+            # (indicating a potential new pattern sequence has begun)
             if self.last_dominant_pattern_id is not None and self.last_dominant_pattern_id != current_dominant_pattern_id:
+                # Activate first bet avoidance for the new pattern
                 self.skip_first_bet_of_new_pattern_flag = True 
-                self.new_pattern_confirmation_count = 0 
+                self.new_pattern_confirmation_count = 0 # Reset confirmation for the new pattern
                 
             if self.skip_first_bet_of_new_pattern_flag: 
                 if risk == 'Normal': risk = 'New Pattern: First Bet Avoidance'
