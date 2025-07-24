@@ -71,6 +71,9 @@ class OracleEngine:
         self.sequence_memory_stats = {}
         self.tie_stats = {}
         self.super6_stats = {}
+        # Correctly initialize failed_pattern_instances as a dict
+        self.failed_pattern_instances = {} 
+
 
     def _get_pb_history(self, current_history):
         """Extracts only P and B outcomes from the history, ignoring T and S6 for pattern detection."""
@@ -532,13 +535,13 @@ class OracleEngine:
         potential_outcomes.sort(key=lambda x: x[1], reverse=True) # Sort by confidence
 
         if potential_outcomes:
-            # Check if the top prediction is significantly better than others
+            # If multiple predictions, check if the top one is significantly better
             if len(potential_outcomes) > 1:
                 top_pred = potential_outcomes[0]
                 second_pred = potential_outcomes[1]
                 
-                # If the top confidence is significantly higher (e.g., 10% difference)
-                if top_pred[1] - second_pred[1] >= 10: 
+                # Only pick if confidence is significantly higher (e.g., 10% difference)
+                if top_pred[1] - second_pred[1] >= 10: # Significant difference
                     predicted_outcome = top_pred[0]
                     highest_confidence = top_pred[1]
                     reason = top_pred[2]
@@ -663,7 +666,7 @@ class OracleEngine:
             for m_name, m_snapshot in momentum:
                 key = (m_name, m_snapshot)
                 if key in self.momentum_stats:
-                    stats = self.momentum_weights.get(m_name, 0.5)
+                    stats = self.momentum_stats[key]
                     if stats['total_attempts'] > 0:
                         success_rate = stats['total_hits'] / stats['total_attempts']
                         weight = self.momentum_weights.get(m_name, 0.5)
