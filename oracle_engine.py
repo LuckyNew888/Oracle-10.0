@@ -47,15 +47,6 @@ def _cached_backtest_accuracy(history_data_for_hash): # Renamed to clarify its p
     This function should simulate predictions over the history to evaluate accuracy.
     It takes a hashable representation of history (e.g., tuple of tuples)
     """
-    # Convert list of dicts to tuple of tuples for hashability
-    # This assumes dict keys are consistent and order doesn't matter for content equality, or you sort them.
-    # For simplicity, let's convert to a simpler hashable format if dicts contain unhashable types
-    # or if we only care about certain fields for hashing.
-    # For now, assuming history_data_for_hash is already a list of dicts from session_state.history,
-    # it needs to be made hashable by Streamlit's cache.
-    # Let's stringify it for robust caching if the dicts are complex.
-    # Or, the cleaner way is to pass only the history list directly, and the OracleEngine will be created internally.
-
     if not history_data_for_hash or len(history_data_for_hash) < 3:
         return {"overall_accuracy": 0.0, "player_accuracy": 0.0, "banker_accuracy": 0.0, "s6_accuracy": 0.0, "total_bets": 0}
 
@@ -85,8 +76,6 @@ def _cached_backtest_accuracy(history_data_for_hash): # Renamed to clarify its p
         sim_prediction_output = temp_engine.predict_next(
             current_live_drawdown=0, # Drawdown logic is complex for backtesting, assume 0 or handle separately
             current_big_road_data=sim_big_road_data,
-            # Pass only the necessary current state, not the engine itself for hashing
-            # The engine inside the predict_next will use its internal state or given history.
             history_for_prediction=simulated_history # Pass the simulated history for prediction context
         )
         sim_predicted_side = sim_prediction_output.get('prediction')
@@ -116,15 +105,10 @@ def _cached_backtest_accuracy(history_data_for_hash): # Renamed to clarify its p
         simulated_history.append(current_hand_data)
         
         # Manually update temp_engine's learning states (a simplified version)
-        if sim_predicted_side != '?': # Only update if a prediction was actually made for this hand
-            # The _update_learning should operate on the 'state after this hand'
+        if sim_predicted_side != '?': # Only if a prediction was actually made for this hand
             temp_engine._update_learning(
                 predicted_outcome=sim_predicted_side,
                 actual_outcome=current_hand_data['main_outcome'],
-                # Pass patterns/momentum/sequences based on the state *before* the current hand
-                # This requires recalculating them for each step of the simulation history.
-                # This is a bit complex for a simple backtest. Let's simplify this part slightly
-                # and assume _update_learning can derive what it needs from the growing simulated_history
                 patterns_detected={}, # Placeholder, as full detection is expensive in loop
                 momentum_detected={}, # Placeholder
                 sequences_detected={} # Placeholder
@@ -202,16 +186,13 @@ def _build_big_road_data(history):
                 for r_idx in range(6): 
                     if r_idx >= len(big_road[current_col_idx]) or big_road[current_col_idx][r_idx] is None:
                         if r_idx < 6: 
-                            # If there are Nones, insert to replace the first None.
-                            # If no Nones and less than 6 elements, append.
-                            # Otherwise, extend and then replace the None if it was an expansion.
                             if r_idx < len(big_road[current_col_idx]) and big_road[current_col_idx][r_idx] is None:
                                 big_road[current_col_idx][r_idx] = (outcome, ties, is_natural)
-                            else: # Append if column is less than 6 elements
+                            else: 
                                 big_road[current_col_idx].append((outcome, ties, is_natural))
                             appended = True
                             break
-                if not appended: # If column is full or >6, start new column
+                if not appended: 
                      big_road.append([(outcome, ties, is_natural)])
             else:
                 big_road.append([(outcome, ties, is_natural)])
@@ -257,21 +238,13 @@ class OracleEngine:
     def reset_learning_states_on_undo(self):
         """
         Resets learning states that might be directly affected by an 'undo' operation.
-        This is a simpler approach; a more robust system might store snapshots of states.
-        For now, it clears stats that depend on the last hand, forcing re-evaluation.
         """
         self.learning_states['last_outcome'] = None
         self.learning_states['last_prediction'] = None
-        # Clearing accuracy_history might be too broad if you want to keep overall session stats.
-        # For this setup, we rely on _cached_backtest_accuracy to re-evaluate from scratch.
-        # It's crucial that _cached_backtest_accuracy.clear() is called in the Streamlit app's undo function.
-
 
     def _update_learning(self, predicted_outcome, actual_outcome, patterns_detected, momentum_detected, sequences_detected):
         """
         Updates the internal learning states based on the actual outcome of the hand.
-        This function should be called AFTER the actual result is recorded and the history is updated.
-        It uses the patterns/momentum/sequences that were detected *before* this hand's actual outcome.
         """
         self.learning_states['total_predictions'] += 1
         self.learning_states['accuracy_history'].append((predicted_outcome, actual_outcome))
@@ -296,7 +269,6 @@ class OracleEngine:
         self.learning_states['last_outcome'] = actual_outcome
         self.learning_states['last_prediction'] = predicted_outcome
 
-        # Store detected patterns/momentum/sequences for later analysis or re-learning
         self.patterns_history.append(patterns_detected)
         self.momentum_history.append(momentum_detected)
         self.sequences_history.append(sequences_detected)
@@ -476,7 +448,6 @@ class OracleEngine:
         current history, patterns, momentum, and drawdown.
         Returns a dictionary with 'prediction', 'recommendation', 'risk', 'overall_confidence'.
         """
-        # Use history_for_prediction if provided (for backtesting), otherwise use st.session_state.history
         history_to_use = history_for_prediction if history_for_prediction is not None else st.session_state.history
         history_len = len(history_to_use) 
 
