@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V2.0 (Enhanced Predict)" # System version identifier - Lower Data Threshold, Enhanced Pattern Fixes
+    VERSION = "Final V1.11 (Counter Predict)" # System version identifier - Lower Threshold, Counter Predict on Low Confidence
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -353,10 +353,6 @@ class OracleEngine:
         # Base confidence calculation
         confidence_base = (total_weighted_score / total_weight_sum) if total_weight_sum > 0 else 0.5 # Default 50% if no relevant patterns/momentum
         
-        # !!! REMOVED TRAP ZONE PENALTY FROM CONFIDENCE CALCULATION !!!
-        # if self.trap_zone_active:
-        #     confidence_base *= 0.5 # Halve confidence if in a trap zone
-
         # If intuition logic was the primary driver, adjust confidence
         if intuition_applied and primary_prediction_logic and "Intuition" in primary_prediction_logic:
             intuition_key = primary_prediction_logic.replace("Intuition (", "").replace(")", "")
@@ -534,79 +530,83 @@ class OracleEngine:
         intuition_applied_flag = False
         confidence = 0 # Initialize confidence
 
-        # --- High Priority Overrides (Forces Prediction to '⚠️') ---
-        # ONLY Low Confidence (<50%) makes prediction ⚠️ now.
-        
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
-        if confidence < 50: # Threshold is 50% as per request (Previously 60%)
-             prediction = '⚠️'
-             risk = f'Low Confidence ({confidence}%)'
-             predicted_by_logic = f"Avoid (Confidence {confidence}%)"
 
+        # --- Core Prediction Logic (Attempt to get P/B) ---
+        last_nontie_outcome = None
+        for i in range(len(history) - 1, -1, -1):
+            if history[i]['main_outcome'] != 'T':
+                last_nontie_outcome = history[i]['main_outcome']
+                break
 
-        # --- Core Prediction Logic (Attempt to get P/B, if not already '⚠️') ---
-        if prediction == '?': # Only if not already forced to '⚠️' by low confidence
-            last_outcome = history[-1]['main_outcome']
+        if confidence < 50: # Threshold is 50%
+            if last_nontie_outcome:
+                prediction = 'B' if last_nontie_outcome == 'P' else 'P'
+                risk = f'High Risk: Countering Low Confidence ({confidence}%)'
+                predicted_by_logic = f"Counter (Low Confidence {confidence}%)"
+            else: # If no non-tie outcomes in history to counter
+                prediction = '⚠️'
+                risk = f'Low Confidence ({confidence}%) - No Counter Base'
+                predicted_by_logic = f"Avoid (Confidence {confidence}%)"
+        else: # Confidence >= 50, proceed with normal pattern prediction
             
             # Prioritize strongest patterns/momentum
             if 'Dragon' in patterns:
-                prediction = last_outcome
+                prediction = last_nontie_outcome if last_nontie_outcome else random.choice(['P', 'B']) # Fallback if no non-tie
                 predicted_by_logic = "Dragon"
             elif 'FollowStreak' in patterns:
-                prediction = last_outcome
+                prediction = last_nontie_outcome if last_nontie_outcome else random.choice(['P', 'B'])
                 predicted_by_logic = "FollowStreak"
             elif 'Pingpong' in patterns:
-                prediction = 'B' if last_outcome == 'P' else 'P'
+                prediction = 'B' if last_nontie_outcome == 'P' else 'P' if last_nontie_outcome else random.choice(['P', 'B'])
                 predicted_by_logic = "Pingpong"
             elif 'Two-Cut' in patterns:
-                # Two-Cut prediction: If the last two are same, predict opposite
+                # Two-Cut prediction: If the last two are same, predict opposite to continue the cut pattern
                 # e.g., PPBB -> predicts P (continuation of second pair)
-                # If current history is BB, predict P
-                if len(history) >= 2 and history[-1]['main_outcome'] == history[-2]['main_outcome']:
-                    prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
-                else: # Default to following last outcome if no clear pair-cut formed
-                    prediction = last_outcome
+                # This logic assumes the pattern is 'XXYY' and we predict Y for next, so if current is YY, predict X
+                # Or simply predict the opposite of the current pair to cut it.
+                relevant_nontie_history = [item['main_outcome'] for item in history if item['main_outcome'] != 'T']
+                if len(relevant_nontie_history) >= 2 and relevant_nontie_history[-1] == relevant_nontie_history[-2]:
+                    prediction = 'B' if relevant_nontie_history[-1] == 'P' else 'P' # Predict the 'cut'
+                else: # Fallback if it's not strictly 'XXYY' ending
+                    prediction = last_nontie_outcome if last_nontie_outcome else random.choice(['P','B'])
                 predicted_by_logic = "Two-Cut"
             elif 'Triple-Cut' in patterns:
-                # Triple-Cut prediction: Similar to Two-Cut, but for three
-                # e.g., BBBPPP -> predicts B
-                if len(history) >= 3 and history[-1]['main_outcome'] == history[-2]['main_outcome'] == history[-3]['main_outcome']:
-                    prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
+                # Triple-Cut prediction: Similar to Two-Cut, but for three. Predict opposite to cut it.
+                relevant_nontie_history = [item['main_outcome'] for item in history if item['main_outcome'] != 'T']
+                if len(relevant_nontie_history) >= 3 and relevant_nontie_history[-1] == relevant_nontie_history[-2] == relevant_nontie_history[-3]:
+                    prediction = 'B' if relevant_nontie_history[-1] == 'P' else 'P' # Predict the 'cut'
                 else:
-                    prediction = last_outcome 
+                    prediction = last_nontie_outcome if last_nontie_outcome else random.choice(['P','B'])
                 predicted_by_logic = "Triple-Cut"
-            elif 'B3+ Momentum' in momentum and last_outcome == 'B':
+            elif 'B3+ Momentum' in momentum and last_nontie_outcome == 'B':
                 prediction = 'B'
                 predicted_by_logic = "B3+ Momentum"
-            elif 'P3+ Momentum' in momentum and last_outcome == 'P':
+            elif 'P3+ Momentum' in momentum and last_nontie_outcome == 'P':
                 prediction = 'P'
                 predicted_by_logic = "P3+ Momentum"
-            elif 'Steady Repeat Momentum' in momentum: # PBPB -> predict P
-                prediction = 'P' if last_outcome == 'B' else 'B' 
+            elif 'Steady Repeat Momentum' in momentum: # PBPB -> predict P (continuation of the pattern)
+                prediction = 'P' if last_nontie_outcome == 'B' else 'B' if last_nontie_outcome else random.choice(['P','B'])
                 predicted_by_logic = "Steady Repeat Momentum"
             
             # One-Two Pattern (1/2) - PBB PBB -> predicts P for continuation of pattern XYY
             elif 'One-Two Pattern' in patterns:
-                if len(history) >= 3: # To check last 3 outcomes for XYY part
-                    last_three = [item['main_outcome'] for item in history[-3:] if item['main_outcome'] != 'T']
-                    if len(last_three) == 3 and last_three[0] != last_three[1] and last_three[1] == last_three[2]: # PBB or BPP
-                        prediction = last_three[0] # Predict P for PBB, or B for BPP
-                        predicted_by_logic = "One-Two Pattern"
-                    else: # Fallback if specific part not found
-                        prediction = last_outcome # Simple fallback
-                        predicted_by_logic = "One-Two Pattern (Fallback)"
+                relevant_nontie_history = [item['main_outcome'] for item in history if item['main_outcome'] != 'T']
+                if len(relevant_nontie_history) >= 3 and relevant_nontie_history[-1] == relevant_nontie_history[-2] and relevant_nontie_history[-1] != relevant_nontie_history[-3]: # XXY
+                    prediction = relevant_nontie_history[-3] # Predict X
+                else:
+                    prediction = last_nontie_outcome if last_nontie_outcome else random.choice(['P','B'])
+                predicted_by_logic = "One-Two Pattern"
             
             # Two-One Pattern (2/1) - PPB PPB -> predicts P for continuation of pattern XXY
             elif 'Two-One Pattern' in patterns:
-                if len(history) >= 3: # To check last 3 outcomes for XXY part
-                    last_three = [item['main_outcome'] for item in history[-3:] if item['main_outcome'] != 'T']
-                    if len(last_three) == 3 and last_three[0] == last_three[1] and last_three[1] != last_three[2]: # PPB or BBP
-                        prediction = last_three[0] # Predict P for PPB, or B for BBP
-                        predicted_by_logic = "Two-One Pattern"
-                    else: # Fallback if specific part not found
-                        prediction = last_outcome # Simple fallback
-                        predicted_by_logic = "Two-One Pattern (Fallback)"
+                relevant_nontie_history = [item['main_outcome'] for item in history if item['main_outcome'] != 'T']
+                if len(relevant_nontie_history) >= 3 and relevant_nontie_history[-1] != relevant_nontie_history[-2] and relevant_nontie_history[-2] == relevant_nontie_history[-3]: # YXX
+                    prediction = relevant_nontie_history[-1] # Predict X
+                else:
+                    prediction = last_nontie_outcome if last_nontie_outcome else random.choice(['P','B'])
+                predicted_by_logic = "Two-One Pattern"
 
             # Intuition Logic (If no specific pattern prediction yet)
             if prediction == '?': 
@@ -618,17 +618,12 @@ class OracleEngine:
             
             # Final Fallback if still no prediction from patterns/momentum/intuition
             if prediction == '?':
-                recent_nontie = [item['main_outcome'] for item in history[-10:] if item['main_outcome'] != 'T']
-                if recent_nontie:
-                    p_count = recent_nontie.count('P')
-                    b_count = recent_nontie.count('B')
-                    if p_count > b_count: prediction = 'P'
-                    elif b_count > p_count: prediction = 'B'
-                    else: prediction = random.choice(['P', 'B']) 
-                    predicted_by_logic = "Majority Fallback"
-                else:
+                if last_nontie_outcome: # Fallback to predict the last non-tie if no other logic applies
+                    prediction = last_nontie_outcome
+                    predicted_by_logic = "Last Outcome Fallback"
+                else: # Only random if no non-tie history at all
                     prediction = random.choice(['P', 'B']) 
-                    predicted_by_logic = "Random Fallback (No Data)"
+                    predicted_by_logic = "Random Fallback (No Non-Tie Data)"
 
         # --- Set Risk Flags based on conditions (applies to P/B/⚠️ predictions) ---
         # These flags are for informative purposes in 'risk' string.
@@ -636,17 +631,17 @@ class OracleEngine:
 
         # Trap Timer (Risk only, no longer forces ⚠️ prediction directly)
         if self.hands_to_skip_due_to_trap_timer > 0:
-            risk = f"Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
+            if risk == 'Normal': risk = f"Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
+            else: risk += f", Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
             #predicted_by_logic = "Trap Timer Active" # Keep predicted_by_logic from actual prediction
         
         # New Pattern Confirmation & First Bet Avoidance
-        if not is_backtest and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
-            # If the current dominant pattern is different from the last dominant pattern the system remembered
-            # (indicating a potential new pattern sequence has begun)
+        if not is_backtest and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"] and prediction != '⚠️': # Only apply if actually predicting and not low confidence avoid
+            # Determine if current pattern is different from the last dominant one
+            # This logic needs to be run before we update last_dominant_pattern_id in update_learning_state
             if self.last_dominant_pattern_id is not None and self.last_dominant_pattern_id != current_dominant_pattern_id:
-                # Activate first bet avoidance for the new pattern
                 self.skip_first_bet_of_new_pattern_flag = True 
-                self.new_pattern_confirmation_count = 0 # Reset confirmation for the new pattern
+                self.new_pattern_confirmation_count = 0 
                 
             if self.skip_first_bet_of_new_pattern_flag: 
                 if risk == 'Normal': risk = 'New Pattern: First Bet Avoidance'
@@ -656,17 +651,17 @@ class OracleEngine:
                 else: risk += f", New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.new_pattern_confirmation_count} Confirmation(s)"
 
         # Trap Zone (General)
-        if self.trap_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
+        if self.trap_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"] and prediction != '⚠️':
             if risk == 'Normal': risk = f"Trap Zone: {trap_zone_name}"
             else: risk += f", Trap Zone: {trap_zone_name}"
 
         # Blacklist Pattern (Memory Logic)
-        if self.apply_memory_logic(patterns, momentum) and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
+        if self.apply_memory_logic(patterns, momentum) and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"] and prediction != '⚠️':
             if risk == 'Normal': risk = 'Memory Blocked'
             else: risk += ', Memory Blocked'
 
         # Bias Zone (Countering Bias)
-        if bias_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
+        if bias_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"] and prediction != '⚠️':
             if prediction != bias_towards: # If predicting counter to bias
                 if risk == 'Normal': risk = f"Bias Zone (Counter {bias_towards})"
                 else: risk += f", Bias Zone (Counter {bias_towards})"
