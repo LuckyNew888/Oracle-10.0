@@ -133,7 +133,6 @@ def add_new_result(outcome):
     # to compare against the actual outcome for learning and streak calculation
     if len(st.session_state.oracle_history) >= 20: 
         # Get the prediction result for the *current state* (before this new hand is added)
-        # This is needed to get the prediction and associated patterns/momentum for learning
         prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) # is_backtest=False for main app flow
 
         # Update losing streak based on this prediction and the actual outcome
@@ -163,57 +162,43 @@ with col4:
         if st.session_state.oracle_history:
             st.session_state.oracle_history.pop() # Remove last outcome from history
             
-            # When removing an item, we must re-initialize the engine
-            # and replay the remaining history to correctly rebuild its learning state.
-            st.session_state.oracle_engine = OracleEngine() # Create a fresh engine instance
-            st.session_state.losing_streak_prediction = 0 # Reset streak, it will be recalculated
+            # Reset the engine and losing streak.
+            # Replaying full history can be slow for long histories.
+            # A more advanced solution would be to implement a "undo" state
+            # within OracleEngine itself, but that's significantly more complex.
+            st.session_state.oracle_engine = OracleEngine() # Reset engine state
+            st.session_state.losing_streak_prediction = 0 # Reset streak
             
-            # Replay history to rebuild the engine's state and recalculate losing streak
-            for i in range(len(st.session_state.oracle_history)):
-                current_sub_history = st.session_state.oracle_history[:i+1]
-                actual_outcome_for_replay = current_sub_history[-1]['main_outcome']
-
-                # Predict for this sub-history point if enough data
-                if len(current_sub_history) >= 20:
-                    # Get the prediction context that would have been formed *before* this actual_outcome
-                    # This is tricky in replay. We need to simulate predict_next to get the context.
-                    # Temporarily store original context
-                    original_last_prediction_context = st.session_state.oracle_engine.last_prediction_context 
+            # To rebuild the engine's state correctly, we must re-add all remaining history.
+            # This is the part that can cause slowness.
+            temp_history = list(st.session_state.oracle_history) # Make a copy to iterate
+            st.session_state.oracle_history.clear() # Clear it to re-add via add_new_result
+            
+            for historical_hand in temp_history:
+                # Simulate add_new_result for each historical hand to rebuild state
+                # This will trigger predict_next and update_learning_state for each hand
+                st.session_state.oracle_history.append({'main_outcome': historical_hand['main_outcome']})
+                
+                # We need to simulate the prediction and learning process for each hand in the replay
+                # This is a simplified replay for building state.
+                if len(st.session_state.oracle_history) >= 20: # Only predict/learn if enough data for this point
+                    # Get prediction for current replay point
+                    replay_prediction_result = st.session_state.oracle_engine.predict_next(st.session_state.oracle_history, is_backtest=False)
+                    # Update learning state with the actual outcome and the prediction result
+                    # This relies on oracle.last_prediction_context being set by predict_next
+                    st.session_state.oracle_engine.update_learning_state(historical_hand['main_outcome'])
                     
-                    # Simulate predict_next for this point in history to get the context for learning
-                    replay_prediction_result = st.session_state.oracle_engine.predict_next(current_sub_history, is_backtest=False) # Not truly backtest for single step
-                    
-                    # Manually set last_prediction_context for the update_learning_state call
-                    st.session_state.oracle_engine.last_prediction_context = {
-                        'prediction': replay_prediction_result['prediction'],
-                        # Extract patterns/momentum/intuition from developer_view string - this is still brittle
-                        'patterns': [p.strip() for p in replay_prediction_result['developer_view'].split('DNA Patterns: ')[1].split(';')[0].split(',') if p.strip() != 'None'],
-                        'momentum': [m.strip() for m in replay_prediction_result['developer_view'].split('Momentum: ')[1].split(';')[0].split(',') if m.strip() != 'None'],
-                        'intuition_applied': 'Intuition' in replay_prediction_result['developer_view'],
-                        'predicted_by': replay_prediction_result['developer_view'].split('Predicted by: ')[1].split(';')[0].strip(),
-                        'dominant_pattern_id_at_prediction': replay_prediction_result['developer_view'].split('Predicted by: ')[1].split(';')[0].strip() if 'Predicted by: ' in replay_prediction_result['developer_view'] else None # Simplified extraction
-                    }
-
-                    # Re-calculate losing streak for replay
-                    if st.session_state.oracle_engine.last_prediction_context['prediction'] not in ['?', '⚠️']:
-                        if actual_outcome_for_replay == 'T':
+                    # Recalculate losing streak during replay
+                    if replay_prediction_result['prediction'] not in ['?', '⚠️']:
+                        if historical_hand['main_outcome'] == 'T':
                             pass
-                        elif st.session_state.oracle_engine.last_prediction_context['prediction'] == actual_outcome_for_replay:
+                        elif replay_prediction_result['prediction'] == historical_hand['main_outcome']:
                             st.session_state.losing_streak_prediction = 0
                         else:
                             st.session_state.losing_streak_prediction += 1
-                    
-                    # Update learning state after each hand in replay
-                    st.session_state.oracle_engine.update_learning_state(actual_outcome_for_replay)
-
-                    # Restore original context for the main app loop
-                    st.session_state.oracle_engine.last_prediction_context = original_last_prediction_context
                 else:
-                    # If not enough data, reset learning context for this point
-                    st.session_state.oracle_engine.last_prediction_context = {
-                        'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
-                    }
-                    st.session_state.oracle_engine.update_learning_state(actual_outcome_for_replay) # Call update_learning_state even if no prediction made to clear context
+                    # If not enough data, just update learning state to clear context
+                    st.session_state.oracle_engine.update_learning_state(historical_hand['main_outcome']) # Pass outcome to clear context
             st.rerun()
 
 # --- Reset All Button ---
