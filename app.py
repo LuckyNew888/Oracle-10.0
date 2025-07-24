@@ -25,6 +25,13 @@ st.markdown(f"""
        If Inter from Google Fonts is blocked, system fonts will be used. */
     font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
 }}
+.version-text {{
+    font-size: 0.6em; /* Smaller font size for version */
+    font-weight: normal;
+    color: #CCCCCC; /* Lighter color for less emphasis */
+    vertical-align: super; /* Slightly raise it */
+    margin-left: 0.2em; /* Space from ORACLE text */
+}}
 h3 {{
     margin-top: 0.5rem; /* Reduced space above h3 */
     margin-bottom: 0.5rem; /* Reduced space below h3 */
@@ -60,8 +67,8 @@ div[data-testid="stColumns"] > div {{
 </style>
 """, unsafe_allow_html=True)
 
-# Main title of the app, now showing version
-st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE {OracleEngine.VERSION}</h1>', unsafe_allow_html=True)
+# Main title of the app, now showing version with smaller text
+st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{OracleEngine.VERSION}</span></h1>', unsafe_allow_html=True)
 
 # --- State Management for OracleEngine ---
 # Initialize OracleEngine only once
@@ -136,12 +143,13 @@ def add_new_result(outcome):
         prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) 
 
         # Update losing streak based on this prediction and the actual outcome
-        if prediction_for_learning['prediction'] not in ['?', '⚠️']: 
+        # Only count if the system actually predicted P or B (not '⚠️')
+        if prediction_for_learning['prediction'] in ['P', 'B']: 
             if outcome == 'T': 
-                pass
-            elif prediction_for_learning['prediction'] == outcome: 
+                pass # Tie, losing streak does not change
+            elif prediction_for_learning['prediction'] == outcome: # Correct prediction
                 st.session_state.losing_streak_prediction = 0
-            else: 
+            else: # Incorrect prediction
                 st.session_state.losing_streak_prediction += 1
     
     st.session_state.oracle_history.append({'main_outcome': outcome}) 
@@ -162,29 +170,20 @@ with col3:
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
-            st.session_state.oracle_history.pop() # Remove last outcome from history
+            st.session_state.oracle_history.pop() 
             
-            # Reset the engine and losing streak.
-            # Replaying full history is removed for performance.
-            # If "ลบล่าสุด" requires a full state recalculation without replaying:
-            # The only performant way is to rebuild the engine from scratch
-            # and re-add the remaining history, which is what was slow.
-            # A more practical approach for "ลบล่าสุด" with complex state is:
-            # 1. Reset everything, or
-            # 2. Allow only for single item removal and accept performance hit.
-            # Given the feedback, we will make "ลบล่าสุด" effectively a "soft reset" to prevent major slowdowns.
-            
-            st.session_state.oracle_engine = OracleEngine() # Reset engine state
-            st.session_state.losing_streak_prediction = 0 # Reset streak
-            st.session_state.oracle_history.clear() # Clear history
-            st.warning("ประวัติถูกลบหมดแล้วเพื่อประสิทธิภาพ โปรดบันทึกใหม่") # Inform user
+            # Reset the engine and losing streak for simplicity and performance
+            st.session_state.oracle_engine = OracleEngine() 
+            st.session_state.losing_streak_prediction = 0 
+            st.session_state.oracle_history.clear() # Clear history as it's a full reset now
+            st.warning("ประวัติถูกลบหมดแล้วเพื่อประสิทธิภาพ โปรดบันทึกใหม่") 
             st.rerun()
 
 # --- Reset All Button ---
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
-    st.session_state.oracle_history.clear() # Clear all history
-    st.session_state.oracle_engine = OracleEngine() # Create a fresh OracleEngine instance to reset all its states
-    st.session_state.losing_streak_prediction = 0 # Reset losing streak
+    st.session_state.oracle_history.clear() 
+    st.session_state.oracle_engine = OracleEngine() 
+    st.session_state.losing_streak_prediction = 0 
     st.rerun()
 
 # --- Developer View (Moved to bottom and in an expander) ---
