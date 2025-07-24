@@ -19,9 +19,10 @@ oracle = st.session_state.oracle_engine
 # การทำแบบนี้เพื่อให้แน่ใจว่า OracleEngine ใช้ข้อมูลประวัติที่ถูกต้องเสมอเมื่อมีการ re-run
 oracle.history = st.session_state.oracle_history
 
-# ============ กลยุทธ์การเล่น (สำหรับคำนวณตาแพ้ติดกัน) ==============
-# ใช้ `key` สำหรับ Selectbox เพื่อป้องกันปัญหาเรื่อง state
-strategy = st.selectbox("🎲 กลยุทธ์ส่วนตัว (สำหรับคำนวณตาแพ้)", 
+# ============ กลยุทธ์ส่วนตัวของผู้ใช้ (สำหรับคำนวณตาแพ้เท่านั้น) ==============
+st.markdown("### 🎲 กลยุทธ์ส่วนตัวของคุณ (สำหรับคำนวณตาแพ้ติดกันเท่านั้น)")
+st.info("ส่วนนี้ใช้เพื่อช่วยคุณติดตาม 'ตาที่แพ้ติดกัน' จากกลยุทธ์ง่ายๆ ที่คุณเลือกเอง ไม่ใช่ส่วนหนึ่งของการทำนายของระบบ SYNAPSE VISION Baccarat")
+strategy = st.selectbox("เลือกกลยุทธ์ของคุณ:", 
                         ['แทง P ทุกตา', 'แทง B ทุกตา'], 
                         key="strategy_select")
 
@@ -50,6 +51,7 @@ def calculate_losing_streak(history_data, strategy_choice):
     return count
 
 # --- ส่วนการแสดงผลการทำนาย ---
+st.markdown("---")
 st.markdown("### 🔮 ผลการวิเคราะห์และทำนาย")
 
 # oracle.predict_next() มีเงื่อนไขว่าต้องมีประวัติอย่างน้อย 20 ตา
@@ -95,17 +97,17 @@ with col1:
     if st.button("🟦 P", use_container_width=True, key="add_p"):
         oracle.add_result('P')
         st.session_state.oracle_history.append({'main_outcome': 'P'}) # อัปเดต UI history
-        st.experimental_rerun() # บังคับให้ Streamlit refresh เพื่อแสดงผลล่าสุด
+        st.rerun() # <<< แก้ไขตรงนี้: ใช้ st.rerun() แทน st.experimental_rerun()
 with col2:
     if st.button("🟥 B", use_container_width=True, key="add_b"):
         oracle.add_result('B')
         st.session_state.oracle_history.append({'main_outcome': 'B'})
-        st.experimental_rerun()
+        st.rerun() # <<< แก้ไขตรงนี้
 with col3:
     if st.button("⚪️ T", use_container_width=True, key="add_t"):
         oracle.add_result('T')
         st.session_state.oracle_history.append({'main_outcome': 'T'})
-        st.experimental_rerun()
+        st.rerun() # <<< แก้ไขตรงนี้
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
@@ -116,11 +118,11 @@ with col4:
             # ใส่ประวัติที่เหลือกลับเข้าไปใน Engine ทีละตัวเพื่อให้มัน "เรียนรู้" ใหม่
             for item in st.session_state.oracle_history:
                 oracle.add_result(item['main_outcome'])
-            st.experimental_rerun()
+            st.rerun() # <<< แก้ไขตรงนี้
 
 # ปุ่มรีเซ็ตเต็มจอ
 st.markdown("")
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
     st.session_state.oracle_history.clear()
     st.session_state.oracle_engine.reset_history() # เรียก reset_history ของ OracleEngine ด้วย
-    st.experimental_rerun() # บังคับให้ Streamlit refresh
+    st.rerun() # <<< แก้ไขตรงนี้
