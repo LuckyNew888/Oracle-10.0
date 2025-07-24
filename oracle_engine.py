@@ -15,7 +15,6 @@ class OracleEngine:
         self.momentum_stats = {
             'B3+ Momentum': {'success': 0, 'fail': 0},
             'P3+ Momentum': {'success': 0, 'fail': 0},
-            # เพิ่ม Ladder Momentum หากมีการใช้งาน
         }
         # Memory Logic: เก็บ Pattern ที่เคยทำนายผิดซ้ำ 2 ครั้ง
         self.memory_blocked_patterns = {} # {'pattern_name': {'failures': count, 'last_failed_outcome': 'P'/'B'}}
@@ -39,8 +38,8 @@ class OracleEngine:
             'B3+ Momentum': 1.0, 'P3+ Momentum': 1.0, # ให้ weight สูงเพราะเป็นแรงเหวี่ยงที่ชัดเจน
         }
 
-    def reset_history(self):
-        """รีเซ็ตสถานะการเรียนรู้ทั้งหมดของ Engine (แต่ไม่รีเซ็ต history list ซึ่งถูกจัดการโดย Streamlit)"""
+    def reset_engine_state(self):
+        """รีเซ็ตสถานะการเรียนรู้ทั้งหมดของ Engine (ไม่รวม history)"""
         for stats in [self.pattern_stats, self.momentum_stats]:
             for key in stats:
                 stats[key] = {'success': 0, 'fail': 0}
@@ -255,10 +254,8 @@ class OracleEngine:
         for pattern_name in relevant_patterns:
             if pattern_name in self.memory_blocked_patterns:
                 failures_count = self.memory_blocked_patterns[pattern_name]['failures']
-                # last_failed_outcome = self.memory_blocked_patterns[pattern_name]['last_failed_outcome']
                 
                 # หาก Pattern นี้เคยทำให้พลาด ≥ 2 ครั้ง และกำลังจะทำนายเหมือนเดิม
-                # (สมมติว่า memory logic บล็อก pattern นั้นๆ ไม่ว่าจะทำนายอะไรก็ตามจาก pattern นั้น)
                 if failures_count >= 2:
                     self.developer_view_components.append(f"Memory Logic: Pattern '{pattern_name}' blocked (Failures: {failures_count})")
                     return None # บล็อกการทำนายที่มาจาก Pattern นี้
@@ -321,11 +318,7 @@ class OracleEngine:
         for i in range(10, len(history_data)): # เริ่มจาก index 10 (มือที่ 11)
             segment = history_data[:i] # ประวัติที่ใช้ทำนายถึงมือปัจจุบัน
             
-            # ต้องจำลองการทำนายแบบเดียวกับ predict_next แต่ไม่มีการอัปเดต _update_learning
-            # เพื่อไม่ให้ backtest ไปกระทบสถานะปัจจุบันของ engine
-            
             # Simplified prediction for backtest:
-            # Need to pass history_data to pattern/momentum detection functions as well
             patterns = self.detect_dna_patterns(segment)
             momentum = self.detect_momentum(segment)
             
@@ -373,7 +366,7 @@ class OracleEngine:
         return self.backtest_results
 
     # --- การอัปเดตการเรียนรู้ (เมื่อทราบผลลัพธ์จริง) ---
-    def _update_learning(self, actual_outcome):
+    def update_learning_state(self, actual_outcome):
         """
         อัปเดตสถิติและ Memory Logic จากผลการทำนายครั้งล่าสุด
         (นี้ถูกเรียกจาก Streamlit เมื่อเพิ่มผลลัพธ์)
@@ -405,17 +398,6 @@ class OracleEngine:
                         self.momentum_stats[m_name]['fail'] += 1
                         self.memory_blocked_patterns.setdefault(m_name, {'failures': 0, 'last_failed_outcome': predicted_outcome})['failures'] += 1
                         self.memory_blocked_patterns[m_name]['last_failed_outcome'] = predicted_outcome
-
-    def add_result(self, main_outcome, big_road_column=None):
-        """
-        ถูกเรียกจาก Streamlit เพื่อให้ Engine อัปเดตการเรียนรู้จากผลลัพธ์ที่เพิ่งเข้ามา
-        สำคัญ: เมธอดนี้ไม่ได้เพิ่มผลลัพธ์เข้าใน history list ของ engine แล้ว
-        history list ถูกจัดการโดย st.session_state.oracle_history ใน Streamlit app
-        """
-        # อัปเดตการเรียนรู้ก่อนเพิ่มผลลัพธ์ใหม่ใน st.session_state
-        # self.last_prediction_context ต้องมีข้อมูลมาจาก predict_next ครั้งก่อนหน้า
-        if self.last_prediction_context['prediction'] != '?':
-            self._update_learning(main_outcome)
         
         # หลังจากการเรียนรู้ ก็เคลียร์ last_prediction_context
         self.last_prediction_context = { 
@@ -429,7 +411,7 @@ class OracleEngine:
     # --- Core Prediction Engine ---
     def predict_next(self, history_data): # history_data is now an argument
         """
-        ประมวลผลการทำนายผลลัพธ์ถัดไปตามระบบ SYNAPSE VISION Baccarat 7 ขั้นตอน
+        ประมวลผลการทำนายผลลัพธ์ถัดไปตามระบบ ORACLE 7 ขั้นตอน
         history_data: ประวัติทั้งหมดที่ส่งมาจาก Streamlit
         """
         self.developer_view_components = [] # Reset developer view for this prediction cycle
