@@ -185,7 +185,7 @@ class OracleEngine:
     # Define the version of the OracleEngine class
     # Increment this version whenever there are significant changes to the class structure
     # or its internal attributes/methods that might cause caching issues.
-    __version__ = "1.8" # Updated version to 1.8 for adjusting Tie/Super6 prediction logic and Big Road CSS
+    __version__ = "1.9" # Updated version to 1.9 for refined Tie/Super6 prediction logic
 
     # Define theoretical probabilities for Tie and Super6
     THEORETICAL_TIE_PROB = 0.0951  # ~9.51%
@@ -1142,33 +1142,29 @@ class OracleEngine:
         
         TIE_RECOMMENDATION_THRESHOLD = 50
         SUPER6_RECOMMENDATION_THRESHOLD = 60
-        CONFIDENCE_TOLERANCE = 10 # If confidence difference is within this, consider them "close"
+        CONFIDENCE_DIFFERENCE_THRESHOLD = 15 # If confidence difference is within this, consider them "close"
 
         tie_is_strong = tie_confidence >= TIE_RECOMMENDATION_THRESHOLD
         super6_is_strong = super6_confidence >= SUPER6_RECOMMENDATION_THRESHOLD
 
-        if tie_is_strong and super6_is_strong:
-            if abs(tie_confidence - super6_confidence) <= CONFIDENCE_TOLERANCE:
-                # If both are strong and close, no specific prediction for Tie/Super6
-                predicted_outcome = '?'
-                overall_confidence = max(tie_confidence, super6_confidence)
-                reason = f"มีแนวโน้ม Tie ({blended_tie_frequency:.2%}) และ Super6 ({blended_super6_frequency:.2%}) ใกล้เคียงกัน{reason_suffix}"
-            elif super6_confidence > tie_confidence:
-                predicted_outcome = 'S6'
-                overall_confidence = super6_confidence
-                reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({blended_super6_frequency:.2%}){reason_suffix}"
-            else: # tie_confidence > super6_confidence
-                predicted_outcome = 'T'
-                overall_confidence = tie_confidence
-                reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({blended_tie_frequency:.2%}){reason_suffix}"
-        elif super6_is_strong:
+        # Decision based on which is stronger and by how much
+        if super6_is_strong and super6_confidence > tie_confidence + CONFIDENCE_DIFFERENCE_THRESHOLD:
             predicted_outcome = 'S6'
             overall_confidence = super6_confidence
             reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({blended_super6_frequency:.2%}){reason_suffix}"
-        elif tie_is_strong:
+        elif tie_is_strong and tie_confidence > super6_confidence + CONFIDENCE_DIFFERENCE_THRESHOLD:
             predicted_outcome = 'T'
             overall_confidence = tie_confidence
             reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({blended_tie_frequency:.2%}){reason_suffix}"
+        elif tie_is_strong or super6_is_strong: # If either is strong, but not clearly dominant over the other
+            # If both are strong and close, or just one is strong but not extremely high,
+            # we might want to be more cautious.
+            # For now, if both are above threshold but not significantly different, no specific prediction.
+            # If only one is strong, but not strong enough to beat the other by CONFIDENCE_DIFFERENCE_THRESHOLD,
+            # we also don't make a prediction.
+            predicted_outcome = '?' # Be cautious if not clearly dominant
+            overall_confidence = max(tie_confidence, super6_confidence)
+            reason = f"มีแนวโน้ม Tie ({blended_tie_frequency:.2%}) หรือ Super6 ({blended_super6_frequency:.2%}) แต่ยังไม่มีตัวใดโดดเด่นชัดเจน{reason_suffix}"
         else: # Neither reached the threshold
             overall_confidence = max(tie_confidence, super6_confidence) # Still show max confidence
             reason = f"มีแนวโน้ม Tie ({blended_tie_frequency:.2%}) หรือ Super6 ({blended_super6_frequency:.2%}) เล็กน้อย{reason_suffix}"
