@@ -2,7 +2,6 @@ import random
 
 class OracleEngine:
     def __init__(self):
-        self.history = []
         # สถิติประสิทธิภาพของแต่ละ Pattern และ Momentum
         self.pattern_stats = {
             'Pingpong': {'success': 0, 'fail': 0},
@@ -41,8 +40,7 @@ class OracleEngine:
         }
 
     def reset_history(self):
-        """รีเซ็ตประวัติและสถานะการเรียนรู้ทั้งหมด"""
-        self.history = []
+        """รีเซ็ตสถานะการเรียนรู้ทั้งหมดของ Engine (แต่ไม่รีเซ็ต history list ซึ่งถูกจัดการโดย Streamlit)"""
         for stats in [self.pattern_stats, self.momentum_stats]:
             for key in stats:
                 stats[key] = {'success': 0, 'fail': 0}
@@ -193,7 +191,6 @@ class OracleEngine:
                 return
         
         # Pingpong (PBPB) - หาก Pingpong แตก หรือมีการสลับที่รวดเร็ว
-        # ตรวจสอบว่ามี Pingpong pattern แต่แล้วมีแนวโน้มจะกลับด้าน (เช่น PBPB P B)
         # ตรวจจับ PBPBP หรือ BPBPB ที่ยาวแล้วเกิดการสลับอีกครั้งทันที
         if len(history_segment) >= 5:
             if (last_5 == 'PBPBP' or last_5 == 'BPBPB'): # ถ้ามี Pingpong ยาวๆ
@@ -307,9 +304,10 @@ class OracleEngine:
         return None # ไม่มี Intuition ที่ชัดเจน
 
     # --- 🔬 Backtest Simulation ---
-    def _run_backtest_simulation(self):
+    def _run_backtest_simulation(self, history_data):
         """
         ทดสอบผลย้อนหลังมือ #11–ปัจจุบัน คำนวณ Hit / Miss % และ Drawdown
+        history_data: ประวัติทั้งหมดที่ส่งมาจาก Streamlit
         """
         hits = 0
         misses = 0
@@ -317,24 +315,17 @@ class OracleEngine:
         max_drawdown = 0
         
         # เริ่ม Backtest ตั้งแต่มือที่ 11
-        if len(self.history) < 11:
+        if len(history_data) < 11:
             return {'hits': 0, 'misses': 0, 'total': 0, 'drawdown': 0, 'accuracy_pct': 0}
 
-        # ใช้ slice ของ history สำหรับ backtest
-        # จำลองการทำนายบนข้อมูลย้อนหลัง โดยใช้ logic เดียวกับ predict_next
-        # แต่ไม่ได้อัปเดต state ของ OracleEngine จริงๆ
-        # เนื่องจาก _update_learning จะถูกเรียกจาก add_result ใน live prediction
-        
-        # สำหรับ Backtest, เราจะใช้ simplified logic ในการทำนายเพื่อประเมิน accuracy
-        # ไม่ได้จำลองการเรียนรู้ของ engine ใน backtest loop
-        
-        for i in range(10, len(self.history)): # เริ่มจาก index 10 (มือที่ 11)
-            segment = self.history[:i] # ประวัติที่ใช้ทำนายถึงมือปัจจุบัน
+        for i in range(10, len(history_data)): # เริ่มจาก index 10 (มือที่ 11)
+            segment = history_data[:i] # ประวัติที่ใช้ทำนายถึงมือปัจจุบัน
             
             # ต้องจำลองการทำนายแบบเดียวกับ predict_next แต่ไม่มีการอัปเดต _update_learning
             # เพื่อไม่ให้ backtest ไปกระทบสถานะปัจจุบันของ engine
             
             # Simplified prediction for backtest:
+            # Need to pass history_data to pattern/momentum detection functions as well
             patterns = self.detect_dna_patterns(segment)
             momentum = self.detect_momentum(segment)
             
@@ -358,7 +349,7 @@ class OracleEngine:
             else:
                 simulated_prediction = random.choice(['P', 'B']) # Fallback for backtest
             
-            actual_outcome = self.history[i]['main_outcome']
+            actual_outcome = history_data[i]['main_outcome'] # Get actual outcome from full history
 
             if simulated_prediction != '?' and simulated_prediction == actual_outcome:
                 hits += 1
@@ -385,6 +376,7 @@ class OracleEngine:
     def _update_learning(self, actual_outcome):
         """
         อัปเดตสถิติและ Memory Logic จากผลการทำนายครั้งล่าสุด
+        (นี้ถูกเรียกจาก Streamlit เมื่อเพิ่มผลลัพธ์)
         """
         predicted_outcome = self.last_prediction_context['prediction']
         patterns_detected = self.last_prediction_context['patterns']
@@ -416,15 +408,16 @@ class OracleEngine:
 
     def add_result(self, main_outcome, big_road_column=None):
         """
-        เพิ่มผลลัพธ์ใหม่ และเรียกใช้ _update_learning จากการทำนายครั้งก่อน
+        ถูกเรียกจาก Streamlit เพื่อให้ Engine อัปเดตการเรียนรู้จากผลลัพธ์ที่เพิ่งเข้ามา
+        สำคัญ: เมธอดนี้ไม่ได้เพิ่มผลลัพธ์เข้าใน history list ของ engine แล้ว
+        history list ถูกจัดการโดย st.session_state.oracle_history ใน Streamlit app
         """
-        # อัปเดตการเรียนรู้ก่อนเพิ่มผลลัพธ์ใหม่
+        # อัปเดตการเรียนรู้ก่อนเพิ่มผลลัพธ์ใหม่ใน st.session_state
+        # self.last_prediction_context ต้องมีข้อมูลมาจาก predict_next ครั้งก่อนหน้า
         if self.last_prediction_context['prediction'] != '?':
             self._update_learning(main_outcome)
         
-        # เพิ่มผลลัพธ์ใหม่เข้าในประวัติ
-        self.history.append({'main_outcome': main_outcome, 'big_road_column': big_road_column})
-        # หลังจากเพิ่มผลลัพธ์ ก็ clear last_prediction_context เพื่อให้พร้อมสำหรับ prediction ใหม่
+        # หลังจากการเรียนรู้ ก็เคลียร์ last_prediction_context
         self.last_prediction_context = { 
             'prediction': '?',
             'patterns': [],
@@ -432,24 +425,28 @@ class OracleEngine:
             'intuition_applied': False
         }
 
+
     # --- Core Prediction Engine ---
-    def predict_next(self):
+    def predict_next(self, history_data): # history_data is now an argument
         """
         ประมวลผลการทำนายผลลัพธ์ถัดไปตามระบบ SYNAPSE VISION Baccarat 7 ขั้นตอน
+        history_data: ประวัติทั้งหมดที่ส่งมาจาก Streamlit
         """
         self.developer_view_components = [] # Reset developer view for this prediction cycle
         
         # 1. รับ Input จากผู้ใช้ (ต้องมีประวัติอย่างน้อย 20 ตา)
-        if len(self.history) < 20:
+        if len(history_data) < 20:
+            # Note: This return is typically handled by Streamlit's UI logic,
+            # but it's kept here for completeness if predict_next is called directly.
             return {
                 'prediction': '?',
                 'recommendation': 'Avoid ❌',
                 'risk': 'Not enough data',
                 'accuracy': 'N/A',
-                'developer_view': 'กรุณาใส่ผลย้อนหลังอย่างน้อย 20 ตา'
+                'developer_view': 'Not enough data for analysis'
             }
 
-        history_segment = self.history[-30:] # วิเคราะห์จาก 30 ตาหลังสุด
+        history_segment = history_data[-30:] # วิเคราะห์จาก 30 ตาหลังสุด
 
         # 2. 🧬 DNA Pattern Analysis
         patterns_detected = self.detect_dna_patterns(history_segment)
@@ -474,7 +471,7 @@ class OracleEngine:
 
         # ตัดสินใจทำนายตาม Confidence
         if confidence >= 60:
-            last_outcome = self.history[-1]['main_outcome']
+            last_outcome = history_segment[-1]['main_outcome']
             
             # --- กลยุทธ์การทำนายหลัก (ตามลำดับความสำคัญ) ---
             # Dragon (ลากยาว)
@@ -567,7 +564,7 @@ class OracleEngine:
             self.developer_view_components.append("Confidence < 60%. Not playing.")
         
         # 7. 🔬 Backtest Simulation
-        backtest_results = self._run_backtest_simulation()
+        backtest_results = self._run_backtest_simulation(history_data) # Pass full history_data
         backtest_accuracy_str = f"{backtest_results['accuracy_pct']}% ({backtest_results['hits']}/{backtest_results['total']})"
         self.developer_view_components.append(f"Backtest Accuracy: {backtest_accuracy_str}")
         
