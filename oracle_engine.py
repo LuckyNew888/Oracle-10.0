@@ -4,7 +4,7 @@ import random
 from collections import Counter
 
 class OracleEngine:
-    __version__ = "1.11" # Engine version for compatibility check
+    __version__ = "1.12" # Engine version for compatibility check
 
     def __init__(self):
         self.history = []  # Stores P, B, T, S6 results as list of dicts: [{'main_outcome': 'P', 'ties': 0, 'is_any_natural': False}, ...]
@@ -263,20 +263,21 @@ class OracleEngine:
                             patterns_detected.append(('Big Eye Boy (2D Simple - Break)', tuple(last_col_actual)))
                 
                 # Small Road (2D Simple - Chop) - Example: P B P (columns of length 1)
-                if len(big_road_data) >= 3:
-                     # Check if prev_col and prev_prev_prev_col have data
-                    if len(big_road_data) >= 4:
-                        prev_prev_prev_col = big_road_data[-4]
-                        prev_prev_prev_col_actual = [cell[0] for cell in prev_prev_prev_col if cell is not None and cell[0] in ['P', 'B', 'S6']] if prev_prev_prev_col else []
-                        if prev_prev_prev_col_actual:
-                            prev_prev_prev_col_first_outcome_val = 'B' if prev_prev_prev_col_actual[0] == 'S6' else prev_prev_prev_col_actual[0] 
+                # This needs 4 columns to determine if the 2nd and 4th columns' first outcomes are same.
+                if len(big_road_data) >= 4:
+                    prev_prev_prev_col = big_road_data[-4]
+                    prev_prev_prev_col_actual = [cell[0] for cell in prev_prev_prev_col if cell is not None and cell[0] in ['P', 'B', 'S6']] if prev_prev_prev_col else []
+                    
+                    if prev_prev_prev_col_actual: # Ensure the 4th column exists
+                        prev_prev_prev_col_len = len(prev_prev_prev_col_actual)
+                        prev_prev_prev_col_first_outcome_val = 'B' if prev_prev_prev_col_actual[0] == 'S6' else prev_prev_prev_col_actual[0] 
 
-                            if (last_col_len == prev_col_len and prev_col_len == prev_prev_col_len and prev_prev_col_len == prev_prev_prev_col_len and
-                                last_col_len == 1 and prev_col_len == 1 and prev_prev_col_len == 1 and prev_prev_prev_col_len == 1 and
-                                last_col_first_outcome != prev_col_first_outcome and
-                                prev_col_first_outcome != prev_prev_col_first_outcome and
-                                prev_prev_col_first_outcome != prev_prev_prev_col_first_outcome_val): # All single and alternating
-                                patterns_detected.append(('Small Road (2D Simple - All Single Alternating)', tuple(last_col_actual)))
+                        if (last_col_len == prev_col_len and prev_col_len == prev_prev_col_len and prev_prev_col_len == prev_prev_prev_col_len and
+                            last_col_len == 1 and prev_col_len == 1 and prev_prev_col_len == 1 and prev_prev_prev_col_len == 1 and
+                            last_col_first_outcome != prev_col_first_outcome and
+                            prev_col_first_outcome != prev_prev_col_first_outcome and
+                            prev_prev_col_first_outcome != prev_prev_prev_col_first_outcome_val): # All single and alternating
+                            patterns_detected.append(('Small Road (2D Simple - All Single Alternating)', tuple(last_col_actual)))
                 
                 # Cockroach Pig (2D Simple - Chop) - Example: P B B P (columns of length 1)
                 # Similar to Small Road, but usually 3rd and 4th column from the left
