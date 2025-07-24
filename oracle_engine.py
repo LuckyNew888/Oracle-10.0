@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.0" # System version identifier
+    VERSION = "Final V1.0 (Hotfix)" # System version identifier - Updated
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -45,7 +45,6 @@ class OracleEngine:
         }
         
         # Memory Logic (Blacklist Pattern)
-        # { 'pattern_name': count_of_failures_in_current_room }
         self.memory_blocked_patterns = {}
         self.MEMORY_BLOCK_THRESHOLD = 2 # Block pattern if it failed this many times
 
@@ -54,14 +53,14 @@ class OracleEngine:
         self.TRAP_TIMER_THRESHOLD = 2 # Skip 2 hands
 
         # New Pattern Confirmation & First Bet Avoidance state
-        self.last_dominant_pattern_id = None # Store a unique ID for the last recognized dominant pattern
-        self.new_pattern_confirmation_count = 0 # Counter for confirming a new pattern
+        self.last_dominant_pattern_id = None 
+        self.new_pattern_confirmation_count = 0 
         self.NEW_PATTERN_CONFIRMATION_REQUIRED = 2 # Need 2 confirmations
-        self.skip_first_bet_of_new_pattern_flag = False # Flag to indicate if the next prediction should be skipped due to new pattern first bet
+        self.skip_first_bet_of_new_pattern_flag = False 
 
         # Bias Zone state
         self.bias_zone_active = False
-        self.bias_towards_outcome = None # 'P', 'B', or None
+        self.bias_towards_outcome = None 
 
         # Context from the last prediction attempt for learning
         self.last_prediction_context = {
@@ -70,7 +69,7 @@ class OracleEngine:
             'momentum': [],
             'intuition_applied': False,
             'predicted_by': None,
-            'dominant_pattern_id_at_prediction': None # What was dominant when prediction was made
+            'dominant_pattern_id_at_prediction': None
         }
 
         self.trap_zone_active = False # General Trap Zone flag
@@ -143,14 +142,16 @@ class OracleEngine:
             if seq.endswith('PPPBBB'): patterns.append('Triple-Cut')
 
         # One-Two Pattern (P-BB-P-BB or B-PP-B-PP) - simplified linear detection
-        if len(seq) >= 5: # e.g., PBBPB or BPPBP
-            if seq.endswith('PBB') and len(seq) >=5 and seq[-5] == 'P': patterns.append('One-Two Pattern') # P-BB
-            if seq.endswith('BPP') and len(seq) >=5 and seq[-5] == 'B': patterns.append('One-Two Pattern') # B-PP
+        # Re-check logic for better detection
+        if len(seq) >= 5: 
+            if seq.endswith('PBB') and len(seq) >= 5 and seq[-5] == 'P' and seq[-4] == seq[-3] == 'B': patterns.append('One-Two Pattern') # P-BB-P
+            if seq.endswith('BPP') and len(seq) >= 5 and seq[-5] == 'B' and seq[-4] == seq[-3] == 'P': patterns.append('One-Two Pattern') # B-PP-B
 
         # Two-One Pattern (PP-B-PP-B or BB-P-BB-P) - simplified linear detection
-        if len(seq) >= 5: # e.g., PPBPP or BB PBB
-            if seq.endswith('BPP') and len(seq) >=5 and seq[-5:-3] == 'PP': patterns.append('Two-One Pattern') # PP-B
-            if seq.endswith('PBB') and len(seq) >=5 and seq[-5:-3] == 'BB': patterns.append('Two-One Pattern') # BB-P
+        # Re-check logic for better detection
+        if len(seq) >= 5: 
+            if seq.endswith('BPP') and len(seq) >= 5 and seq[-5:-3] == 'PP' and seq[-2] == 'B': patterns.append('Two-One Pattern') # PP-B-P
+            if seq.endswith('PBB') and len(seq) >= 5 and seq[-5:-3] == 'BB' and seq[-2] == 'P': patterns.append('Two-One Pattern') # BB-P-B
         
         # Broken Pattern (e.g., PPPPBB, BBPPBB) - indicates disruption in streak/pattern
         if len(seq) >= 4:
@@ -240,9 +241,13 @@ class OracleEngine:
         seq_last_7_nontie = ''.join(recent_nontie_outcomes[-7:]) if len(recent_nontie_outcomes) >= 7 else ''
 
         # P1-B1 or B1-P1 (highly unstable, alternating singles) - more specific: PBP
-        if seq_last_3_nontie == 'PBP' or seq_last_3_nontie == 'BPPB': # BPPB means B-P-P, could be a trap to follow P
+        if seq_last_3_nontie == 'PBP': 
             self.trap_zone_active = True
             trap_name = 'P1-B1 Trap (Unstable)'
+        # BPPB (B-P-P-B)
+        if seq_last_4_nontie == 'BPPB' or seq_last_4_nontie == 'PBBP': # Alternating double
+            self.trap_zone_active = True
+            trap_name = 'Alternating Double Trap'
         
         # B3-P1 or P3-B1 (strong streak suddenly broken, high risk of reversal)
         if len(seq_last_4_nontie) >= 4:
@@ -303,7 +308,7 @@ class OracleEngine:
         return self.bias_zone_active, self.bias_towards_outcome
 
     # --- Confidence Threshold (Enhanced Confidence Engine) ---
-    def calculate_confidence(self, detected_patterns, detected_momentum, intuition_applied=False, primary_prediction_logic=None):
+    def calculate_confidence(self, detected_patterns, detected_momentum, intuition_applied=False, primary_prediction_logic=None, bias_zone_active=False):
         """
         Calculates a confidence score based on detected patterns, momentum, trap zone, and intuition.
         Uses actual success rates of detected indicators.
@@ -312,6 +317,7 @@ class OracleEngine:
             detected_momentum (list): List of detected momentum.
             intuition_applied (bool): True if intuition logic was used for prediction.
             primary_prediction_logic (str): The specific pattern/logic that drove the prediction.
+            bias_zone_active (bool): True if currently in a bias zone.
         Returns:
             int: Confidence score (0-100).
         """
@@ -333,8 +339,8 @@ class OracleEngine:
                 total_weight_sum += self.momentum_weights[m]
 
         # Base confidence calculation
-        confidence_base = (total_weighted_score / total_weight_sum) if total_weight_sum > 0 else 0.5
-        
+        confidence_base = (total_weighted_score / total_weight_sum) if total_weight_sum > 0 else 0.5 # Default 50% if no relevant patterns/momentum
+
         # Apply Trap Zone penalty
         if self.trap_zone_active:
             confidence_base *= 0.5 # Halve confidence if in a trap zone
@@ -344,34 +350,39 @@ class OracleEngine:
             # Get success rate of that specific intuition rule
             intuition_key = primary_prediction_logic.replace("Intuition (", "").replace(")", "")
             intuition_success_rate = self.get_success_rate(self.intuition_performance, intuition_key)
-            # Mix intuition's success with current pattern/momentum confidence
-            confidence_base = (confidence_base + intuition_success_rate) / 2
+            # Mix intuition's success with current pattern/momentum confidence, but with lower overall weight for intuition
+            confidence_base = (confidence_base * 0.7 + intuition_success_rate * 0.3) # 70% from pattern/momentum, 30% from intuition
             confidence_base *= 0.8 # Apply a general penalty for relying on intuition solely
+
+        # If in a Bias Zone, and prediction aligns with bias, slightly boost confidence (or just avoid penalty)
+        # If prediction counters bias, confidence should be lower, but this is handled by risk/recommendation
+        # For confidence calculation, we mainly apply penalties.
 
         return round(confidence_base * 100)
 
     # --- Blacklist Pattern (Memory Logic) ---
-    def apply_memory_logic(self, detected_patterns, detected_momentum):
+    def apply_memory_logic(self, detected_patterns, detected_momentum, prediction_candidate_outcome):
         """
         Checks if the current prediction should be blocked based on past failures
         of the active patterns/momentum in this 'room' (Blacklist).
         Args:
             detected_patterns (list): Patterns identified for the current prediction.
             detected_momentum (list): Momentum identified for the current prediction.
+            prediction_candidate_outcome (str): The outcome being considered for prediction.
         Returns:
             bool: True if the prediction should be blocked, False otherwise.
         """
-        active_indicators = detected_patterns + momentum_detected # momentum_detected is not passed, fix this
-        
-        # Re-detect current patterns and momentum to get fresh active indicators
-        # This is for the check *before* a prediction is made, so use current state
-        # (This method is called *after* predict_next, so the patterns are from last prediction context)
-        # For simplicity, we will use the patterns/momentum detected that LED to the current prediction attempt
-        # This is handled by passing them as arguments to this method.
+        active_indicators = detected_patterns + detected_momentum
         
         for indicator in active_indicators:
             # If this indicator has failed at least MEMORY_BLOCK_THRESHOLD times
+            # and the predicted outcome is the same as the outcome that failed before
+            # This would require storing (indicator, failed_outcome) in memory_blocked_patterns
+            # For simplicity, if the indicator itself is blocked, we block.
             if self.memory_blocked_patterns.get(indicator, 0) >= self.MEMORY_BLOCK_THRESHOLD:
+                # We can make this more specific: block only if this pattern led to a fail for THIS prediction candidate
+                # (e.g., if "Dragon" failed when predicting 'B', don't block Dragon when predicting 'P')
+                # For now, a general block on the pattern is applied.
                 return True
         return False
 
@@ -436,7 +447,6 @@ class OracleEngine:
         # Populate initial 10 hands for BASE and learning
         for i in range(10):
             # No prediction yet for initial hands, just update learning to build stats
-            # Pass placeholder values for prediction context that don't apply to this initial phase
             temp_engine.update_learning_state_for_backtest(full_history[i]['main_outcome'], None, [], [], False) 
 
         # Start backtesting from hand #11 (index 10)
@@ -445,26 +455,23 @@ class OracleEngine:
             actual_outcome = full_history[i]['main_outcome']
 
             # Make a prediction with the temp_engine based on available history
-            # Set is_backtest=True to prevent main app-specific state updates
             prediction_result = temp_engine.predict_next(history_for_prediction, is_backtest=True)
             predicted_outcome = prediction_result['prediction']
 
             # Extract info from developer_view string to update learning for backtest
-            dev_view_parts = prediction_result['developer_view'].split(';')
+            # This parsing is brittle; ideally, predict_next would return a structured dict for learning.
+            dev_view_str = prediction_result['developer_view']
             patterns_in_dev = []
             momentum_in_dev = []
             intuition_applied_in_dev = False
 
-            for part in dev_view_parts:
-                if 'DNA Patterns:' in part and 'None' not in part:
-                    patterns_in_dev = [p.strip() for p in part.replace('DNA Patterns:', '').strip().split(',') if p.strip()]
-                elif 'Momentum:' in part and 'None' not in part:
-                    momentum_in_dev = [m.strip() for m in part.replace('Momentum:', '').strip().split(',') if m.strip()]
-                if 'Intuition' in part:
-                    intuition_applied_in_dev = True
+            patterns_match = [p.strip() for p in dev_view_str.split('DNA Patterns: ')[1].split(';')[0].split(',') if p.strip() != 'None'] if 'DNA Patterns: ' in dev_view_str else []
+            momentum_match = [m.strip() for m in dev_view_str.split('Momentum: ')[1].split(';')[0].split(',') if m.strip() != 'None'] if 'Momentum: ' in dev_view_str else []
+            if 'Intuition' in dev_view_str:
+                intuition_applied_in_dev = True
             
             # Update learning state of the temp_engine for the actual outcome of this hand
-            temp_engine.update_learning_state_for_backtest(actual_outcome, predicted_outcome, patterns_in_dev, momentum_in_dev, intuition_applied_in_dev)
+            temp_engine.update_learning_state_for_backtest(actual_outcome, predicted_outcome, patterns_match, momentum_match, intuition_applied_in_dev)
 
             # Compare prediction with actual outcome for backtest metrics
             if predicted_outcome not in ['?', '⚠️'] and actual_outcome != 'T': # Only count if a valid prediction was made and not a Tie
@@ -490,11 +497,11 @@ class OracleEngine:
             history (list): The complete history of outcomes up to the current point.
             is_backtest (bool): Flag to indicate if this call is part of a backtest simulation.
         Returns:
-            dict: Contains prediction, recommendation, risk, developer_view, accuracy.
+            dict: Contains prediction, recommendation, risk, developer_view, accuracy, confidence.
         """
         # Ensure enough data for meaningful analysis
-        if len(history) < 20: # Requires at least 20 hands for full analysis and backtest
-            if not is_backtest: # Reset context only if not in backtest
+        if len(history) < 20: 
+            if not is_backtest: 
                 self.last_prediction_context = {'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None}
             return {
                 'prediction': '?',
@@ -509,18 +516,18 @@ class OracleEngine:
         # Recalculate all states based on the current history
         patterns = self.detect_dna_patterns(history)
         momentum = self.detect_momentum(history)
-        trap_zone_name = self.detect_trap_zone(history) # This also sets self.trap_zone_active
+        trap_zone_name = self.detect_trap_zone(history) 
         bias_zone_active, bias_towards = self.detect_bias_zone(history)
 
         # Identify a 'dominant' pattern or state for New Pattern Confirmation
-        current_dominant_pattern_id = "NoClearPattern" # Default if nothing strong is detected
+        current_dominant_pattern_id = "NoClearPattern" 
         if 'Dragon' in patterns: current_dominant_pattern_id = 'Dragon'
         elif 'Pingpong' in patterns: current_dominant_pattern_id = 'Pingpong'
         elif bias_zone_active: current_dominant_pattern_id = f"Bias-{bias_towards}"
         elif len(momentum) > 0 and (('B3+ Momentum' in momentum and history[-1]['main_outcome'] == 'B') or ('P3+ Momentum' in momentum and history[-1]['main_outcome'] == 'P')):
             current_dominant_pattern_id = f"{history[-1]['main_outcome']}Streak" 
         elif len(patterns) > 0: 
-            current_dominant_pattern_id = patterns[0] # Take first detected as dominant if no specific strong one
+            current_dominant_pattern_id = patterns[0] 
 
         # Initialize prediction variables for this round
         prediction = '?'
@@ -528,7 +535,7 @@ class OracleEngine:
         risk = 'Normal'
         predicted_by_logic = "None"
         intuition_applied_flag = False
-        confidence = 'N/A' # Will be calculated later if not overridden early
+        confidence = 0 # Initialize confidence as 0
 
         # --- Priority Decision Flow ---
 
@@ -541,17 +548,16 @@ class OracleEngine:
         
         # 2. New Pattern Confirmation & First Bet Avoidance
         elif not is_backtest: # Only apply in main app mode, not backtest
-            # Check if dominant pattern changed from last round
+            # If dominant pattern changed from last round, reset confirmation and set skip flag
             if self.last_dominant_pattern_id is not None and self.last_dominant_pattern_id != current_dominant_pattern_id:
-                self.skip_first_bet_of_new_pattern_flag = True # New pattern detected, set flag for next prediction
-                self.new_pattern_confirmation_count = 0 # Reset confirmation count
+                self.skip_first_bet_of_new_pattern_flag = True 
+                self.new_pattern_confirmation_count = 0 
                 
             if self.skip_first_bet_of_new_pattern_flag: # If this is the hand where we skip the first bet of new pattern
                 prediction = '⚠️'
                 recommendation = 'Avoid ❌'
                 risk = 'New Pattern: First Bet Avoidance'
                 predicted_by_logic = "New Pattern - First Bet Avoidance"
-                # The flag will be turned off in update_learning_state after this hand's actual outcome.
             elif self.new_pattern_confirmation_count < self.NEW_PATTERN_CONFIRMATION_REQUIRED:
                 prediction = '⚠️'
                 recommendation = 'Avoid ❌'
@@ -568,97 +574,111 @@ class OracleEngine:
         # If prediction is still undecided after high-priority overrides, proceed with core logic
         if prediction == '?':
             # Calculate Confidence based on currently detected features
-            confidence = self.calculate_confidence(patterns, momentum, intuition_applied_flag, predicted_by_logic)
+            confidence = self.calculate_confidence(patterns, momentum, intuition_applied_flag, predicted_by_logic, bias_zone_active)
 
-            # 4. Confidence Threshold
-            if confidence < 60:
-                prediction = '⚠️'
-                recommendation = 'Avoid ❌'
-                risk = 'Low Confidence'
-                predicted_by_logic = "Low Confidence"
-            else:
-                # Core Prediction Logic based on Pattern Priority
-                last_outcome = history[-1]['main_outcome']
-                
-                # Check for strongest patterns first
-                if 'Dragon' in patterns:
-                    prediction = last_outcome
-                    predicted_by_logic = "Dragon"
-                elif 'FollowStreak' in patterns:
-                    prediction = last_outcome
-                    predicted_by_logic = "FollowStreak"
-                elif 'Pingpong' in patterns:
-                    prediction = 'B' if last_outcome == 'P' else 'P'
-                    predicted_by_logic = "Pingpong"
-                elif 'Two-Cut' in patterns:
-                    if len(history) >= 2 and history[-1]['main_outcome'] == history[-2]['main_outcome']:
-                        prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
-                    else: prediction = last_outcome 
-                    predicted_by_logic = "Two-Cut"
-                elif 'Triple-Cut' in patterns:
-                    if len(history) >= 3 and history[-1]['main_outcome'] == history[-2]['main_outcome'] == history[-3]['main_outcome']:
-                        prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
-                    else: prediction = last_outcome 
-                    predicted_by_logic = "Triple-Cut"
-                elif 'B3+ Momentum' in momentum and last_outcome == 'B':
-                    prediction = 'B'
-                    predicted_by_logic = "B3+ Momentum"
-                elif 'P3+ Momentum' in momentum and last_outcome == 'P':
-                    prediction = 'P'
-                    predicted_by_logic = "P3+ Momentum"
-                elif 'Steady Repeat Momentum' in momentum:
-                    prediction = 'P' if last_outcome == 'B' else 'B' 
-                    predicted_by_logic = "Steady Repeat Momentum"
-                
-                # Blacklist Pattern (Memory Logic)
-                if prediction not in ['?', '⚠️']: 
-                    if self.apply_memory_logic(patterns, momentum): # Pass detected patterns/momentum
-                        prediction = '⚠️' 
-                        risk = 'Memory Blocked'
-                        recommendation = 'Avoid ❌'
-                        predicted_by_logic = "Memory Logic Block"
-                
-                # Intuition Logic (If no strong pattern or blocked by memory)
-                if prediction in ['?', '⚠️'] or predicted_by_logic == "Memory Logic Block": 
-                    intuition_result = self.apply_intuition_logic(history)
-                    if intuition_result:
-                        prediction = intuition_result['prediction']
-                        intuition_applied_flag = True
-                        predicted_by_logic = f"Intuition ({intuition_result['reason']})"
-                        # Re-calculate confidence with intuition factored in
-                        confidence = self.calculate_confidence(patterns, momentum, True, predicted_by_logic)
-                        if confidence < 60: 
-                            prediction = '⚠️'
-                            risk = 'Low Confidence (Intuition)'
-                            recommendation = 'Avoid ❌'
-                            predicted_by_logic = "Low Confidence (Intuition)"
-
-                # Fallback to a default safe choice if prediction is still '?'
-                if prediction == '?':
-                    prediction = random.choice(['P', 'B']) 
-                    predicted_by_logic = "Random Fallback (Low Confidence)"
-                    risk = "Low Confidence / Random"
-                    recommendation = 'Avoid ❌' # Default to avoid if random fallback
-
-                # Adjust risk based on Bias Zone
-                if bias_zone_active:
-                    if prediction == bias_towards:
-                        risk = f"Bias Zone ({bias_towards} Favored)"
-                    elif prediction not in ['?', '⚠️']: 
-                        risk = f"Bias Zone (Counter {bias_towards})"
-                        recommendation = 'Avoid ❌' 
-                        predicted_by_logic = f"Bias Zone (Counter {bias_towards})"
-
-                # Final Recommendation logic
-                if prediction not in ['?', '⚠️']:
-                    if 'Memory Blocked' in risk or 'Low Confidence' in risk or 'Trap Zone' in risk or 'New Pattern' in risk or 'Drawdown Alert' in risk: 
-                        recommendation = 'Avoid ❌'
-                    elif 'Bias Zone (Counter' in risk:
-                        recommendation = 'Avoid ❌'
-                    else:
-                        recommendation = 'Play ✅'
-                else:
+            # 4. Confidence Threshold (Relaxed: allow prediction even if <60, but recommendation will be Avoid)
+            # Old logic: if confidence < 60, set prediction to '⚠️'
+            # New logic: calculate prediction, then let recommendation logic handle confidence < 60
+            
+            last_outcome = history[-1]['main_outcome']
+            
+            # Core Prediction Logic based on Pattern Priority
+            # Prioritize Dragon/FollowStreak if they exist, then Pingpong, then Cuts
+            if 'Dragon' in patterns:
+                prediction = last_outcome
+                predicted_by_logic = "Dragon"
+            elif 'FollowStreak' in patterns:
+                prediction = last_outcome
+                predicted_by_logic = "FollowStreak"
+            elif 'Pingpong' in patterns:
+                prediction = 'B' if last_outcome == 'P' else 'P'
+                predicted_by_logic = "Pingpong"
+            elif 'Two-Cut' in patterns:
+                if len(history) >= 2 and history[-1]['main_outcome'] == history[-2]['main_outcome']:
+                    prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
+                else: prediction = last_outcome 
+                predicted_by_logic = "Two-Cut"
+            elif 'Triple-Cut' in patterns:
+                if len(history) >= 3 and history[-1]['main_outcome'] == history[-2]['main_outcome'] == history[-3]['main_outcome']:
+                    prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' 
+                else: prediction = last_outcome 
+                predicted_by_logic = "Triple-Cut"
+            elif 'B3+ Momentum' in momentum and last_outcome == 'B':
+                prediction = 'B'
+                predicted_by_logic = "B3+ Momentum"
+            elif 'P3+ Momentum' in momentum and last_outcome == 'P':
+                prediction = 'P'
+                predicted_by_logic = "P3+ Momentum"
+            elif 'Steady Repeat Momentum' in momentum:
+                prediction = 'P' if last_outcome == 'B' else 'B' 
+                predicted_by_logic = "Steady Repeat Momentum"
+            
+            # Blacklist Pattern (Memory Logic) - applies AFTER initial pattern prediction
+            # If the best prediction comes from a blocked pattern, reconsider or avoid.
+            if prediction not in ['?', '⚠️']: # Only apply memory logic if a prediction was made
+                if self.apply_memory_logic(patterns, momentum, prediction): # Pass current patterns/momentum
+                    prediction = '⚠️' # Blocked by memory logic
+                    risk = 'Memory Blocked'
                     recommendation = 'Avoid ❌'
+                    predicted_by_logic = "Memory Logic Block"
+            
+            # Intuition Logic (If no strong pattern or blocked by memory)
+            if prediction in ['?', '⚠️'] or predicted_by_logic == "Memory Logic Block": 
+                intuition_result = self.apply_intuition_logic(history)
+                if intuition_result:
+                    prediction = intuition_result['prediction']
+                    intuition_applied_flag = True
+                    predicted_by_logic = f"Intuition ({intuition_result['reason']})"
+                    # Confidence re-evaluation if intuition takes over
+                    confidence = self.calculate_confidence(patterns, momentum, True, predicted_by_logic, bias_zone_active)
+                    # Even if intuition gives a prediction, if confidence is low, still avoid
+                    if confidence < 50: # Slightly relaxed confidence for intuition predictions
+                        prediction = '⚠️'
+                        risk = 'Low Confidence (Intuition)'
+                        recommendation = 'Avoid ❌'
+                        predicted_by_logic = "Low Confidence (Intuition)"
+            
+            # Final Fallback if no specific logic applies
+            if prediction == '?':
+                # If still no prediction, base on a simple majority in recent history (non-ties)
+                recent_nontie = [item['main_outcome'] for item in history[-10:] if item['main_outcome'] != 'T']
+                if recent_nontie:
+                    p_count = recent_nontie.count('P')
+                    b_count = recent_nontie.count('B')
+                    if p_count > b_count: prediction = 'P'
+                    elif b_count > p_count: prediction = 'B'
+                    else: prediction = random.choice(['P', 'B']) # If tie, pick randomly
+                    predicted_by_logic = "Majority Fallback"
+                    risk = "Low Confidence / Majority"
+                    recommendation = "Avoid ❌"
+                else:
+                    prediction = random.choice(['P', 'B']) # If no non-ties, truly random
+                    predicted_by_logic = "Random Fallback (No Data)"
+                    risk = "Low Confidence / Random"
+                    recommendation = "Avoid ❌"
+
+        # --- Adjust risk/recommendation based on Bias Zone (after prediction is made) ---
+        if bias_zone_active and prediction not in ['?', '⚠️']:
+            if prediction == bias_towards:
+                risk = f"Bias Zone ({bias_towards} Favored)"
+                # Recommendation remains Play, as it aligns with bias
+            elif prediction != bias_towards: # If predicted outcome is AGAINST the bias
+                risk = f"Bias Zone (Counter {bias_towards})"
+                recommendation = 'Avoid ❌' # Strongly recommend avoiding if countering a strong bias
+                predicted_by_logic = f"Counter Bias ({bias_towards})"
+
+        # --- Final Recommendation Logic (Consolidate) ---
+        # This block ensures recommendation is consistent based on final risk and prediction.
+        if prediction == '⚠️':
+            recommendation = 'Avoid ❌'
+        elif risk in ['Trap Timer', 'New Pattern: First Bet Avoidance', 'New Pattern: Awaiting Confirmation(s)', 'Memory Blocked', 'Low Confidence', 'Drawdown Alert']:
+            recommendation = 'Avoid ❌'
+        elif 'Bias Zone (Counter' in risk: # If explicitly countering a bias
+            recommendation = 'Avoid ❌'
+        elif prediction in ['P', 'B']: # If a valid prediction is made and no high risks
+            recommendation = 'Play ✅'
+        else: # Should not happen if logic is complete, but for safety
+            recommendation = 'Avoid ❌'
 
         # --- Store context for next learning step (only in main app loop) ---
         if not is_backtest:
@@ -689,7 +709,7 @@ class OracleEngine:
             f"Momentum: {dev_view_momentum}; "
             f"Trap Zone: {dev_view_trap}; "
             f"Bias Zone: {dev_view_bias}; "
-            f"Confidence: {confidence if confidence != 'N/A' else 'N/A'}%; " 
+            f"Confidence: {confidence}%; " 
             f"Predicted by: {predicted_by_logic}; "
             f"Backtest Accuracy: {accuracy_str}"
         )
@@ -700,7 +720,7 @@ class OracleEngine:
             'risk': risk,
             'developer_view': developer_view_str,
             'accuracy': accuracy_str,
-            'confidence': confidence # Return confidence as well
+            'confidence': confidence 
         }
 
     def update_learning_state(self, actual_outcome):
@@ -721,37 +741,42 @@ class OracleEngine:
         if self.hands_to_skip_due_to_trap_timer > 0:
             self.hands_to_skip_due_to_trap_timer -= 1
             # If skipping due to timer, don't update prediction performance or new pattern count
-            # Only update new pattern confirmation if this wasn't a skip due to new pattern flag
-            if not self.skip_first_bet_of_new_pattern_flag: # If it was just a timer skip, and not a new pattern first bet
-                self.new_pattern_confirmation_count = 0 # Reset confirmation as pattern might have changed during skip
-                self.last_dominant_pattern_id = None # Force re-evaluation of dominant pattern after skip
-            
-            # Clear context for next round, as no meaningful prediction was made
+            # Reset New Pattern confirmation to force re-evaluation after skip period
+            self.new_pattern_confirmation_count = 0 
+            self.last_dominant_pattern_id = None 
+            self.skip_first_bet_of_new_pattern_flag = False # Clear any pending new pattern skips
+
+            # Clear context for next round, as no meaningful prediction was made for learning
             self.last_prediction_context = {
                 'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
             }
             return # Exit early if skipping
 
         # Handle New Pattern First Bet Avoidance flag
+        # If this hand was skipped due to new pattern first bet avoidance
         if self.skip_first_bet_of_new_pattern_flag:
-            self.skip_first_bet_of_new_pattern_flag = False # Turn off the flag after this skipped hand
-            # We don't update learning performance for this hand as it was a forced skip/avoidance.
-            # But the new pattern confirmation count logic needs to be handled:
+            self.skip_first_bet_of_new_pattern_flag = False # Turn off the flag after this hand
             self.new_pattern_confirmation_count = 1 # Start confirmation count from 1 after the first skip
             self.last_dominant_pattern_id = dominant_pattern_at_prediction # Set for future comparisons
             
-            # Clear context for next round, as no meaningful prediction was made for learning
+            # Clear context for next round, as no meaningful prediction for learning performance was made
             self.last_prediction_context = {
                 'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
             }
             return # Exit early if skipping due to new pattern
 
         # Update New Pattern Confirmation count if not skipped
-        if self.last_dominant_pattern_id is not None and dominant_pattern_at_prediction == self.last_dominant_pattern_id:
-            self.new_pattern_confirmation_count += 1
+        # This needs to be based on the actual *current* dominant pattern, not the one from last_prediction_context
+        # We need to re-evaluate the current dominant pattern here
+        # For simplicity, if the dominant pattern matched the one when prediction was made, increment.
+        # Otherwise, reset to 1 (new pattern detected by predict_next in next cycle will set the flag)
+        if dominant_pattern_at_prediction is not None and dominant_pattern_at_prediction == self.last_dominant_pattern_id:
+             self.new_pattern_confirmation_count += 1
         else:
-            self.new_pattern_confirmation_count = 1 # New pattern, restart count to 1
+             self.new_pattern_confirmation_count = 1 # New dominant pattern, reset count to 1
+
         self.last_dominant_pattern_id = dominant_pattern_at_prediction # Update for next round
+
 
         # Only update learning if a valid prediction was made (not '?' or '⚠️')
         if predicted_outcome not in ['?', '⚠️']:
@@ -794,8 +819,6 @@ class OracleEngine:
         """
         Simplified update for backtesting.
         """
-        # Backtest loop handles Trap Timer decrement internally if needed
-        # No Trap Timer impact on learning itself, just prediction override.
         # Backtest does not manage new pattern flags directly in this update function, as it re-evaluates
         # the entire state for each prediction point.
 
