@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.7 (Unleashed)" # System version identifier - Maximum Predict, very loose avoidance
+    VERSION = "Final V1.8 (Lower Threshold)" # System version identifier - Maximum Predict, very loose avoidance
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -535,12 +535,12 @@ class OracleEngine:
         # --- High Priority Overrides (Forces Prediction to '⚠️') ---
         # ONLY Low Confidence makes prediction ⚠️ now. Other risks only affect Risk string.
         
-        # Core Avoid Condition 2: Confidence Threshold Override (<60%)
+        # Core Avoid Condition 2: Confidence Threshold Override (<50%)
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
-        if confidence < 60: # Threshold is 60% as per request
+        if confidence < 50: # Threshold is 50% as per request
              prediction = '⚠️'
-             risk = f'Low Confidence (<60%)'
+             risk = f'Low Confidence (<50%)'
              predicted_by_logic = f"Avoid (Confidence {confidence}%)"
 
 
