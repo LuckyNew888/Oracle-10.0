@@ -129,24 +129,26 @@ col1, col2, col3, col4 = st.columns(4)
 
 # Function to handle adding a new result and updating learning/streak
 def add_new_result(outcome):
-    # Retrieve the state of the engine *before* adding the new outcome
-    # to compare against the actual outcome for learning and streak calculation
+    # Get the prediction result for the *current state* (before this new hand is added)
+    # This is needed to get the prediction and associated patterns/momentum for learning
+    # Only predict if enough history
     if len(st.session_state.oracle_history) >= 20: 
-        # Get the prediction result for the *current state* (before this new hand is added)
-        prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) # is_backtest=False for main app flow
+        prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) 
 
         # Update losing streak based on this prediction and the actual outcome
-        if prediction_for_learning['prediction'] not in ['?', '⚠️']: # If system made a valid prediction
-            if outcome == 'T': # Tie, losing streak does not change
+        if prediction_for_learning['prediction'] not in ['?', '⚠️']: 
+            if outcome == 'T': 
                 pass
-            elif prediction_for_learning['prediction'] == outcome: # Correct prediction
+            elif prediction_for_learning['prediction'] == outcome: 
                 st.session_state.losing_streak_prediction = 0
-            else: # Incorrect prediction
+            else: 
                 st.session_state.losing_streak_prediction += 1
     
-    st.session_state.oracle_history.append({'main_outcome': outcome}) # Add the actual outcome to history
-    oracle.update_learning_state(outcome) # Update engine's internal learning state with the actual outcome
-    st.rerun() # Rerun the app to update UI
+    st.session_state.oracle_history.append({'main_outcome': outcome}) 
+    
+    # Pass the full current history to update_learning_state to trigger backtest calculation
+    oracle.update_learning_state(outcome, st.session_state.oracle_history) 
+    st.rerun() 
 
 with col1:
     if st.button("🟦 P", use_container_width=True, key="add_p"):
@@ -163,42 +165,19 @@ with col4:
             st.session_state.oracle_history.pop() # Remove last outcome from history
             
             # Reset the engine and losing streak.
-            # Replaying full history can be slow for long histories.
-            # A more advanced solution would be to implement a "undo" state
-            # within OracleEngine itself, but that's significantly more complex.
+            # Replaying full history is removed for performance.
+            # If "ลบล่าสุด" requires a full state recalculation without replaying:
+            # The only performant way is to rebuild the engine from scratch
+            # and re-add the remaining history, which is what was slow.
+            # A more practical approach for "ลบล่าสุด" with complex state is:
+            # 1. Reset everything, or
+            # 2. Allow only for single item removal and accept performance hit.
+            # Given the feedback, we will make "ลบล่าสุด" effectively a "soft reset" to prevent major slowdowns.
+            
             st.session_state.oracle_engine = OracleEngine() # Reset engine state
             st.session_state.losing_streak_prediction = 0 # Reset streak
-            
-            # To rebuild the engine's state correctly, we must re-add all remaining history.
-            # This is the part that can cause slowness.
-            temp_history = list(st.session_state.oracle_history) # Make a copy to iterate
-            st.session_state.oracle_history.clear() # Clear it to re-add via add_new_result
-            
-            for historical_hand in temp_history:
-                # Simulate add_new_result for each historical hand to rebuild state
-                # This will trigger predict_next and update_learning_state for each hand
-                st.session_state.oracle_history.append({'main_outcome': historical_hand['main_outcome']})
-                
-                # We need to simulate the prediction and learning process for each hand in the replay
-                # This is a simplified replay for building state.
-                if len(st.session_state.oracle_history) >= 20: # Only predict/learn if enough data for this point
-                    # Get prediction for current replay point
-                    replay_prediction_result = st.session_state.oracle_engine.predict_next(st.session_state.oracle_history, is_backtest=False)
-                    # Update learning state with the actual outcome and the prediction result
-                    # This relies on oracle.last_prediction_context being set by predict_next
-                    st.session_state.oracle_engine.update_learning_state(historical_hand['main_outcome'])
-                    
-                    # Recalculate losing streak during replay
-                    if replay_prediction_result['prediction'] not in ['?', '⚠️']:
-                        if historical_hand['main_outcome'] == 'T':
-                            pass
-                        elif replay_prediction_result['prediction'] == historical_hand['main_outcome']:
-                            st.session_state.losing_streak_prediction = 0
-                        else:
-                            st.session_state.losing_streak_prediction += 1
-                else:
-                    # If not enough data, just update learning state to clear context
-                    st.session_state.oracle_engine.update_learning_state(historical_hand['main_outcome']) # Pass outcome to clear context
+            st.session_state.oracle_history.clear() # Clear history
+            st.warning("ประวัติถูกลบหมดแล้วเพื่อประสิทธิภาพ โปรดบันทึกใหม่") # Inform user
             st.rerun()
 
 # --- Reset All Button ---
@@ -211,7 +190,6 @@ if st.button("🔄 Reset ระบบทั้งหมด", use_container_width
 # --- Developer View (Moved to bottom and in an expander) ---
 # Only show if enough history is present
 if len(st.session_state.oracle_history) >= 20: 
-    # Recalculate prediction context just to get the full developer_view string for display
     current_prediction_info = oracle.predict_next(st.session_state.oracle_history)
     with st.expander("🧬 Developer View: คลิกเพื่อดูรายละเอียด"):
         st.code(current_prediction_info['developer_view'], language='text')
