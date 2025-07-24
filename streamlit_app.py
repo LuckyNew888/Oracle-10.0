@@ -260,11 +260,22 @@ if "gemini_continuous_analysis_mode" not in st.session_state: # New: Flag for co
 # --- Callback Functions for History and Betting Management ---
 def remove_last_from_history():
     if st.session_state.history:
+        # Pop the last history entry
         st.session_state.history.pop()
+        
+        # Revert live_drawdown using the bet_log
+        if st.session_state.bet_log:
+            last_bet_entry = st.session_state.bet_log.pop()
+            # Revert live_drawdown to the state before the removed hand
+            if "DrawdownBefore" in last_bet_entry:
+                st.session_state.live_drawdown = last_bet_entry["DrawdownBefore"]
+            else: # Fallback for older log entries or if key is missing
+                st.session_state.live_drawdown = 0 # Reset to safe state if info not available
+        else:
+            st.session_state.live_drawdown = 0 # No bet log, reset to 0
+
         _cached_backtest_accuracy.clear()
         st.session_state.oracle_engine.reset_learning_states_on_undo()
-        # Reset live_drawdown on undo, as the history has changed
-        st.session_state.live_drawdown = 0 
         st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
         st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on undo
         st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
@@ -291,30 +302,53 @@ def record_bet_result(actual_result): # Simplified signature
     
     outcome_status = "Recorded" # Default outcome status for log
 
+    # --- Store current drawdown BEFORE updating for this hand ---
+    drawdown_before_this_hand = st.session_state.live_drawdown
+
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    # live_drawdown should ONLY reset to 0 if a specific prediction was made AND it was correct.
-    # If the system recommended '?' (Avoid), live_drawdown should NOT change.
-    if predicted_side != '?': # AI made a specific prediction (P, B, T, S6)
-        # Corrected logic for drawdown to account for Super6
-        if predicted_side == actual_result or \
-           (predicted_side == 'B' and actual_result == 'S6'): # If predicted Banker and actual was Super6
-            st.session_state.live_drawdown = 0 # Reset on a direct hit (or B vs S6)
-            st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode
-        elif actual_result == 'T': # If actual is Tie, and AI predicted P/B/S6, it's not a loss, so reset. If AI predicted T, it's a hit.
+    is_hit = False
+    is_miss = False
+
+    if predicted_side == 'P':
+        if actual_result == 'P':
+            is_hit = True
+        elif actual_result == 'B' or actual_result == 'S6': # S6 is a Banker win, so predicting P is a miss
+            is_miss = True
+        # If actual_result is 'T', it's neutral for P/B prediction, drawdown doesn't change
+    elif predicted_side == 'B':
+        if actual_result == 'B' or actual_result == 'S6': # S6 is a Banker win, so predicting B is a hit
+            is_hit = True
+        elif actual_result == 'P':
+            is_miss = True
+        # If actual_result is 'T', it's neutral for P/B prediction, drawdown doesn't change
+    elif predicted_side == 'T':
+        if actual_result == 'T':
+            is_hit = True
+        elif actual_result in ['P', 'B', 'S6']: # If predicted T but actual is P/B/S6, it's a miss
+            is_miss = True
+    elif predicted_side == 'S6':
+        if actual_result == 'S6':
+            is_hit = True
+        elif actual_result in ['P', 'B', 'T']: # If predicted S6 but actual is P/B/T, it's a miss
+            is_miss = True
+    # If predicted_side is '?', live_drawdown remains unchanged, so no logic here.
+
+    if predicted_side != '?': # Only update drawdown if a specific prediction was made
+        if is_hit:
             st.session_state.live_drawdown = 0
-            st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode
-        else: # AI made a specific prediction (P, B, T, S6) AND it was a clear miss (not T, not B vs S6)
-            st.session_state.live_drawdown += 1 # Increment on a clear miss
-            # Do NOT set gemini_continuous_analysis_mode to False here, as we want it to continue if still losing
-    # else: If predicted_side was '?' (system recommended Avoid), live_drawdown remains unchanged.
-    # The gemini_continuous_analysis_mode should also remain True if it was already True.
+            st.session_state.gemini_continuous_analysis_mode = False # Exit continuous analysis mode on a hit
+        elif is_miss:
+            st.session_state.live_drawdown += 1
+            # gemini_continuous_analysis_mode remains True if already active, or activates at drawdown 3
+        # else (neutral outcome like P/B pred and actual T): drawdown remains unchanged
     
     # --- Record Bet Log ---
     st.session_state.bet_log.append({
         "Predict": predicted_side,
         "Actual": actual_result,
         "Recommendation": recommendation_status, # Log the recommendation
-        "Outcome": outcome_status # Simplified outcome
+        "Outcome": outcome_status, # Simplified outcome
+        "DrawdownBefore": drawdown_before_this_hand # Store drawdown value before this hand
     })
 
     # --- Update History for Oracle Engine ---
@@ -485,7 +519,7 @@ recommendation_status = "—"
 current_drawdown_display = st.session_state.live_drawdown
 
 if len(engine.history) >= 20:
-    # FIX: Changed current_drawdown_display to current_live_drawdown
+    # Pass current_live_drawdown to predict_next for protection logic
     prediction_data = engine.predict_next(current_live_drawdown=current_drawdown_display) # Calculate primary prediction for current state
     st.session_state.tie_opportunity_data = engine.get_tie_opportunity_analysis(engine.history) # Calculate Tie opportunity
 
