@@ -309,7 +309,7 @@ def remove_last_from_history():
     st.session_state.gemini_analysis_mode = False
     st.session_state.gemini_continuous_analysis_mode = False # Ensure continuous mode is off
     st.session_state.debug_log.append(f"--- UNDO finished ---")
-    st.experimental_rerun() # Force rerun
+    # Removed st.experimental_rerun() from here
 
 def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.history = []
@@ -323,7 +323,7 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on new shoe
     st.session_state.gemini_continuous_analysis_mode = False # Reset continuous analysis mode
     st.session_state.debug_log = [] # Clear debug log on full reset
-    st.experimental_rerun() # Force rerun
+    # Removed st.experimental_rerun() from here
 
 def record_bet_result(actual_result): # Simplified signature
     # Retrieve predicted_side and recommendation_status from session state
@@ -560,7 +560,7 @@ if st.sidebar.button("✨ วิเคราะห์เชิงลึก (Gemi
             st.session_state.gemini_continuous_analysis_mode = False # Exit continuous mode if manually triggered
     else:
         st.sidebar.error("โปรดตั้งค่า Gemini API Key ใน Streamlit Secrets ก่อน")
-    st.experimental_rerun() # Force rerun
+    # Removed st.experimental_rerun() from here
 
 if len(st.session_state.history) < 20:
     st.warning(f"⚠️ กรุณาบันทึกผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ระบบวิเคราะห์ได้แม่นยำ\n(ตอนนี้บันทึกไว้ **{len(st.session_state.history)}** ตา)")
