@@ -10,7 +10,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 # Define the current expected version of OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.8" # Updated version to 1.8
+CURRENT_ENGINE_VERSION = "1.8" # Version remains 1.8, just fixing a syntax error
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
@@ -655,48 +655,47 @@ if big_road_display_data:
                     f"{tie_html}"
                 )
             
-            big_road_html_parts.push(`<div class='big-road-cell'>${cell_content}</div>`);
-        big_road_html_parts.push("</div>");
-    }
-    big_road_html_parts.push("</div>");
+            big_road_html_parts.append(f"<div class='big-road-cell'>{cell_content}</div>")
+        big_road_html_parts.append("</div>")
+    big_road_html_parts.append("</div>")
 
-    st.markdown(big_road_html_parts.join(""), unsafe_allow_html=True);
+    st.markdown("".join(big_road_html_parts), unsafe_allow_html=True)
 
 else:
-    st.info("🔄 ยังไม่มีข้อมูล");
+    st.info("🔄 ยังไม่มีข้อมูล")
 
 
-col_p_b_t_s6 = st.columns(4); // Changed to 4 columns for S6 button
+col_p_b_t_s6 = st.columns(4) # Changed to 4 columns for S6 button
 
-// Use on_click and pass only the actual result.
-// predicted_side and recommendation_status will be retrieved from st.session_state.last_prediction_data
+# Use on_click and pass only the actual result.
+# predicted_side and recommendation_status will be retrieved from st.session_state.last_prediction_data
 with col_p_b_t_s6[0]:
-    if st.button(`บันทึก: 🔵 P`, key="record_P", use_container_width=True, on_click=record_bet_result, args=('P',)):
-        pass; // Action handled by on_click
+    if st.button(f"บันทึก: 🔵 P", key="record_P", use_container_width=True, on_click=record_bet_result, args=('P',)):
+        pass # Action handled by on_click
 with col_p_b_t_s6[1]:
-    if st.button(`บันทึก: 🔴 B`, key="record_B", use_container_width=True, on_click=record_bet_result, args=('B',)):
-        pass; // Action handled by on_click
+    if st.button(f"บันทึก: 🔴 B", key="record_B", use_container_width=True, on_click=record_bet_result, args=('B',)):
+        pass # Action handled by on_click
 with col_p_b_t_s6[2]:
-    if st.button(`บันทึก: 🟢 T`, key="record_T", use_container_width=True, on_click=record_bet_result, args=('T',)):
-        pass; // Action handled by on_click
-with col_p_b_t_s6[3]: // New column for Super6 button
-    if st.button(`บันทึก: 🟠 S6`, key="record_S6", use_container_width=True, on_click=record_bet_result, args=('S6',)):
-        pass; // Action handled by on_click
+    if st.button(f"บันทึก: 🟢 T", key="record_T", use_container_width=True, on_click=record_bet_result, args=('T',)):
+        pass # Action handled by on_click
+with col_p_b_t_s6[3]: # New column for Super6 button
+    if st.button(f"บันทึก: 🟠 S6", key="record_S6", use_container_width=True, on_click=record_bet_result, args=('S6',)):
+        pass # Action handled by on_click
 
 
-col_hist1, col_hist2 = st.columns(2);
+col_hist1, col_hist2 = st.columns(2)
 with col_hist1:
-    if st.button(`↩️ ลบล่าสุด`, key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
-        pass; // Action handled by on_click
+    if st.button("↩️ ลบล่าสุด", key="delLastHist", use_container_width=True, on_click=remove_last_from_history):
+        pass # Action handled by on_click
 with col_hist2:
-    if st.button(`🧹 เริ่มขอนใหม่`, key="resetAllHist", use_container_width=True, on_click=reset_all_history): // Renamed button
-        pass; // Action handled by on_click
+    if st.button("🧹 เริ่มขอนใหม่", key="resetAllHist", use_container_width=True, on_click=reset_all_history): # Renamed button
+        pass # Action handled by on_click
 
-st.markdown("### 📊 บันทึกการเดิมพัน");
+st.markdown("### 📊 บันทึกการเดิมพัน")
 if st.session_state.bet_log:
-    df_log = pd.DataFrame(st.session_state.bet_log);
-    st.dataframe(df_log, use_container_width=True, hide_index=True);
+    df_log = pd.DataFrame(st.session_state.bet_log)
+    st.dataframe(df_log, use_container_width=True, hide_index=True)
 else:
-    st.info("ยังไม่มีการเดิมพันบันทึกไว้");
+    st.info("ยังไม่มีการเดิมพันบันทึกไว้")
 
-st.caption("ระบบวิเคราะห์ Oracle AI โดยคุณ");
+st.caption("ระบบวิเคราะห์ Oracle AI โดยคุณ")
