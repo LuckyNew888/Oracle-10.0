@@ -1,19 +1,19 @@
 import streamlit as st
-import asyncio # Not directly used for API calls anymore, but can be kept for future async needs
+import asyncio 
 import time
 from oracle_engine import OracleEngine # Ensure oracle_engine.py is in the same directory
 
 # Set Streamlit page configuration
-st.set_page_config(page_title="ORACLE Baccarat Predictor", layout="centered")
+st.set_page_config(page_title=f"ORACLE {OracleEngine.VERSION} Predictor", layout="centered")
 
 # Custom CSS for centered gold title, reduced spacing, and prediction text size
-st.markdown("""
+st.markdown(f"""
 <style>
 /* Font import from Google Fonts - This might be blocked by CSP in some environments */
 /* Attempt to use Inter font if available on system */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&display=swap');
 
-.center-gold-title {
+.center-gold-title {{
     text-align: center;
     color: gold;
     font-size: 3.5em; /* Adjust font size as needed */
@@ -24,45 +24,44 @@ st.markdown("""
     /* Prioritize system fonts like Inter, Segoe UI, Roboto, Arial.
        If Inter from Google Fonts is blocked, system fonts will be used. */
     font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-}
-h3 {
+}}
+h3 {{
     margin-top: 0.5rem; /* Reduced space above h3 */
     margin-bottom: 0.5rem; /* Reduced space below h3 */
-}
-.stMarkdown, .stText, .stInfo, .stWarning, .stSuccess {
+}}
+.stMarkdown, .stText, .stInfo, .stWarning, .stSuccess {{
     margin-top: 0.2rem; /* Reduced space above various text elements */
     margin-bottom: 0.2rem; /* Reduced space below various text elements */
-}
-.stButton>button {
+}}
+.stButton>button {{
     margin-top: 0.2rem; /* Reduced space around buttons */
     margin-bottom: 0.2rem;
     line-height: 1.2; /* Adjust line height for button text if needed */
-}
+}}
 
 /* Prediction text will now use h1 tag for main sizing */
-.prediction-h1 {
+.prediction-h1 {{
     text-align: center; /* Center the prediction text */
     font-size: 2.5em; /* Make it even larger for clear visibility */
     margin-top: 0.2rem;
     margin-bottom: 0.2rem;
-}
+}}
 
 /* Reduce padding around columns to make buttons closer */
-/* This class name might change based on Streamlit versions (e.g., st-emotion-cache-xxxx) */
-div[data-testid="stColumns"] > div {
+div[data-testid="stColumns"] > div {{
     padding-left: 0.2rem;
     padding-right: 0.2rem;
-}
+}}
 /* Ensure the history display also has less padding */
-.stMarkdown.st-emotion-cache-xyz p { /* Placeholder for actual p tag selector within stMarkdown */
+.stMarkdown p {{ 
     padding: 0px;
     margin: 0px;
-}
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# Main title of the app
-st.markdown('<h1 class="center-gold-title">🔮 ORACLE</h1>', unsafe_allow_html=True)
+# Main title of the app, now showing version
+st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE {OracleEngine.VERSION}</h1>', unsafe_allow_html=True)
 
 # --- State Management for OracleEngine ---
 # Initialize OracleEngine only once
@@ -84,6 +83,7 @@ st.markdown("<h3>ผลวิเคราะห์:</h3>", unsafe_allow_html=Tru
 # Check if enough history is available for analysis
 if len(st.session_state.oracle_history) >= 20: 
     # Pass the full history to the engine for prediction
+    # Get the full result object including confidence for display
     result = oracle.predict_next(st.session_state.oracle_history)
 
     # Prepare prediction text with emojis and style
@@ -100,7 +100,7 @@ if len(st.session_state.oracle_history) >= 20:
     # Display prediction using h1 tag for large size
     st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
     
-    # Display Accuracy, Risk, Recommendation, and Losing Streak
+    # Display Accuracy, Risk, Recommendation
     st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
     st.markdown(f"**📍 Risk:** {result['risk']}")
     st.markdown(f"**🧾 Recommendation:** {result['recommendation']}")
@@ -129,24 +129,24 @@ col1, col2, col3, col4 = st.columns(4)
 
 # Function to handle adding a new result and updating learning/streak
 def add_new_result(outcome):
-    # Check if there was a previous prediction from the system for this hand
-    # This logic runs before adding the new outcome to history,
-    # as last_prediction_context stores the prediction *for the current (last) state*
-    # before the new outcome is added.
-    if len(st.session_state.oracle_history) >= 20: # Only update streak if prediction was active
-        prev_predicted_outcome = oracle.last_prediction_context['prediction']
-        
-        # Update losing streak based on the *previous* prediction and the *current* actual outcome
-        if prev_predicted_outcome not in ['?', '⚠️']: # If system made a valid prediction
+    # Retrieve the state of the engine *before* adding the new outcome
+    # to compare against the actual outcome for learning and streak calculation
+    if len(st.session_state.oracle_history) >= 20: 
+        # Get the prediction result for the *current state* (before this new hand is added)
+        # This is needed to get the prediction and associated patterns/momentum for learning
+        prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) # is_backtest=False for main app flow
+
+        # Update losing streak based on this prediction and the actual outcome
+        if prediction_for_learning['prediction'] not in ['?', '⚠️']: # If system made a valid prediction
             if outcome == 'T': # Tie, losing streak does not change
                 pass
-            elif prev_predicted_outcome == outcome: # Correct prediction
+            elif prediction_for_learning['prediction'] == outcome: # Correct prediction
                 st.session_state.losing_streak_prediction = 0
             else: # Incorrect prediction
                 st.session_state.losing_streak_prediction += 1
     
     st.session_state.oracle_history.append({'main_outcome': outcome}) # Add the actual outcome to history
-    oracle.update_learning_state(outcome) # Update engine's internal learning state
+    oracle.update_learning_state(outcome) # Update engine's internal learning state with the actual outcome
     st.rerun() # Rerun the app to update UI
 
 with col1:
@@ -175,34 +175,45 @@ with col4:
 
                 # Predict for this sub-history point if enough data
                 if len(current_sub_history) >= 20:
-                    temp_result = st.session_state.oracle_engine.predict_next(current_sub_history, is_backtest=False) # Not truly backtest for single step
+                    # Get the prediction context that would have been formed *before* this actual_outcome
+                    # This is tricky in replay. We need to simulate predict_next to get the context.
+                    # Temporarily store original context
+                    original_last_prediction_context = st.session_state.oracle_engine.last_prediction_context 
                     
-                    # Manually set last_prediction_context for learning
+                    # Simulate predict_next for this point in history to get the context for learning
+                    replay_prediction_result = st.session_state.oracle_engine.predict_next(current_sub_history, is_backtest=False) # Not truly backtest for single step
+                    
+                    # Manually set last_prediction_context for the update_learning_state call
                     st.session_state.oracle_engine.last_prediction_context = {
-                        'prediction': temp_result['prediction'],
-                        'patterns': temp_result['developer_view'].split('DNA Patterns: ')[1].split(';')[0].split(', ') if 'DNA Patterns: ' in temp_result['developer_view'] else [],
-                        'momentum': temp_result['developer_view'].split('Momentum: ')[1].split(';')[0].split(', ') if 'Momentum: ' in temp_result['developer_view'] else [],
-                        'intuition_applied': 'Intuition' in temp_result['developer_view'], # Simplified check
-                        'predicted_by': temp_result['developer_view'].split('Predicted by: ')[1].split(';')[0] if 'Predicted by: ' in temp_result['developer_view'] else 'None'
+                        'prediction': replay_prediction_result['prediction'],
+                        # Extract patterns/momentum/intuition from developer_view string - this is still brittle
+                        'patterns': [p.strip() for p in replay_prediction_result['developer_view'].split('DNA Patterns: ')[1].split(';')[0].split(',') if p.strip() != 'None'],
+                        'momentum': [m.strip() for m in replay_prediction_result['developer_view'].split('Momentum: ')[1].split(';')[0].split(',') if m.strip() != 'None'],
+                        'intuition_applied': 'Intuition' in replay_prediction_result['developer_view'],
+                        'predicted_by': replay_prediction_result['developer_view'].split('Predicted by: ')[1].split(';')[0].strip(),
+                        'dominant_pattern_id_at_prediction': replay_prediction_result['developer_view'].split('Predicted by: ')[1].split(';')[0].strip() if 'Predicted by: ' in replay_prediction_result['developer_view'] else None # Simplified extraction
                     }
 
                     # Re-calculate losing streak for replay
-                    # Compare the prediction just made with the actual outcome for this specific hand
-                    if oracle.last_prediction_context['prediction'] not in ['?', '⚠️']:
+                    if st.session_state.oracle_engine.last_prediction_context['prediction'] not in ['?', '⚠️']:
                         if actual_outcome_for_replay == 'T':
                             pass
-                        elif oracle.last_prediction_context['prediction'] == actual_outcome_for_replay:
+                        elif st.session_state.oracle_engine.last_prediction_context['prediction'] == actual_outcome_for_replay:
                             st.session_state.losing_streak_prediction = 0
                         else:
                             st.session_state.losing_streak_prediction += 1
+                    
+                    # Update learning state after each hand in replay
+                    st.session_state.oracle_engine.update_learning_state(actual_outcome_for_replay)
+
+                    # Restore original context for the main app loop
+                    st.session_state.oracle_engine.last_prediction_context = original_last_prediction_context
                 else:
-                    # Clear last_prediction_context if not enough data for this hand during replay
+                    # If not enough data, reset learning context for this point
                     st.session_state.oracle_engine.last_prediction_context = {
-                        'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None
+                        'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
                     }
-                
-                # Update learning state after each hand in replay
-                st.session_state.oracle_engine.update_learning_state(actual_outcome_for_replay)
+                    st.session_state.oracle_engine.update_learning_state(actual_outcome_for_replay) # Call update_learning_state even if no prediction made to clear context
             st.rerun()
 
 # --- Reset All Button ---
@@ -216,7 +227,6 @@ if st.button("🔄 Reset ระบบทั้งหมด", use_container_width
 # Only show if enough history is present
 if len(st.session_state.oracle_history) >= 20: 
     # Recalculate prediction context just to get the full developer_view string for display
-    # This might be slightly redundant but ensures the dev view is always fresh after all updates
     current_prediction_info = oracle.predict_next(st.session_state.oracle_history)
     with st.expander("🧬 Developer View: คลิกเพื่อดูรายละเอียด"):
         st.code(current_prediction_info['developer_view'], language='text')
