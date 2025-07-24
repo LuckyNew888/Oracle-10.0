@@ -10,7 +10,7 @@ from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_ro
 # Define the current expected version of OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.9" # Updated version to 1.9
+CURRENT_ENGINE_VERSION = "1.9" # Version remains 1.9
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
@@ -485,8 +485,8 @@ recommendation_status = "—"
 current_drawdown_display = st.session_state.live_drawdown
 
 if len(engine.history) >= 20:
-    # Pass current_live_drawdown to predict_next for protection logic
-    prediction_data = engine.predict_next(current_drawdown_display=current_drawdown_display) # Calculate primary prediction for current state
+    # FIX: Changed current_drawdown_display to current_live_drawdown
+    prediction_data = engine.predict_next(current_live_drawdown=current_drawdown_display) # Calculate primary prediction for current state
     st.session_state.tie_opportunity_data = engine.get_tie_opportunity_analysis(engine.history) # Calculate Tie opportunity
 
     if isinstance(prediction_data, dict) and 'prediction' in prediction_data and 'recommendation' in prediction_data:
