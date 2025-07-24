@@ -3,9 +3,239 @@ import random
 import math
 import streamlit as st # Only for @st.cache_data
 
+
 # Define the current version of the OracleEngine logic
 # This is used by streamlit_app.py for compatibility checks.
-__version__ = "1.10" # Updated version to 1.10
+__version__ = "1.11" # Updated version to 1.11
+
+# --- Helper Functions for Pattern Detection (These must be outside the class for _cached_backtest_accuracy) ---
+def _get_pb_history_helper(current_history): # Renamed to avoid conflict with method inside class
+    """Extracts only Player/Banker/Super6 results from history, ignoring Ties."""
+    pb_history = []
+    for item in current_history:
+        if item and 'main_outcome' in item:
+            if item['main_outcome'] == 'T': # Ties are attached, not main P/B history points for streaks
+                continue
+            # Treat S6 as 'B' for general P/B pattern detection
+            pb_history.append('B' if item['main_outcome'] == 'S6' else item['main_outcome'])
+    return pb_history
+
+def _get_streaks_helper(pb_history): # Renamed to avoid conflict
+    """
+    Converts a list of P/B outcomes into a list of (outcome, count) streaks.
+    Example: ['P', 'P', 'B', 'B', 'B', 'P'] -> [('P', 2), ('B', 3), ('P', 1)]
+    """
+    if not pb_history:
+        return []
+    
+    streaks = []
+    current_streak_char = pb_history[0]
+    current_streak_count = 0
+    
+    for char in pb_history:
+        if char == current_streak_char:
+            current_streak_count += 1
+        else:
+            streaks.append((current_streak_char, current_streak_count))
+            current_streak_char = char
+            current_streak_count = 1
+    streaks.append((current_streak_char, current_streak_count)) # Add the last streak
+    return streaks
+
+def _get_predicted_main_outcome_helper(predicted_outcome, actual_outcome): # Renamed
+    """Helper to determine the actual outcome for hit/miss comparison, especially for S6."""
+    if actual_outcome == 'S6':
+        return 'B' # Super6 is a Banker win
+    return actual_outcome
+
+# --- Big Road Data Builder (This must be outside the class for easy import) ---
+def _build_big_road_data(history):
+    """
+    Builds a 2D grid representation of the Big Road, handling streaks and ties.
+    Returns a list of columns, where each column is a list of cells.
+    Each cell is a tuple: (main_outcome, ties, is_natural, is_super6) or None for empty.
+    Fixed height for each column (6 rows).
+    """
+    if not history:
+        return []
+
+    # Filter out ties for main P/B streak building
+    pb_history_for_big_road = [h for h in history if h['main_outcome'] not in ['T']]
+
+    columns = []
+    current_col = []
+    last_main_pb_outcome = None # Tracks the last P/B/S6 outcome that started a streak
+
+    for i, hand_data in enumerate(history):
+        main_outcome = hand_data['main_outcome']
+        ties_in_hand = hand_data['ties'] # Ties are already counted in the hand_data dict
+        is_natural = hand_data['is_any_natural']
+        is_super6 = (main_outcome == 'S6')
+
+        # When adding to big road, treat S6 as 'B' for streak detection
+        outcome_for_streak = 'B' if main_outcome == 'S6' else main_outcome
+
+        if main_outcome == 'T':
+            # Ties should not start a new column or extend a streak, they attach to the last P/B/S6
+            # If the last entry in the last column is P/B/S6, increment its tie count.
+            # Otherwise, Ties should ideally not be drawn as standalone circles in Big Road,
+            # but rather as counts on the preceding P/B/S6.
+            # Our UI draws them as separate green circles if no preceding P/B/S6, which is acceptable for visual clarity.
+            # No action needed here for adding a new cell for Tie, it's handled by tie_count.
+            # We will handle tie_count display in the rendering phase.
+            continue # Skip adding a new cell for Tie, it's just a count on previous cell
+        
+        # Determine if we need a new column
+        new_column = False
+        if not last_main_pb_outcome: # First entry
+            new_column = True
+        elif outcome_for_streak != last_main_pb_outcome: # Outcome changed, new column
+            new_column = True
+        elif len(current_col) >= 6: # Column is full (fixed height 6), bend to next column
+            new_column = True
+
+        if new_column:
+            if current_col: # Save the previous column if not empty
+                columns.append(current_col)
+            current_col = [] # Start a new column
+
+            # Logic for bending/filling previous row if column is full (standard Big Road)
+            # This complex logic handles where the new cell should appear when bending.
+            # If the last column was full (6 high), the new cell goes to the next column, row 5 (0-indexed).
+            # Otherwise, it goes to row 0.
+            if len(pb_history_for_big_road) > 0 and len(columns) > 0 and len(columns[-1]) == 6:
+                # If the previous column was full, this new cell starts at row 5 (0-indexed)
+                # We need to pad the current_col with None until row 5
+                while len(current_col) < 5: # Pad up to row 5
+                    current_col.append(None)
+        
+        # Add the current P/B/S6 result to the current column
+        current_col.append((main_outcome, ties_in_hand, is_natural, is_super6))
+        last_main_pb_outcome = outcome_for_streak # Update for the next iteration
+
+    if current_col: # Add the last column if it's not empty
+        columns.append(current_col)
+    
+    # Pad all columns to a fixed height of 6 for consistent display
+    for col in columns:
+        while len(col) < 6:
+            col.append(None) # Pad with None for empty cells
+
+    return columns
+
+
+# --- Backtest Simulation (This must be outside the class for caching) ---
+@st.cache_data(ttl=None) # Cache the backtest results
+def _cached_backtest_accuracy(
+    history,
+    pattern_stats,
+    momentum_stats,
+    failed_pattern_instances,
+    sequence_memory_stats,
+    tie_stats,
+    super6_stats
+):
+    """
+    Calculates the accuracy and drawdown of the system by simulating predictions over history.
+    This function should be as pure as possible (only depends on its inputs).
+    """
+    pb_history_only = _get_pb_history_helper(history) # Use helper
+    if len(pb_history_only) < 20: # Need at least 20 P/B hands for meaningful backtest
+        return {'accuracy_percent': 0.0, 'hits': 0, 'total_bets': 0, 'max_drawdown': 0}
+
+    hits = 0
+    total_bets_counted = 0
+    max_drawdown = 0
+    current_drawdown_tracker = 0 # Tracks consecutive misses for backtest simulation
+
+    # Create a temporary engine for simulation to avoid modifying the main engine's state
+    temp_sim_engine = OracleEngine()
+    # Manually transfer learning states to the temporary engine
+    temp_sim_engine.pattern_stats = pattern_stats.copy()
+    temp_sim_engine.momentum_stats = momentum_stats.copy()
+    temp_sim_engine.sequence_memory_stats = sequence_memory_stats.copy()
+    temp_sim_engine.tie_stats = tie_stats.copy() # Transfer tie stats
+    temp_sim_engine.super6_stats = super6_stats.copy() # Transfer super6 stats
+    temp_sim_engine.failed_pattern_instances = failed_pattern_instances.copy()
+
+
+    # Start backtesting from the 20th P/B hand
+    # Find the index in full history where 20th P/B hand occurs
+    pb_count = 0
+    start_index_for_backtest = -1
+    for i, hand_data in enumerate(history):
+        if hand_data['main_outcome'] not in ['T']: # Only count P/B/S6 for history length
+            pb_count += 1
+        if pb_count == 20:
+            start_index_for_backtest = i
+            break
+    
+    if start_index_for_backtest == -1: # Not enough P/B hands
+        return {'accuracy_percent': 0.0, 'hits': 0, 'total_bets': 0, 'max_drawdown': 0}
+
+    # Iterate through history from the start_index_for_backtest
+    for i in range(start_index_for_backtest, len(history)):
+        # Simulate prediction BEFORE this hand's actual outcome is known
+        history_up_to_this_point = history[:i]
+        
+        # Skip if not enough history for prediction (should be handled by start_index_for_backtest, but good check)
+        if len(_get_pb_history_helper(history_up_to_this_point)) < 20:
+            continue
+
+        # Simulate prediction as if we were making it live
+        simulated_prediction_data = temp_sim_engine.predict_next(current_live_drawdown=current_drawdown_tracker) # Pass current drawdown to simulated engine
+        simulated_predicted_outcome = simulated_prediction_data['prediction']
+        simulated_recommendation = simulated_prediction_data['recommendation']
+        
+        actual_outcome_this_hand = history[i]['main_outcome']
+
+        # Only count if the system would have recommended "Play" (i.e., not '?' for prediction)
+        if simulated_predicted_outcome != '?':
+            total_bets_counted += 1
+            
+            is_hit_for_drawdown = False
+            is_miss_for_drawdown = False
+
+            # Determine hit/miss for the simulated prediction
+            if simulated_predicted_outcome == 'P':
+                if actual_outcome_this_hand == 'P': is_hit_for_drawdown = True
+                elif actual_outcome_this_hand == 'T': is_hit_for_drawdown = True # P predicted, T actual = reset drawdown
+                elif actual_outcome_this_hand == 'B' or actual_outcome_this_hand == 'S6': is_miss_for_drawdown = True
+            elif simulated_predicted_outcome == 'B':
+                if actual_outcome_this_hand == 'B' or actual_outcome_this_hand == 'S6': is_hit_for_drawdown = True
+                elif actual_outcome_this_hand == 'T': is_hit_for_drawdown = True # B predicted, T actual = reset drawdown
+                elif actual_outcome_this_hand == 'P': is_miss_for_drawdown = True
+            elif simulated_predicted_outcome == 'T':
+                if actual_outcome_this_hand == 'T': is_hit_for_drawdown = True
+                elif actual_outcome_this_hand in ['P', 'B', 'S6']: is_miss_for_drawdown = True
+            elif simulated_predicted_outcome == 'S6':
+                if actual_outcome_this_hand == 'S6': is_hit_for_drawdown = True
+                elif actual_outcome_this_hand in ['P', 'B', 'T']: is_miss_for_drawdown = True
+
+            if is_hit_for_drawdown:
+                hits += 1
+                current_drawdown_tracker = 0
+            elif is_miss_for_drawdown:
+                current_drawdown_tracker += 1
+            
+            max_drawdown = max(max_drawdown, current_drawdown_tracker)
+
+        # Update temporary engine's learning states with the actual outcome of this hand
+        # This simulates how the engine learns as game progresses
+        big_road_data_for_learning = _build_big_road_data(history_up_to_this_point) # Needs data up to here
+        
+        temp_sim_engine._update_learning(
+            predicted_outcome=simulated_predicted_outcome, # What the sim engine predicted
+            actual_outcome=actual_outcome_this_hand,
+            patterns_detected=temp_sim_engine.detect_patterns(history_up_to_this_point, big_road_data_for_learning),
+            momentum_detected=temp_sim_engine.detect_momentum(history_up_to_this_point, big_road_data_for_learning),
+            sequences_detected=temp_sim_engine._detect_sequences(history_up_to_this_point)
+        )
+
+    accuracy_percent = (hits / total_bets_counted * 100) if total_bets_counted > 0 else 0.0
+
+    return {'accuracy_percent': accuracy_percent, 'hits': hits, 'total_bets': total_bets_counted, 'max_drawdown': max_drawdown}
+
 
 class OracleEngine:
     def __init__(self):
@@ -47,9 +277,6 @@ class OracleEngine:
             '4-bit': 0.7,
             '5-bit': 0.8,
         }
-        # Weights for Tie/Super6 patterns are now calculated based on their theoretical probability + empirical freq.
-        # So specific weights here might be less critical.
-
         # Theoretical probabilities for Tie/Super6 (for blending)
         self.THEORETICAL_TIE_PROB = 0.0951 # Approx 9.51%
         self.THEORETICAL_SUPER6_PROB = 0.0128 # Approx 1.28%
@@ -74,8 +301,8 @@ class OracleEngine:
         self.failed_pattern_instances = {}
 
 
-    # --- Helper Functions for Pattern Detection ---
-    def _get_pb_history(self, current_history):
+    # --- Helper Functions for Pattern Detection (Methods within class) ---
+    def _get_pb_history(self, current_history): # Method within class
         """Extracts only Player/Banker/Super6 results from history, ignoring Ties."""
         pb_history = []
         for item in current_history:
@@ -86,7 +313,7 @@ class OracleEngine:
                 pb_history.append('B' if item['main_outcome'] == 'S6' else item['main_outcome'])
         return pb_history
     
-    def _get_streaks(self, pb_history):
+    def _get_streaks(self, pb_history): # Method within class
         """
         Converts a list of P/B outcomes into a list of (outcome, count) streaks.
         Example: ['P', 'P', 'B', 'B', 'B', 'P'] -> [('P', 2), ('B', 3), ('P', 1)]
@@ -190,67 +417,58 @@ class OracleEngine:
                 streaks[-4][0] != streaks[-3][0]):
                 patterns_detected.append(('Two-One Pattern', tuple(h[-sum(s[1] for s in streaks[-4:]):])))
 
+        # Broken Pattern (Example: BPBPPBP or PBPBBBP)
+        if len(h) >= 7:
+            last7 = "".join(h[-7:])
+            if "BPBPPBP" in last7 or "PBPBBBP" in last7:
+                patterns_detected.append(('Broken Pattern', tuple(h[-7:])))
+
+
         # --- 2D Patterns (from big_road_data) ---
         if big_road_data and len(big_road_data) >= 3: # Need at least 3 columns for 2D patterns
             # Note: 2D patterns (Big Eye Boy, Small Road, Cockroach Pig) are complex
             # This is a simplified "Rule-based" implementation.
-            # Real 2D patterns require specific algorithms for drawing roads.
 
             # We need at least 3 columns for Big Eye Boy/Small Road/Cockroach Pig
             # Get the last 3 columns for analysis
-            current_col = [c for c in big_road_data[-1] if c is not None]
-            prev_col_full = [c for c in big_road_data[-2] if c is not None]
-            prev_prev_col_full = [c for c in big_road_data[-3] if c is not None]
+            current_col_actual = [c for c in big_road_data[-1] if c is not None] # Actual cells in last column
+            prev_col_actual = [c for c in big_road_data[-2] if c is not None]
+            prev_prev_col_actual = [c for c in big_road_data[-3] if c is not None]
 
-            if len(current_col) >=1 and len(prev_col_full) >=1 and len(prev_prev_col_full) >=1:
+            # Ensure columns have at least one cell for comparison
+            if len(current_col_actual) >= 1 and len(prev_col_actual) >= 1 and len(prev_prev_col_actual) >= 1:
                 # Big Eye Boy (Simplified: Checks if current col follows 2nd prev col's pattern or breaks)
-                # Follow (Red Dot) or Break (Blue Dot) logic
                 # Rule: Look at the current position relative to two columns left.
-                # If prev_prev_col_full[0] is not same outcome as prev_col_full[0], it's a "break" (similar to zigzag)
-                # If prev_prev_col_full[0] is same outcome as prev_col_full[0], it's a "follow" (similar to streak)
-
-                # Get the outcome of the first cell in 2nd and 3rd previous columns
-                prev_col_first_outcome = prev_col_full[0][0] # Outcome of the first cell in the previous column
-                prev_prev_col_first_outcome = prev_prev_col_full[0][0] # Outcome of the first cell in the 2nd previous column
+                # Simplified check for Big Eye Boy based on 1st element of previous columns
                 
-                # Check for Chop (alternating between 2nd and 3rd col)
-                if prev_col_first_outcome != prev_prev_col_first_outcome:
-                    patterns_detected.append(('Big Eye Boy (2D Simple - Chop)', tuple(h[-2:]))) # Example pattern snapshot
+                prev_col_first_outcome = 'B' if prev_col_actual[0][0] == 'S6' else prev_col_actual[0][0]
+                prev_prev_col_first_outcome = 'B' if prev_prev_col_actual[0][0] == 'S6' else prev_prev_col_actual[0][0]
 
-                # Check for Streak (same as 2nd prev col)
-                if prev_col_first_outcome == prev_prev_col_first_outcome:
-                    patterns_detected.append(('Big Eye Boy (2D Simple - Follow)', tuple(h[-2:]))) # Example pattern snapshot
-
+                if prev_col_first_outcome == prev_prev_col_first_outcome: # Follow
+                    patterns_detected.append(('Big Eye Boy (2D Simple - Follow)', tuple(h[-2:])))
+                else: # Chop
+                    patterns_detected.append(('Big Eye Boy (2D Simple - Chop)', tuple(h[-2:])))
 
                 # Small Road (Simplified: Checks if current col matches 3rd prev col's pattern or breaks)
                 if len(big_road_data) >= 4:
-                    prev_prev_prev_col_full = [c for c in big_road_data[-4] if c is not None]
-                    if len(prev_prev_prev_col_full) >=1:
-                        prev_prev_prev_col_first_outcome = prev_prev_prev_col_full[0][0]
+                    prev_prev_prev_col_actual = [c for c in big_road_data[-4] if c is not None]
+                    if len(prev_prev_prev_col_actual) >= 1:
+                        prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_col_actual[0][0]
                         
-                        # Fix UnboundLocalError: Ensure prev_prev_prev_col_first_outcome is correctly assigned
-                        # This line itself was causing the UnboundLocalError.
-                        # It should assign the value, not try to use it before assignment.
-                        # The logic implies checking if the current result would create a pattern with the 3rd previous.
-                        # Let's simplify the check to avoid this error and make it more direct.
-
-                        # A simplified way to check Small Road / Cockroach Pig (using 1st and 2nd cells of previous columns)
-                        # Simplified Rule: Checks if the column 3 places to the left is a continuation or break.
-                        # If (prev_col[0] == prev_prev_prev_col[0]) it's a follow. Else it's a chop.
-                        
-                        if prev_col_full[0][0] == prev_prev_prev_col_full[0][0]:
+                        if prev_col_first_outcome == prev_prev_prev_col_first_outcome: # Follow
                             patterns_detected.append(('Small Road (2D Simple - Follow)', tuple(h[-2:])))
-                        else:
+                        else: # Chop
                             patterns_detected.append(('Small Road (2D Simple - Chop)', tuple(h[-2:])))
                 
                 # Cockroach Pig (Simplified: Similar to Small Road, checks if current matches 4th prev col)
                 if len(big_road_data) >= 5:
-                    prev_prev_prev_prev_col_full = [c for c in big_road_data[-5] if c is not None]
-                    if len(prev_prev_prev_prev_col_full) >=1:
-                        # Similar simplified logic for Cockroach Pig
-                        if prev_col_full[0][0] == prev_prev_prev_prev_col_full[0][0]:
+                    prev_prev_prev_prev_col_actual = [c for c in big_road_data[-5] if c is not None]
+                    if len(prev_prev_prev_prev_col_actual) >= 1:
+                        prev_prev_prev_prev_prev_col_first_outcome = 'B' if prev_prev_prev_prev_col_actual[0][0] == 'S6' else prev_prev_prev_prev_col_actual[0][0]
+                        
+                        if prev_col_first_outcome == prev_prev_prev_prev_col_first_outcome: # Follow
                             patterns_detected.append(('Cockroach Pig (2D Simple - Follow)', tuple(h[-2:])))
-                        else:
+                        else: # Chop
                             patterns_detected.append(('Cockroach Pig (2D Simple - Chop)', tuple(h[-2:])))
         return patterns_detected
 
@@ -451,7 +669,9 @@ class OracleEngine:
         for p_name, p_seq in patterns_detected:
             self.pattern_stats.setdefault(p_name, {'hits': 0, 'misses': 0})
             if predicted_outcome != '?': # Only update if a specific prediction was made by the AI
-                if self._get_predicted_main_outcome(predicted_outcome, actual_outcome) == actual_outcome: # Simplified hit check for now
+                if (predicted_outcome == actual_outcome) or \
+                   (predicted_outcome == 'B' and actual_outcome == 'S6') or \
+                   (predicted_outcome in ['P', 'B'] and actual_outcome == 'T'): # If P/B predicted and Tie actual, count as hit for learning purposes
                     self.pattern_stats[p_name]['hits'] += 1
                 else:
                     self.pattern_stats[p_name]['misses'] += 1
@@ -460,7 +680,9 @@ class OracleEngine:
         for m_name, m_seq in momentum_detected:
             self.momentum_stats.setdefault(m_name, {'hits': 0, 'misses': 0})
             if predicted_outcome != '?':
-                if self._get_predicted_main_outcome(predicted_outcome, actual_outcome) == actual_outcome:
+                if (predicted_outcome == actual_outcome) or \
+                   (predicted_outcome == 'B' and actual_outcome == 'S6') or \
+                   (predicted_outcome in ['P', 'B'] and actual_outcome == 'T'):
                     self.momentum_stats[m_name]['hits'] += 1
                 else:
                     self.momentum_stats[m_name]['misses'] += 1
@@ -469,7 +691,9 @@ class OracleEngine:
         for s_name, s_seq in sequences_detected:
             self.sequence_memory_stats.setdefault(s_seq, {'hits': 0, 'misses': 0})
             if predicted_outcome != '?':
-                if self._get_predicted_main_outcome(predicted_outcome, actual_outcome) == actual_outcome:
+                if (predicted_outcome == actual_outcome) or \
+                   (predicted_outcome == 'B' and actual_outcome == 'S6') or \
+                   (predicted_outcome in ['P', 'B'] and actual_outcome == 'T'):
                     self.sequence_memory_stats[s_seq]['hits'] += 1
                 else:
                     self.sequence_memory_stats[s_seq]['misses'] += 1
@@ -482,11 +706,6 @@ class OracleEngine:
         # This will be updated later when we integrate get_tie_opportunity_analysis's prediction.
         pass # For now, tie/super6 stats are updated indirectly or in get_tie_opportunity_analysis
 
-    def _get_predicted_main_outcome(self, predicted_outcome, actual_outcome):
-        """Helper to determine the actual outcome for hit/miss comparison, especially for S6."""
-        if actual_outcome == 'S6':
-            return 'B' # Super6 is a Banker win
-        return actual_outcome
 
     # --- 6. 🧠 Intuition Logic (Deep Logic when patterns are unclear) ---
     def intuition_predict(self, current_history):
@@ -521,11 +740,6 @@ class OracleEngine:
                 return 'P' if h[-1] == 'B' else 'B'
 
         return '?' # Fallback if no strong intuition
-
-    # --- Helper for Backtest (outside class for caching) ---
-# NOTE: _cached_backtest_accuracy is defined outside the class in Streamlit_app.py
-# because @st.cache_data requires the function to be at the module level.
-# It receives all necessary states as arguments.
 
 
     # --- Tie and Super6 Opportunity Analysis Module ---
@@ -588,14 +802,17 @@ class OracleEngine:
 
 
         # --- Decision Logic for Tie/Super6 Recommendation ---
-        # Prioritize Super6 if its confidence is significantly higher AND meets its threshold
+        # Strategy: Prioritize S6 if its very strong, then Tie if strong.
+        # Otherwise, no specific recommendation.
+        
+        # Check if Super6 is strong enough AND significantly higher than Tie
         if super6_confidence >= self.SUPER6_RECOMMENDATION_THRESHOLD and \
            super6_confidence > tie_confidence + 10: # S6 must be significantly higher than Tie
             tie_pred_outcome = 'S6'
             tie_reason = f"ความถี่ Super6 ในขอนนี้สูงผิดปกติ ({empirical_super6_freq:.2%}) (อิงตามความถี่ในขอนปัจจุบัน {total_hands_actual} ตา)"
             return {'prediction': tie_pred_outcome, 'confidence': super6_confidence, 'reason': tie_reason}
         
-        # Then consider Tie if its confidence is high enough and not significantly lower than S6
+        # Otherwise, check if Tie is strong enough
         elif tie_confidence >= self.TIE_RECOMMENDATION_THRESHOLD:
             tie_pred_outcome = 'T'
             tie_reason = f"ความถี่ Tie ในขอนนี้สูงผิดปกติ ({empirical_tie_freq:.2%}) (อิงตามความถี่ในขอนปัจจุบัน {total_hands_actual} ตา)"
@@ -629,10 +846,10 @@ class OracleEngine:
             return {
                 "developer_view": "\n".join(developer_view_parts),
                 "prediction": prediction_result,
-                "accuracy": 0, # Not relevant when avoiding
+                "accuracy": 0, # Placeholder, calculated by cached_backtest_accuracy
                 "risk": risk_level,
-                "recommendation": recommendation,
-                "current_live_drawdown": current_live_drawdown # Pass through for display
+                "current_live_drawdown": current_live_drawdown, # Pass through for display
+                "recommendation": recommendation # Explicitly pass recommendation here
             }
 
         # --- Layer 1 Confidence (Primary Prediction based on Patterns) ---
@@ -647,10 +864,10 @@ class OracleEngine:
             return {
                 "developer_view": "\n".join(developer_view_parts),
                 "prediction": prediction_result,
-                "accuracy": 0, # Not relevant when avoiding
+                "accuracy": 0, # Placeholder, calculated by cached_backtest_accuracy
                 "risk": risk_level,
-                "recommendation": recommendation,
-                "current_live_drawdown": current_live_drawdown
+                "current_live_drawdown": current_live_drawdown,
+                "recommendation": recommendation
             }
 
         # --- Main Prediction Logic ---
@@ -663,43 +880,52 @@ class OracleEngine:
         strong_predictions = []
 
         # Predict based on strong patterns
+        # Note: If Player/Banker streaks are strong, they get priority here
+        if len(pb_history) >= 1:
+            # Simple follow last if no strong patterns initially
+            strong_predictions.append((pb_history[-1], 1)) # Default low weight for simple follow
+
         for p_name, p_seq in patterns:
             p_stats = self.pattern_stats.get(p_name, {'hits': 0, 'misses': 0})
             total = p_stats['hits'] + p_stats['misses']
-            if total > 0:
+            weight = self.pattern_weights.get(p_name, 0.5) # Default weight if not found
+
+            if total >= 3: # Only consider patterns with at least 3 occurrences
                 success_rate = p_stats['hits'] / total
                 if success_rate >= 0.7: # Consider a pattern strong if its success rate is >= 70%
                     if 'Dragon' in p_name or 'FollowStreak' in p_name:
-                        strong_predictions.append((h[-1], 20)) # Predict last, high weight
+                        strong_predictions.append((pb_history[-1], 20 * success_rate)) # Predict last, high weight, scale by success
                     elif 'Pingpong' in p_name:
-                        strong_predictions.append(('P' if h[-1] == 'B' else 'B', 15)) # Predict opposite, medium weight
+                        strong_predictions.append(('P' if pb_history[-1] == 'B' else 'B', 15 * success_rate)) # Predict opposite, medium weight
                     elif 'Two-Cut' in p_name:
-                        strong_predictions.append(('P' if h[-1] == h[-2] else h[-1], 10)) # Predict opposite of pair or follow last, medium weight
+                        strong_predictions.append(('P' if pb_history[-1] == pb_history[-2] else pb_history[-1], 10 * success_rate)) # Predict opposite of pair or follow last, medium weight
                     elif 'Triple-Cut' in p_name:
-                        strong_predictions.append(('P' if h[-1] == h[-2] else h[-1], 10)) # Predict opposite of triple or follow last, medium weight
+                        strong_predictions.append(('P' if pb_history[-1] == pb_history[-2] else pb_history[-1], 10 * success_rate)) # Predict opposite of triple or follow last, medium weight
                     elif 'One-Two Pattern' in p_name:
-                        strong_predictions.append(('P' if h[-1] == 'B' else 'B', 8)) # Predict opposite, medium weight
+                        strong_predictions.append(('P' if pb_history[-1] == 'B' else 'B', 8 * success_rate)) # Predict opposite, medium weight
                     elif 'Two-One Pattern' in p_name:
-                        strong_predictions.append((h[-1], 8)) # Predict same, medium weight
+                        strong_predictions.append((pb_history[-1], 8 * success_rate)) # Predict same, medium weight
                     # Add 2D pattern predictions with appropriate weights
                     if '2D Simple - Follow' in p_name:
-                         strong_predictions.append((h[-1], 12)) # Tendency to follow
+                         strong_predictions.append((pb_history[-1], 12 * success_rate)) # Tendency to follow
                     if '2D Simple - Chop' in p_name:
-                         strong_predictions.append(('P' if h[-1] == 'B' else 'B', 12)) # Tendency to chop
+                         strong_predictions.append(('P' if pb_history[-1] == 'B' else 'B', 12 * success_rate)) # Tendency to chop
 
         # Predict based on strong momentum
         for m_name, m_seq in momentum:
             m_stats = self.momentum_stats.get(m_name, {'hits': 0, 'misses': 0})
             total = m_stats['hits'] + m_stats['misses']
-            if total > 0:
+            weight = self.momentum_weights.get(m_name, 0.5)
+
+            if total >= 3:
                 success_rate = m_stats['hits'] / total
                 if success_rate >= 0.7:
                     if '+' in m_name: # B3+, P3+
-                        strong_predictions.append((h[-1], 18)) # Predict last, high weight
+                        strong_predictions.append((pb_history[-1], 18 * success_rate)) # Predict last, high weight
                     elif 'Steady Repeat' in m_name:
-                        strong_predictions.append(('P' if h[-1] == 'B' else 'B', 14)) # Predict opposite, medium weight
+                        strong_predictions.append(('P' if pb_history[-1] == 'B' else 'B', 14 * success_rate)) # Predict opposite, medium weight
                     elif 'Ladder Momentum' in m_name:
-                        strong_predictions.append((h[-1], 10)) # Predict last, medium weight
+                        strong_predictions.append((pb_history[-1], 10 * success_rate)) # Predict last, medium weight
 
         # Predict based on sequences if they have high success rates
         for s_name, s_seq in sequences:
@@ -708,7 +934,7 @@ class OracleEngine:
             if total > 0 and s_stats['hits'] / total >= 0.8: # Very high success rate for sequences
                 # This logic assumes sequence stats store what should be predicted next for that sequence.
                 # For now, just use the last element as the predicted outcome.
-                strong_predictions.append((s_seq[-1], 25)) # Predict based on sequence, very high weight
+                strong_predictions.append((s_seq[-1], 25 * (s_stats['hits'] / total))) # Predict based on sequence, very high weight
 
         # Aggregate predictions
         if strong_predictions:
@@ -721,9 +947,11 @@ class OracleEngine:
             
             # Final check against failed instances
             is_failed_pattern_in_current_prediction = False
-            for fp_seq_tuple in self.failed_pattern_instances:
+            for fp_seq_tuple, count in self.failed_pattern_instances.items():
                 fp_name, fp_seq = fp_seq_tuple
-                if fp_name in [p[0] for p in patterns] and fp_seq == most_common_prediction: # Simplified check
+                # Check if the sequence of the failed pattern matches the end of current history
+                if (fp_name in [p[0] for p in patterns] or fp_name in [m[0] for m in momentum] or fp_name in [s[0] for s in sequences]) \
+                   and tuple(pb_history[-len(fp_seq):]) == fp_seq: # Match based on sequence tail
                      is_failed_pattern_in_current_prediction = True
                      break
             
@@ -741,7 +969,7 @@ class OracleEngine:
             intuitive_guess = self.intuition_predict(self.history)
             if intuitive_guess != '?':
                 prediction_result = intuitive_guess
-                developer_view_parts.append(f"No strong patterns. Using Intuition Logic: {prediction_result}.")
+                developer_view_parts.append(f"No strong patterns. Using Intuition Logic: {intuitive_guess}.")
             else:
                 prediction_result = '?'
                 recommendation = "Avoid ❌"
