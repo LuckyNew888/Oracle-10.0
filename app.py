@@ -88,7 +88,7 @@ oracle = st.session_state.oracle_engine
 st.markdown("<h3>ผลวิเคราะห์:</h3>", unsafe_allow_html=True) # Shortened title
 
 # Check if enough history is available for analysis
-if len(st.session_state.oracle_history) >= 20: 
+if len(st.session_state.oracle_history) >= 15: # Changed from 20 to 15
     # Pass the full history to the engine for prediction
     # Get the full result object including confidence for display
     result = oracle.predict_next(st.session_state.oracle_history)
@@ -119,7 +119,7 @@ if len(st.session_state.oracle_history) >= 20:
         st.success(f"**✅ แพ้ติดกัน:** 0 ครั้ง")
 else:
     # Message when not enough data for analysis
-    st.info(f"🔮 ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย 20 ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
+    st.info(f"🔮 ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย 15 ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
 
 # --- History Display Section ---
 st.markdown("<h3>📋 ประวัติผลลัพธ์</h3>", unsafe_allow_html=True)
@@ -139,7 +139,7 @@ def add_new_result(outcome):
     # Get the prediction result for the *current state* (before this new hand is added)
     # This is needed to get the prediction and associated patterns/momentum for learning
     # Only predict if enough history
-    if len(st.session_state.oracle_history) >= 20: 
+    if len(st.session_state.oracle_history) >= 15: # Changed from 20 to 15
         prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) 
 
         # Update losing streak based on this prediction and the actual outcome
@@ -188,7 +188,7 @@ if st.button("🔄 Reset ระบบทั้งหมด", use_container_width
 
 # --- Developer View (Moved to bottom and in an expander) ---
 # Only show if enough history is present
-if len(st.session_state.oracle_history) >= 20: 
+if len(st.session_state.oracle_history) >= 15: # Changed from 20 to 15
     current_prediction_info = oracle.predict_next(st.session_state.oracle_history)
     with st.expander("🧬 Developer View: คลิกเพื่อดูรายละเอียด"):
         st.code(current_prediction_info['developer_view'], language='text')
