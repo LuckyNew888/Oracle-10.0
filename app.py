@@ -1,4 +1,6 @@
 import streamlit as st
+import asyncio
+import time
 from oracle_engine import OracleEngine # ตรวจสอบให้แน่ใจว่าไฟล์ oracle_engine.py อยู่ในไดเรกทอรีเดียวกัน
 
 # กำหนดค่าเริ่มต้นของหน้า Streamlit
@@ -12,46 +14,50 @@ if 'oracle_engine' not in st.session_state:
     st.session_state.oracle_engine = OracleEngine()
 if 'oracle_history' not in st.session_state:
     st.session_state.oracle_history = []
+if 'gemini_analysis_result' not in st.session_state:
+    st.session_state.gemini_analysis_result = None
 
 # ดึง instance ของ OracleEngine จาก session_state มาใช้งาน
 oracle = st.session_state.oracle_engine
 # อัปเดต history ใน OracleEngine ด้วยข้อมูลจาก session_state
-# การทำแบบนี้เพื่อให้แน่ใจว่า OracleEngine ใช้ข้อมูลประวัติที่ถูกต้องเสมอเมื่อมีการ re-run
 oracle.history = st.session_state.oracle_history
 
-# ============ กลยุทธ์ส่วนตัวของผู้ใช้ (สำหรับคำนวณตาแพ้เท่านั้น) ==============
-st.markdown("### 🎲 กลยุทธ์ส่วนตัวของคุณ (สำหรับคำนวณตาแพ้ติดกันเท่านั้น)")
-st.info("ส่วนนี้ใช้เพื่อช่วยคุณติดตาม 'ตาที่แพ้ติดกัน' จากกลยุทธ์ง่ายๆ ที่คุณเลือกเอง ไม่ใช่ส่วนหนึ่งของการทำนายของระบบ SYNAPSE VISION Baccarat")
-strategy = st.selectbox("เลือกกลยุทธ์ของคุณ:", 
-                        ['แทง P ทุกตา', 'แทง B ทุกตา'], 
-                        key="strategy_select")
-
-# ====== คำนวณจำนวนตาแพ้ติดกัน (ไม่รวม T) =======
-def calculate_losing_streak(history_data, strategy_choice):
+# ====== คำนวณสตรีคปัจจุบันของ P หรือ B (ไม่รวม T) =======
+def get_current_pb_streak(history_data):
     """
-    คำนวณจำนวนตาที่แพ้ติดต่อกันตามกลยุทธ์ที่เลือก
-    โดยไม่นับผลเสมอ (T)
+    Calculates the current streak length of P or B, ignoring T.
+    Returns (outcome_type, streak_length) e.g., ('P', 5) or (None, 0) if no P/B.
     """
-    lose_against = {'แทง P ทุกตา': 'B', 'แทง B ทุกตา': 'P'}
-    target_outcome_for_loss = lose_against.get(strategy_choice)
+    if not history_data:
+        return None, 0
 
-    if not target_outcome_for_loss:
-        return 0 # หากไม่มีกลยุทธ์ที่เลือก
+    streak_type = None
+    streak_length = 0
 
-    count = 0
-    # ย้อนกลับดูประวัติจากล่าสุด
-    for item in reversed(history_data):
-        outcome = item['main_outcome']
-        if outcome == 'T':
-            continue  # ข้ามผลเสมอ
-        if outcome == target_outcome_for_loss:
-            count += 1 # แพ้
+    # Find the last non-T outcome to start the streak
+    start_index = -1
+    for i in range(len(history_data) - 1, -1, -1):
+        if history_data[i]['main_outcome'] != 'T':
+            streak_type = history_data[i]['main_outcome']
+            start_index = i
+            break
+    
+    if streak_type is None: # Only T's or empty history
+        return None, 0
+
+    # Count the streak backwards from start_index
+    for i in range(start_index, -1, -1):
+        current_outcome = history_data[i]['main_outcome']
+        if current_outcome == 'T':
+            continue # T doesn't break the streak, it's ignored
+        if current_outcome == streak_type:
+            streak_length += 1
         else:
-            break # ชนะหรือเปลี่ยนฝั่งแล้ว
-    return count
+            break # Streak broken by a different outcome
+
+    return streak_type, streak_length
 
 # --- ส่วนการแสดงผลการทำนาย ---
-st.markdown("---")
 st.markdown("### 🔮 ผลการวิเคราะห์และทำนาย")
 
 # oracle.predict_next() มีเงื่อนไขว่าต้องมีประวัติอย่างน้อย 20 ตา
@@ -69,12 +75,12 @@ if len(oracle.history) >= 20:
     st.markdown(f"📍 **Risk:** {result['risk']}")
     st.markdown(f"🧾 **Recommendation:** {result['recommendation']}")
     
-    # แสดงจำนวนตาที่แพ้ติดกัน (UI เสริม)
-    losing_streak = calculate_losing_streak(oracle.history, strategy)
-    if losing_streak > 0:
-        st.warning(f"📉 คุณแพ้ติดกัน {losing_streak} ตา (ตามกลยุทธ์ '{strategy}')")
+    # แสดงสตรีคปัจจุบัน (P/B)
+    current_streak_type, current_streak_length = get_current_pb_streak(oracle.history)
+    if current_streak_type and current_streak_length > 0:
+        st.info(f"📈 ห้องนี้กำลังมีสตรีค **{current_streak_type}** ติดกัน **{current_streak_length}** ตา (ไม่นับเสมอ)")
     else:
-        st.info(f"🎉 ยังไม่มีตาที่แพ้ติดกัน (ตามกลยุทธ์ '{strategy}')")
+        st.info("📊 ยังไม่มีสตรีค P/B ที่ชัดเจน (ไม่นับเสมอ)")
 
 else:
     st.info(f"กรุณาใส่ผลย้อนหลังอย่างน้อย 20 ตา เพื่อให้ SYNAPSE VISION Baccarat เริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(oracle.history)} ตา)")
@@ -97,17 +103,20 @@ with col1:
     if st.button("🟦 P", use_container_width=True, key="add_p"):
         oracle.add_result('P')
         st.session_state.oracle_history.append({'main_outcome': 'P'}) # อัปเดต UI history
-        st.rerun() # <<< แก้ไขตรงนี้: ใช้ st.rerun() แทน st.experimental_rerun()
+        st.session_state.gemini_analysis_result = None # Clear previous Gemini analysis
+        st.rerun() # บังคับให้ Streamlit refresh เพื่อแสดงผลล่าสุด
 with col2:
     if st.button("🟥 B", use_container_width=True, key="add_b"):
         oracle.add_result('B')
         st.session_state.oracle_history.append({'main_outcome': 'B'})
-        st.rerun() # <<< แก้ไขตรงนี้
+        st.session_state.gemini_analysis_result = None
+        st.rerun()
 with col3:
     if st.button("⚪️ T", use_container_width=True, key="add_t"):
         oracle.add_result('T')
         st.session_state.oracle_history.append({'main_outcome': 'T'})
-        st.rerun() # <<< แก้ไขตรงนี้
+        st.session_state.gemini_analysis_result = None
+        st.rerun()
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
@@ -118,11 +127,79 @@ with col4:
             # ใส่ประวัติที่เหลือกลับเข้าไปใน Engine ทีละตัวเพื่อให้มัน "เรียนรู้" ใหม่
             for item in st.session_state.oracle_history:
                 oracle.add_result(item['main_outcome'])
-            st.rerun() # <<< แก้ไขตรงนี้
+            st.session_state.gemini_analysis_result = None # Clear previous Gemini analysis
+            st.rerun()
 
-# ปุ่มรีเซ็ตเต็มจอ
-st.markdown("")
+# --- ปุ่มรีเซ็ตเต็มจอ ---
+st.markdown("---")
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
     st.session_state.oracle_history.clear()
     st.session_state.oracle_engine.reset_history() # เรียก reset_history ของ OracleEngine ด้วย
-    st.rerun() # <<< แก้ไขตรงนี้
+    st.session_state.gemini_analysis_result = None # Clear previous Gemini analysis
+    st.rerun()
+
+# --- Gemini Integration ---
+st.markdown("---")
+st.markdown("### 🧠 Gemini AI Insights")
+
+# Function to simulate API call to Gemini
+async def call_gemini_analysis(history_data):
+    """
+    Simulates an API call to Gemini to get an analysis of the Baccarat history.
+    In a real app, this would make an actual network request.
+    """
+    with st.spinner("กำลังให้ Gemini AI วิเคราะห์สถานการณ์ปัจจุบัน... กรุณารอสักครู่"):
+        # Simulate network delay and API call
+        await asyncio.sleep(3) # Simulate 3 seconds of processing time
+
+        # Prepare context for Gemini (mocked for now)
+        history_str = ' '.join([item['main_outcome'] for item in history_data[-30:]]) # last 30 hands for context
+        
+        # --- Conceptual Real API Call (Not runnable in this environment) ---
+        # import requests
+        # payload = {
+        #     "contents": [
+        #         {
+        #             "role": "user",
+        #             "parts": [
+        #                 {"text": f"Based on this Baccarat history: {history_str}. Provide a concise analysis of patterns, momentum, and potential risks. Focus on actionable insights for prediction. Use Thai language. Format as a markdown summary."},
+        #             ]
+        #         }
+        #     ],
+        #     "generationConfig": {
+        #         "responseMimeType": "text/plain", # or "application/json" if you need structured output
+        #     }
+        # }
+        # api_key = "" # API key provided by environment
+        # api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key={api_key}"
+        # response = requests.post(api_url, json=payload)
+        # if response.status_code == 200:
+        #     response_data = response.json()
+        #     gemini_analysis = response_data['candidates'][0]['content']['parts'][0]['text']
+        # else:
+        #     gemini_analysis = "เกิดข้อผิดพลาดในการเชื่อมต่อกับ Gemini หรือ API Key ไม่ถูกต้อง."
+        # --- End of Conceptual Real API Call ---
+
+        # Mocked Gemini Analysis for demonstration
+        mock_analysis = f"""
+**การวิเคราะห์โดย Gemini AI (จากประวัติ {len(history_data)} ตา):**
+
+* **รูปแบบปัจจุบัน:** จากประวัติล่าสุด ({history_str}), ห้องนี้แสดงแนวโน้มของ {'**Pingpong (สลับ)**' if 'PBP' in history_str or 'BPB' in history_str else '**Dragon (ลากยาว)**' if 'BBB' in history_str or 'PPP' in history_str else '**การเปลี่ยนแปลงที่ไม่แน่นอน**'}.
+* **โมเมนตัม:** {'มีโมเมนตัมของ **เจ้ามือ (B)** ที่แข็งแกร่ง' if history_str.endswith('BBBB') else 'มีโมเมนตัมของ **ผู้เล่น (P)** ที่แข็งแกร่ง' if history_str.endswith('PPPP') else 'โมเมนตัมยัง **ไม่ชัดเจน** หรือกำลังเปลี่ยนทิศทาง'}.
+* **ข้อควรพิจารณา:**
+    * ระวังโซน `{'**Trap Zone** (ไม่เสถียร/เปลี่ยนเร็ว)' if len(history_data) >= 2 and (history_data[-1]['main_outcome'] != history_data[-2]['main_outcome']) else 'การกลับตัวของรูปแบบเดิม'}`.
+    * พิจารณาว่าความยาวของสตรีคปัจจุบัน (ถ้ามี) บ่งชี้ถึงการสิ้นสุดของแนวโน้มหรือไม่.
+* **สรุปสำหรับมือถัดไป:** ห้องนี้อยู่ในช่วงที่ {'**คาดเดายาก**' if history_str.count('P') - history_str.count('B') < 3 and history_str.count('B') - history_str.count('P') < 3 else '**มีแนวโน้มชัดเจน**'}. ควรเดิมพันอย่างระมัดระวังเป็นพิเศษ.
+
+"""
+        return mock_analysis
+
+if st.button("✨ เรียก Gemini เพื่อวิเคราะห์สถานการณ์ปัจจุบัน", use_container_width=True, key="call_gemini_btn"):
+    if len(oracle.history) > 0: # Only call if there's some history
+        st.session_state.gemini_analysis_result = asyncio.run(call_gemini_analysis(oracle.history))
+    else:
+        st.warning("กรุณาใส่ผลลัพธ์อย่างน้อยหนึ่งตา เพื่อให้ Gemini มีข้อมูลสำหรับวิเคราะห์")
+
+if st.session_state.gemini_analysis_result:
+    st.markdown(st.session_state.gemini_analysis_result)
+
