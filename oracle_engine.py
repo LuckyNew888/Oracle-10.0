@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.6 (Latest 12)" # System version identifier - Faster detection, single avoid criteria, latest 12 hands
+    VERSION = "Final V1.7 (Unleashed)" # System version identifier - Maximum Predict, very loose avoidance
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -351,9 +351,9 @@ class OracleEngine:
         # Base confidence calculation
         confidence_base = (total_weighted_score / total_weight_sum) if total_weight_sum > 0 else 0.5 # Default 50% if no relevant patterns/momentum
         
-        # Apply Trap Zone penalty (this penalty affects the *base* confidence)
-        if self.trap_zone_active:
-            confidence_base *= 0.5 # Halve confidence if in a trap zone
+        # !!! REMOVED TRAP ZONE PENALTY FROM CONFIDENCE CALCULATION !!!
+        # if self.trap_zone_active:
+        #     confidence_base *= 0.5 # Halve confidence if in a trap zone
 
         # If intuition logic was the primary driver, adjust confidence
         if intuition_applied and primary_prediction_logic and "Intuition" in primary_prediction_logic:
