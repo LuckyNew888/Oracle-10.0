@@ -351,6 +351,8 @@ class OracleEngine:
                     simulated_prediction = 'P'
                 elif 'Two-Cut' in patterns: # Two-Cut typically suggests continuation
                     simulated_prediction = last_outcome
+                elif 'Triple-Cut' in patterns: # Triple-Cut typically suggests continuation
+                    simulated_prediction = last_outcome
                 else:
                     simulated_prediction = random.choice(['P', 'B']) # Fallback if no specific pattern for backtest
             else:
@@ -497,17 +499,25 @@ class OracleEngine:
                 self.developer_view_components.append(f"Predict by: Triple-Cut ({last_outcome} continuation)")
             # One-Two Pattern
             elif 'One-Two Pattern' in patterns_detected:
-                # PBB -> P, BPP -> B
-                if last_outcome == 'B' and self.history[-2]['main_outcome'] == 'P': prediction = 'P'
-                elif last_outcome == 'P' and self.history[-2]['main_outcome'] == 'B': prediction = 'B'
-                else: prediction = random.choice(['P', 'B']) # Fallback if not clear
+                # PBB -> P, BPP -> B (predicts the single opposite)
+                if len(history_segment) >= 3:
+                    if history_segment[-3]['main_outcome'] == 'P' and history_segment[-2]['main_outcome'] == 'B' and last_outcome == 'B':
+                        prediction = 'P'
+                    elif history_segment[-3]['main_outcome'] == 'B' and history_segment[-2]['main_outcome'] == 'P' and last_outcome == 'P':
+                        prediction = 'B'
+                    else: prediction = random.choice(['P', 'B']) # Fallback if not clear or not this exact pattern
+                else: prediction = random.choice(['P', 'B'])
                 self.developer_view_components.append(f"Predict by: One-Two Pattern ({prediction})")
             # Two-One Pattern
             elif 'Two-One Pattern' in patterns_detected:
-                # PPB -> P, BBP -> B
-                if last_outcome == 'B' and self.history[-2]['main_outcome'] == 'P' and self.history[-3]['main_outcome'] == 'P': prediction = 'P'
-                elif last_outcome == 'P' and self.history[-2]['main_outcome'] == 'B' and self.history[-3]['main_outcome'] == 'B': prediction = 'B'
-                else: prediction = random.choice(['P', 'B']) # Fallback if not clear
+                # PPB -> P, BBP -> B (predicts continuation of the pair)
+                if len(history_segment) >= 3:
+                    if history_segment[-3]['main_outcome'] == 'P' and history_segment[-2]['main_outcome'] == 'P' and last_outcome == 'B':
+                        prediction = 'P'
+                    elif history_segment[-3]['main_outcome'] == 'B' and history_segment[-2]['main_outcome'] == 'B' and last_outcome == 'P':
+                        prediction = 'B'
+                    else: prediction = random.choice(['P', 'B']) # Fallback if not clear or not this exact pattern
+                else: prediction = random.choice(['P', 'B'])
                 self.developer_view_components.append(f"Predict by: Two-One Pattern ({prediction})")
             # หากไม่มี Pattern ชัดเจน แต่ Confidence สูงพอ ให้ลองใช้ Intuition
             else:
@@ -521,14 +531,16 @@ class OracleEngine:
             
             # 6. 🔁 Memory Logic: ตรวจสอบว่าการทำนายนี้ถูกบล็อกหรือไม่
             original_prediction = prediction
-            prediction = self.apply_memory_logic(prediction, patterns_detected, momentum_detected)
-            if prediction is None: # หากถูก Memory Logic บล็อก
-                self.developer_view_components.append(f"Memory Logic Blocked: Original '{original_prediction}' rejected. Retrying with Intuition/Fallback.")
+            prediction_after_memory = self.apply_memory_logic(prediction, patterns_detected, momentum_detected)
+            
+            if prediction_after_memory is None: # หากถูก Memory Logic บล็อก
+                self.developer_view_components.append(f"Memory Logic Blocked: Original '{original_prediction}' rejected.")
                 # ลองใช้ Intuition Logic อีกครั้ง
                 intuition_pred = self.apply_intuition_logic(history_segment)
                 if intuition_pred and intuition_pred != original_prediction: # ต้องไม่เป็นผลเดิมที่ถูกบล็อก
                     prediction = intuition_pred
                     intuition_applied = True
+                    self.developer_view_components.append(f"Memory Logic: Fallback to Intuition ({prediction}).")
                 else:
                     # หาก Intuition ก็ไม่ได้ หรือได้ผลเดิมที่ถูกบล็อก, ให้สุ่ม P/B
                     prediction = random.choice(['P', 'B']) 
@@ -536,6 +548,8 @@ class OracleEngine:
                          prediction = 'B' if original_prediction == 'P' else 'P' # สลับไปอีกฝั่งแทน
                     self.developer_view_components.append(f"Memory Logic: Fallback to {prediction} after block.")
                 risk = 'Memory Rejection' # เปลี่ยน Risk level
+            else:
+                prediction = prediction_after_memory # Use the prediction passed through memory logic
 
             # กำหนด Recommendation หลังจาก Memory Logic
             if prediction in ['P', 'B']:
@@ -572,7 +586,7 @@ class OracleEngine:
 
         # จัดรูปแบบ Developer View
         grouped_outcomes_str = ', '.join([f"[{g}]" for g in self._group_outcomes(history_segment)])
-        final_dev_view = f"{grouped_outcomes_str}, {'; '.join(self.developer_view_components)}"
+        final_dev_view = f"{grouped_outcomes_str}; {'; '.join(self.developer_view_components)}"
 
         # เก็บ context สำหรับการเรียนรู้ครั้งถัดไป
         self.last_prediction_context = {
