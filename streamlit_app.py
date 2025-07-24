@@ -5,7 +5,8 @@ import json # Import json for parsing structured responses from LLM
 import asyncio # For running async functions
 
 # Import OracleEngine and helper functions (note: _cached_backtest_accuracy and _build_big_road_data are global)
-from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
+# Make sure oracle_engine.py is in the same directory or accessible via PYTHONPATH
+from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data, get_gemini_analysis
 
 # Define the current expected version of the OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
@@ -208,7 +209,7 @@ st.markdown('<div class="custom-title">🔮 Oracle AI <span class="version-text"
 
 # --- OracleEngine Caching ---
 @st.cache_resource(ttl=None)
-def get_oracle_engine():
+def get_oracle_engine_cached(): # Renamed to avoid conflict with OracleEngine class name
     return OracleEngine()
 
 
@@ -236,7 +237,7 @@ if "debug_log" not in st.session_state: # Moved this up for guaranteed initializ
 
 # Initialize engine after all basic session states
 if "oracle_engine" not in st.session_state:
-    st.session_state.oracle_engine = get_oracle_engine()
+    st.session_state.oracle_engine = get_oracle_engine_cached()
 
 
 # --- Robust Cache compatibility check using __version__ ---
@@ -309,7 +310,7 @@ def remove_last_from_history():
     st.session_state.hands_since_last_gemini_analysis = 0
     st.session_state.gemini_continuous_analysis_mode = False # Ensure continuous mode is off
     st.session_state.debug_log.append(f"--- UNDO finished ---")
-    # Removed st.experimental_rerun() from here
+    st.rerun() # Force rerun to refresh UI
 
 def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.history = []
@@ -324,7 +325,7 @@ def reset_all_history(): # This is now "Start New Shoe"
     st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on new shoe
     st.session_state.gemini_continuous_analysis_mode = False # Reset continuous analysis mode
     st.session_state.debug_log = [] # Clear debug log on full reset
-    # Removed st.experimental_rerun() from here
+    st.rerun() # Force rerun to refresh UI
 
 def record_bet_result(actual_result): # Simplified signature
     # Retrieve predicted_side and recommendation_status from session state
@@ -370,13 +371,11 @@ def record_bet_result(actual_result): # Simplified signature
         elif predicted_side in ['P', 'B', 'S6'] and actual_result == 'T': # P/B/S6 hit by T (neutral break)
             is_hit_for_drawdown_reset = True
             st.session_state.debug_log.append(f"  Drawdown Logic: P/B/S6 HIT by T (neutral break).")
-        elif predicted_side == 'T' and actual_result == 'T': # Tie hit by Tie
-            is_hit_for_drawdown_reset = True
-            st.session_state.debug_log.append(f"  Drawdown Logic: Tie HIT by Tie. ")
-        elif predicted_side == 'S6' and actual_outcome_of_current_hand == 'S6': # S6 hit by S6
-            is_hit_for_drawdown_reset = True
-            st.session_state.debug_log.append(f"  Drawdown Logic: S6 HIT by S6. ")
-        
+        # Note: The original code had `elif predicted_side == 'S6' and actual_outcome_of_current_hand == 'S6':`
+        # `actual_outcome_of_current_hand` is undefined. It should be `actual_result`.
+        # This condition is already covered by `actual_result == predicted_side` if `predicted_side` is 'S6'.
+        # So, no change needed here, as `actual_result == predicted_side` already handles 'S6' hit.
+            
         # If it's a hit, reset drawdown
         if is_hit_for_drawdown_reset:
             st.session_state.live_drawdown = 0
@@ -469,3 +468,228 @@ def record_bet_result(actual_result): # Simplified signature
                 st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
                 st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter after analysis
     st.session_state.debug_log.append(f"--- RECORD finished ---")
+    st.rerun() # Force rerun to refresh UI
+
+
+# --- Main App Layout ---
+
+# Input Section
+st.markdown("#### บันทึกผลลัพธ์")
+col1, col2, col3, col4, col5 = st.columns(5)
+with col1:
+    if st.button("P (Player)"):
+        record_bet_result('P')
+with col2:
+    if st.button("B (Banker)"):
+        record_bet_result('B')
+with col3:
+    if st.button("T (Tie)"):
+        record_bet_result('T')
+with col4:
+    if st.button("S6 (Super6)"):
+        record_bet_result('S6')
+with col5:
+    if st.button("Undo", on_click=remove_last_from_history):
+        pass # Handled by on_click
+col_reset, col_analyze = st.columns([1, 2])
+with col_reset:
+    if st.button("เริ่มขอนใหม่", on_click=reset_all_history):
+        pass # Handled by on_click
+
+
+# --- Prediction and Recommendation Display ---
+st.markdown("---")
+st.markdown("#### การทำนายและคำแนะนำ")
+
+# Before prediction, build big_road_data for the engine
+# This part assumes _build_big_road_data is correctly defined and imported
+big_road_data_for_prediction = []
+if '_build_big_road_data' in globals() and callable(globals()['_build_big_road_data']):
+    big_road_data_for_prediction = _build_big_road_data(st.session_state.history)
+
+# Call the prediction function from OracleEngine
+prediction_output = st.session_state.oracle_engine.predict_next(
+    current_live_drawdown=st.session_state.live_drawdown,
+    current_big_road_data=big_road_data_for_prediction # Pass big_road_data to predict_next if needed
+)
+st.session_state.last_prediction_data = prediction_output # Update session state with the latest prediction
+
+# Display Prediction
+predicted_side = st.session_state.last_prediction_data.get('prediction', '?')
+recommendation = st.session_state.last_prediction_data.get('recommendation', 'Avoid ❌')
+overall_confidence = st.session_state.last_prediction_data.get('overall_confidence', 0)
+risk_level = st.session_state.last_prediction_data.get('risk', 'Uncertainty')
+
+pred_class = "no-prediction"
+if predicted_side == 'P':
+    pred_class = "player"
+elif predicted_side == 'B':
+    pred_class = "banker"
+elif predicted_side == 'S6':
+    pred_class = "super6"
+
+st.markdown(f"""
+<div style="text-align: center;">
+    <div class="prediction-text {pred_class}">
+        ทำนาย: {predicted_side}
+    </div>
+    <div style="font-size: 1.2rem; font-weight: bold; color: {'green' if recommendation == 'Play ✅' else 'orange'};">
+        คำแนะนำ: {recommendation} ({overall_confidence:.1f}% Confidence)
+    </div>
+    <div style="font-size: 0.9rem; color: #bbb;">
+        ระดับความเสี่ยง: {risk_level}
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# --- Tie/Super6 Opportunity Display ---
+st.markdown("---")
+st.markdown("#### โอกาส Tie / Super6")
+# Re-run Tie/Super6 analysis if current_history is updated
+st.session_state.tie_opportunity_data = st.session_state.oracle_engine.get_tie_opportunity_analysis(st.session_state.history)
+
+tie_pred = st.session_state.tie_opportunity_data['prediction']
+tie_conf = st.session_state.tie_opportunity_data['confidence']
+tie_reason = st.session_state.tie_opportunity_data['reason']
+
+tie_class = "no-recommendation"
+if tie_pred == 'T':
+    tie_class = "tie" # Assuming you define a CSS class for Tie if needed
+elif tie_pred == 'S6':
+    tie_class = "super6" # Assuming you define a CSS class for S6 if needed
+
+st.markdown(f"""
+<div style="text-align: center;">
+    <div class="tie-opportunity-text {tie_class}">
+        โอกาส: {tie_pred}
+    </div>
+    <div style="font-size: 1rem; color: #ccc;">
+        ความมั่นใจ: {tie_conf:.1f}%
+    </div>
+    <div style="font-size: 0.85rem; color: #888; font-style: italic;">
+        เหตุผล: {tie_reason}
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# --- Live Drawdown Display ---
+st.markdown("---")
+st.markdown("#### สถานะ Drawdown")
+drawdown_color = "green"
+if st.session_state.live_drawdown >= 1:
+    drawdown_color = "orange"
+if st.session_state.live_drawdown >= 3:
+    drawdown_color = "red"
+
+st.markdown(f"""
+<div style="text-align: center; font-size: 1.5rem; font-weight: bold; color: {drawdown_color};">
+    Drawdown ปัจจุบัน: {st.session_state.live_drawdown}
+</div>
+""", unsafe_allow_html=True)
+
+# --- Gemini Analysis Display ---
+st.markdown("---")
+st.markdown("#### การวิเคราะห์จาก Gemini AI")
+gemini_api_key_available = "GEMINI_API_KEY" in st.secrets # Re-check key availability
+
+if gemini_api_key_available:
+    with col_analyze: # This col_analyze was defined above in the input section, reuse or define a new one if layout desired differently
+        if st.button("วิเคราะห์ด้วย Gemini AI (แบบ Manual)"):
+            if len(st.session_state.history) < 20:
+                st.warning("โปรดบันทึกประวัติอย่างน้อย 20 ตา เพื่อการวิเคราะห์ที่มีประสิทธิภาพจาก Gemini.")
+            else:
+                with st.spinner('กำลังให้ Gemini วิเคราะห์...'):
+                    st.session_state.gemini_analysis_result = asyncio.run(get_gemini_analysis(list(st.session_state.history)))
+                st.session_state.hands_since_last_gemini_analysis = 0 # Reset counter
+    
+    if st.session_state.gemini_continuous_analysis_mode:
+        st.info(f"💡 โหมดวิเคราะห์ต่อเนื่องด้วย Gemini ทำงานอยู่ (Drawdown: {st.session_state.live_drawdown})", icon="ℹ️")
+
+    st.markdown(f"""
+    <div style="border: 1px solid #444; padding: 10px; border-radius: 5px; background-color: #222;">
+        <pre style="white-space: pre-wrap; word-wrap: break-word;">{st.session_state.gemini_analysis_result}</pre>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.warning("⚠️ ไม่พบ Gemini API Key ใน Streamlit Secrets. โปรดเพิ่มเพื่อเปิดใช้งานฟังก์ชันการวิเคราะห์จาก Gemini.")
+
+
+# --- History Display (Big Road) ---
+st.markdown("---")
+st.markdown("#### ประวัติขอนปัจจุบัน (Big Road)")
+
+# Re-build big road data for display every time
+big_road_data_display = []
+if '_build_big_road_data' in globals() and callable(globals()['_build_big_road_data']):
+    big_road_data_display = _build_big_road_data(st.session_state.history)
+
+if big_road_data_display:
+    html_output = "<div class='big-road-container'>"
+    # Adjust how many columns to show if too many to prevent excessively wide display
+    # For now, let's show all, assuming horizontal scroll handles it.
+    
+    for col_idx, column in enumerate(big_road_data_display):
+        html_output += "<div class='big-road-column'>"
+        for row_idx in range(6): # Baccarat Big Road typically has 6 rows
+            cell_content = ""
+            tie_markup = ""
+            natural_markup = ""
+            circle_class = ""
+
+            if row_idx < len(column) and column[row_idx] is not None:
+                outcome, ties, is_natural = column[row_idx]
+                if outcome == 'P':
+                    circle_class = "player-circle"
+                elif outcome == 'B' or outcome == 'S6': # S6 also uses Banker circle
+                    circle_class = "banker-circle"
+                # If outcome is 'T', it should generally not create a new circle in Big Road,
+                # but instead attach to the previous P/B/S6. _build_big_road_data handles this.
+                # If it somehow appears here as a standalone 'T' from history, it won't get a circle.
+
+                if outcome == 'S6':
+                    cell_content = "S6" # Show S6 inside circle
+                
+                # Only render circle if it's P, B, or S6
+                if outcome in ['P', 'B', 'S6']:
+                    cell_content = f"<div class='big-road-circle {circle_class}'>{cell_content}</div>"
+
+                if ties > 0:
+                    tie_markup = f"<div class='tie-oval'>+{ties}</div>"
+                if is_natural:
+                    natural_markup = "<div class='natural-indicator'>N</div>"
+            
+            html_output += f"<div class='big-road-cell'>{cell_content}{tie_markup}{natural_markup}</div>"
+        html_output += "</div>"
+    html_output += "</div>"
+    st.markdown(html_output, unsafe_allow_html=True)
+else:
+    st.info("ยังไม่มีประวัติในขอนนี้ เริ่มบันทึกผลลัพธ์เพื่อสร้าง Big Road.", icon="ℹ️")
+
+
+# --- Bet Log Display ---
+st.markdown("---")
+st.markdown("#### Bet Log")
+if st.session_state.bet_log:
+    # Create a DataFrame for better display
+    df_bet_log = pd.DataFrame(st.session_state.bet_log)
+    st.dataframe(df_bet_log.set_index(df_bet_log.index + 1)) # 1-based index
+else:
+    st.info("ยังไม่มีข้อมูลการเดิมพัน.")
+
+# --- Debug Log Display (Optional, for development) ---
+st.markdown("---")
+st.checkbox("แสดง Debug Log (สำหรับนักพัฒนา)", key="show_debug_log")
+if st.session_state.show_debug_log:
+    st.markdown("#### Debug Log")
+    for entry in st.session_state.debug_log:
+        st.code(entry, language='text')
+
+st.markdown("---")
+st.info(f"Total History Recorded (P/B/T/S6): {len(st.session_state.history)} hands.")
+st.info(f"Oracle Engine Internal State Version: v{st.session_state.oracle_engine.__version__}")
+
+# Note: st.rerun() is now called within the callback functions (record_bet_result, remove_last_from_history, reset_all_history)
+# This prevents excessive reruns and makes the app more responsive.
+# If you find the UI not updating as expected after other non-button interactions, you might need to add specific st.rerun() calls.
