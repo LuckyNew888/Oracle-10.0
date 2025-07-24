@@ -243,7 +243,7 @@ async def analyze_with_gemini_async():
             analysis = await get_gemini_analysis(st.session_state.history)
             st.session_state.gemini_analysis_result = analysis
     except Exception as e:
-        st.session_state.gemini_analysis_result = f"❌ เกิดข้อผิดพลาดในการเรียกใช้ Gemini AI: {e}"
+        st.session_state.gemini_analysis_result = f"❌ เกิดข้อผิดพลาดในการเรียกใช้ Gemini API: {e}. โปรดตรวจสอบ API Key, โควต้า, หรือการเชื่อมต่ออินเทอร์เน็ต."
     finally:
         st.session_state.gemini_analysis_loading = False
         st.rerun() 
@@ -289,11 +289,20 @@ st.markdown(
         line-height: 1;
     }
 
-    h3 {
+    /* Use Streamlit's native header for better rendering */
+    h2 { /* For st.subheader */
         margin-top: 25px;
         margin-bottom: 15px;
         color: #f0f2f6; 
         border-bottom: 1px solid #333; 
+        padding-bottom: 5px;
+    }
+    
+    h3 { /* For st.markdown h3 */
+        margin-top: 25px;
+        margin-bottom: 15px;
+        color: #f0f2f6;
+        border-bottom: 1px solid #333;
         padding-bottom: 5px;
     }
 
@@ -308,43 +317,43 @@ st.markdown(
         border: none;
     }
 
-    /* Specific Button Colors */
-    .stButton button[data-testid="stButton-P"] {
-        background-color: #007bff; /* Blue */
-        color: white;
+    /* Specific Button Colors - More robust targeting */
+    [data-testid*="stButton-P"] button {
+        background-color: #007bff !important; /* Blue */
+        color: white !important;
     }
-    .stButton button[data-testid="stButton-P"]:hover {
-        background-color: #0056b3;
+    [data-testid*="stButton-P"] button:hover {
+        background-color: #0056b3 !important;
     }
-    .stButton button[data-testid="stButton-B"] {
-        background-color: #dc3545; /* Red */
-        color: white;
+    [data-testid*="stButton-B"] button {
+        background-color: #dc3545 !important; /* Red */
+        color: white !important;
     }
-    .stButton button[data-testid="stButton-B"]:hover {
-        background-color: #b02a37;
+    [data-testid*="stButton-B"] button:hover {
+        background-color: #b02a37 !important;
     }
-    .stButton button[data-testid="stButton-T"] {
-        background-color: #28a745; /* Green */
-        color: white;
+    [data-testid*="stButton-T"] button {
+        background-color: #28a745 !important; /* Green */
+        color: white !important;
     }
-    .stButton button[data-testid="stButton-T"]:hover {
-        background-color: #1e7e34;
+    [data-testid*="stButton-T"] button:hover {
+        background-color: #1e7e34 !important;
     }
-    .stButton button[data-testid="stButton-S6"] {
-        background-color: #ffc107; /* Orange/Yellow */
-        color: black; /* Black text for contrast on yellow */
+    [data-testid*="stButton-S6"] button {
+        background-color: #ffc107 !important; /* Orange/Yellow */
+        color: black !important; /* Black text for contrast on yellow */
     }
-    .stButton button[data-testid="stButton-S6"]:hover {
-        background-color: #e0a800;
+    [data-testid*="stButton-S6"] button:hover {
+        background-color: #e0a800 !important;
     }
 
     /* General action buttons (Undo, Reset, Gemini) */
     .stButton button:not([data-testid*="stButton-P"]):not([data-testid*="stButton-B"]):not([data-testid*="stButton-T"]):not([data-testid*="stButton-S6"]) {
-        background-color: #282b30; /* Darker background for general actions */
-        color: white;
+        background-color: #282b30 !important; /* Darker background for general actions */
+        color: white !important;
     }
     .stButton button:not([data-testid*="stButton-P"]):not([data-testid*="stButton-B"]):not([data-testid*="stButton-T"]):not([data-testid*="stButton-S6"]):hover {
-        background-color: #3e4247;
+        background-color: #3e4247 !important;
     }
 
 
@@ -397,7 +406,7 @@ st.markdown(
 )
 
 
-st.markdown("<h3>บันทึกผลลัพธ์</h3>")
+st.subheader("บันทึกผลลัพธ์") # Changed to st.subheader
 col_p, col_b = st.columns(2)
 with col_p:
     st.button("P (Player)", on_click=record_result, args=('P',), key="stButton-P") # Added key for specific CSS targeting
@@ -422,7 +431,7 @@ else:
 st.markdown("---") 
 
 
-st.markdown("<h3>การทำนายและคำแนะนำ</h3>")
+st.subheader("การทำนายและคำแนะนำ") # Changed to st.subheader
 prediction_output = st.session_state.oracle_engine.predict_next(
     current_live_drawdown=st.session_state.drawdown,
     current_big_road_data=_build_big_road_data(st.session_state.history),
@@ -435,7 +444,7 @@ st.markdown(f"**ความมั่นใจโดยรวม:** <span class=
 st.markdown(f"**ระดับความเสี่ยง:** <span class='risk-value'>{prediction_output['risk']}</span>", unsafe_allow_html=True)
 
 
-st.markdown("<h3>สถานะ Drawdown</h3>")
+st.subheader("สถานะ Drawdown") # Changed to st.subheader
 drawdown_color = "lightgreen"
 if st.session_state.drawdown >= 1: drawdown_color = "orange"
 if st.session_state.drawdown >= 2: drawdown_color = "red"
@@ -445,7 +454,7 @@ st.markdown(f"**Drawdown ปัจจุบัน:** <span class='drawdown-value
 st.markdown(f"ระดับความเสี่ยงโดยรวม: **{prediction_output['risk']}** (จาก AI)")
 
 
-st.markdown("<h3>โอกาส Tie / Super6</h3>")
+st.subheader("โอกาส Tie / Super6") # Changed to st.subheader
 tie_analysis = st.session_state.oracle_engine.get_tie_opportunity_analysis(st.session_state.history)
 st.markdown(f"**โอกาส:** <span class='tie-opportunity-value' style='color: {'lightgreen' if tie_analysis['prediction'] == 'T' else 'white'}'>{tie_analysis['prediction']}</span>", unsafe_allow_html=True)
 st.markdown(f"**ความมั่นใจ:** {tie_analysis['confidence']:.1f}%")
@@ -454,7 +463,7 @@ st.markdown(f"**เหตุผล:** {tie_analysis['reason']}")
 st.markdown("---") 
 
 
-st.markdown("<h3>ประวัติขอนปัจจุบัน (Big Road)</h3>")
+st.subheader("ประวัติขอนปัจจุบัน (Big Road)") # Changed to st.subheader
 current_big_road_data = _build_big_road_data(st.session_state.history)
 display_big_road(current_big_road_data)
 
@@ -473,7 +482,7 @@ if st.session_state.show_big_road_tooltip:
 st.markdown("---") 
 
 
-st.markdown("<h3>การวิเคราะห์จาก Gemini AI</h3>")
+st.subheader("การวิเคราะห์จาก Gemini AI") # Changed to st.subheader
 if st.session_state.gemini_analysis_loading:
     st.info("กำลังวิเคราะห์ด้วย Gemini AI... กรุณารอสักครู่ ⏳") 
 else:
@@ -481,7 +490,7 @@ else:
 
 st.markdown("---") 
 
-st.markdown("<h3>Bet Log</h3>")
+st.subheader("Bet Log") # Changed to st.subheader
 if not st.session_state.bet_log.empty:
     st.dataframe(
         st.session_state.bet_log,
@@ -493,7 +502,7 @@ else:
     st.info("ไม่มีบันทึกการเดิมพัน")
 
 
-st.markdown("<h3>ความแม่นยำทางประวัติศาสตร์</h3>")
+st.subheader("ความแม่นยำทางประวัติศาสตร์") # Changed to st.subheader
 accuracy_results = _cached_backtest_accuracy(st.session_state.history)
 
 st.markdown(f"**ความแม่นยำโดยรวม (จาก {accuracy_results['total_bets']} ครั้งที่ทำนาย):** <span class='confidence-value' style='color: {'lightgreen' if accuracy_results['overall_accuracy'] >= 60 else 'orange'}'>{accuracy_results['overall_accuracy']:.2f}%</span>", unsafe_allow_html=True)
