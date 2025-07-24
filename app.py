@@ -9,6 +9,9 @@ st.set_page_config(page_title="ORACLE Baccarat Predictor", layout="centered") # 
 # Custom CSS for centered gold title and reduced spacing
 st.markdown("""
 <style>
+/* Font import from Google Fonts - This might be blocked by CSP in some environments */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&display=swap');
+
 .center-gold-title {
     text-align: center;
     color: gold;
@@ -17,6 +20,7 @@ st.markdown("""
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     margin-bottom: 0.5rem; /* Reduced space below title */
     padding-bottom: 0px;
+    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Attempt to change font */
 }
 h3 {
     margin-top: 0.5rem; /* Reduced space above h3 */
@@ -36,7 +40,8 @@ h3 {
     font-weight: bold;
 }
 /* Reduce padding around columns to make buttons closer */
-.st-emotion-cache-1colbu6 { /* This is a Streamlit generated class, might change */
+/* This class name might change based on Streamlit versions */
+.st-emotion-cache-1colbu6 { 
     padding-left: 0.2rem;
     padding-right: 0.2rem;
 }
