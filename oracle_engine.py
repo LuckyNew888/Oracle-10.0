@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.3" # System version identifier - Lean Avoidance, only 3 core avoid criteria
+    VERSION = "Final V1.4" # System version identifier - Maximum Predict, very loose avoidance
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -497,13 +497,13 @@ class OracleEngine:
         Returns:
             dict: Contains prediction, recommendation, risk, developer_view, accuracy, confidence.
         """
-        # Ensure enough data for meaningful analysis (Core Avoid Condition 1)
+        # Core Avoid Condition 1: Not Enough Data
         if len(history) < 20: 
             if not is_backtest: 
                 self.last_prediction_context = {'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None}
             return {
                 'prediction': '?',
-                'recommendation': 'Avoid ❌', # Main Avoid reason
+                'recommendation': 'Avoid ❌', 
                 'risk': 'Not enough data',
                 'developer_view': 'Not enough data for full analysis. Requires at least 20 hands.',
                 'accuracy': self._cached_accuracy_str, 
@@ -532,25 +532,19 @@ class OracleEngine:
         confidence = 0 # Initialize confidence
 
         # --- High Priority Overrides (Forces Prediction to '⚠️') ---
-        # These are the ONLY two conditions that force '⚠️' prediction now
+        # ONLY Low Confidence makes prediction ⚠️ now. Trap Timer only affects Risk string.
         
-        # Core Avoid Condition 2: Trap Timer Override
-        if self.hands_to_skip_due_to_trap_timer > 0:
-            prediction = '⚠️'
-            risk = f"Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
-            predicted_by_logic = "Trap Timer Active"
-        
-        # Core Avoid Condition 3: Confidence Threshold Override (<50%)
+        # Core Avoid Condition 2: Confidence Threshold Override (<50%)
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
-        if prediction == '?' and confidence < 50: 
+        if confidence < 50: # If confidence is low, it's always a strong avoid.
              prediction = '⚠️'
              risk = f'Low Confidence (<50%)'
              predicted_by_logic = f"Avoid (Confidence {confidence}%)"
 
 
         # --- Core Prediction Logic (Attempt to get P/B, if not already '⚠️') ---
-        if prediction == '?': # Only if not already forced to '⚠️' by Trap Timer or low confidence
+        if prediction == '?': # Only if not already forced to '⚠️' by low confidence
             last_outcome = history[-1]['main_outcome']
             
             # Prioritize strongest patterns/momentum
@@ -608,31 +602,39 @@ class OracleEngine:
                     predicted_by_logic = "Random Fallback (No Data)"
 
         # --- Set Risk Flags based on conditions (applies to P/B/⚠️ predictions) ---
-        # These flags are for informative purposes in 'risk' string, they don't force 'Avoid' recommendation
+        # These flags are for informative purposes in 'risk' string.
+        # They no longer force 'Avoid' recommendation, unless prediction is '⚠️'
+
+        # Trap Timer (Risk only, no longer forces ⚠️ prediction directly)
+        if self.hands_to_skip_due_to_trap_timer > 0:
+            risk = f"Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
+            #predicted_by_logic = "Trap Timer Active" # Keep predicted_by_logic from actual prediction
         
         # New Pattern Confirmation & First Bet Avoidance
-        if not is_backtest and predicted_by_logic not in ["Trap Timer Active", f"Avoid (Confidence {confidence}%)"]:
+        if not is_backtest and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
             if self.last_dominant_pattern_id is not None and self.last_dominant_pattern_id != current_dominant_pattern_id:
                 self.skip_first_bet_of_new_pattern_flag = True 
                 self.new_pattern_confirmation_count = 0 
                 
             if self.skip_first_bet_of_new_pattern_flag: 
-                risk = 'New Pattern: First Bet Avoidance' 
+                if risk == 'Normal': risk = 'New Pattern: First Bet Avoidance'
+                else: risk += ', New Pattern: First Bet Avoidance'
             elif self.new_pattern_confirmation_count < self.NEW_PATTERN_CONFIRMATION_REQUIRED:
-                risk = f"New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.new_pattern_confirmation_count} Confirmation(s)"
+                if risk == 'Normal': risk = f"New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.new_pattern_confirmation_count} Confirmation(s)"
+                else: risk += f", New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.new_pattern_confirmation_count} Confirmation(s)"
 
         # Trap Zone (General)
-        if self.trap_zone_active and predicted_by_logic not in ["Trap Timer Active", f"Avoid (Confidence {confidence}%)"]:
-            if risk == 'Normal': risk = f"Trap Zone: {trap_zone_name}" # Only set if no other risk
-            else: risk += f", Trap Zone: {trap_zone_name}" # Append if other risk already exists
+        if self.trap_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
+            if risk == 'Normal': risk = f"Trap Zone: {trap_zone_name}"
+            else: risk += f", Trap Zone: {trap_zone_name}"
 
         # Blacklist Pattern (Memory Logic)
-        if self.apply_memory_logic(patterns, momentum) and predicted_by_logic not in ["Trap Timer Active", f"Avoid (Confidence {confidence}%)"]:
+        if self.apply_memory_logic(patterns, momentum) and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
             if risk == 'Normal': risk = 'Memory Blocked'
             else: risk += ', Memory Blocked'
 
         # Bias Zone (Countering Bias)
-        if bias_zone_active and predicted_by_logic not in ["Trap Timer Active", f"Avoid (Confidence {confidence}%)"]:
+        if bias_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"]:
             if prediction != bias_towards: # If predicting counter to bias
                 if risk == 'Normal': risk = f"Bias Zone (Counter {bias_towards})"
                 else: risk += f", Bias Zone (Counter {bias_towards})"
