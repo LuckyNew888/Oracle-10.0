@@ -258,7 +258,7 @@ if "hands_since_last_gemini_analysis" not in st.session_state: # Counter for aut
 if "gemini_continuous_analysis_mode" not in st.session_state: # New: Flag for continuous Gemini analysis during drawdown
     st.session_state.gemini_continuous_analysis_mode = False
 # FIX: Ensure debug_log is initialized first before any appends
-if "debug_log" not in st.session_state:
+if "debug_log" not in st.session_state: # Moved this up for guaranteed initialization
     st.session_state.debug_log = []
 
 
@@ -566,7 +566,7 @@ recommendation_status = "—"
 current_drawdown_display = st.session_state.live_drawdown
 
 if len(engine.history) >= 20:
-    # Pass current_live_drawdown to predict_next for protection logic
+    # Pass current_drawdown_display to predict_next for protection logic
     prediction_data = engine.predict_next(current_live_drawdown=current_drawdown_display) # Calculate primary prediction for current state
     st.session_state.tie_opportunity_data = engine.get_tie_opportunity_analysis(engine.history) # Calculate Tie opportunity
 
