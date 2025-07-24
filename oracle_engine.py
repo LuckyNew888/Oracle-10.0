@@ -1,585 +1,653 @@
 import random
 
 class OracleEngine:
+    """
+    The core prediction engine for ORACLE Baccarat.
+    This engine analyzes historical outcomes to detect patterns, momentum,
+    and trap zones, calculates a confidence score, and provides a prediction
+    along with risk assessment and recommendation.
+    It uses a stateless approach for history management, relying on the caller
+    (e.g., Streamlit app) to provide the full history.
+    """
     def __init__(self):
-        # สถิติประสิทธิภาพของแต่ละ Pattern และ Momentum
-        self.pattern_stats = {
+        # Performance tracking for patterns and momentum
+        # { 'pattern_name': {'success': count, 'fail': count} }
+        self.pattern_performance = {
             'Pingpong': {'success': 0, 'fail': 0},
-            'Two-Cut': {'success': 0, 'fail': 0},
             'Dragon': {'success': 0, 'fail': 0},
+            'Two-Cut': {'success': 0, 'fail': 0},
             'Triple-Cut': {'success': 0, 'fail': 0},
             'One-Two Pattern': {'success': 0, 'fail': 0},
             'Two-One Pattern': {'success': 0, 'fail': 0},
             'Broken Pattern': {'success': 0, 'fail': 0},
+            'FollowStreak': {'success': 0, 'fail': 0} # Added FollowStreak here
         }
-        self.momentum_stats = {
+        self.momentum_performance = {
             'B3+ Momentum': {'success': 0, 'fail': 0},
             'P3+ Momentum': {'success': 0, 'fail': 0},
+            'Steady Repeat Momentum': {'success': 0, 'fail': 0},
+            'Ladder Momentum (1-2-3)': {'success': 0, 'fail': 0},
+            'Ladder Momentum (X-Y-XX-Y)': {'success': 0, 'fail': 0}
         }
-        # Memory Logic: เก็บ Pattern ที่เคยทำนายผิดซ้ำ 2 ครั้ง
-        self.memory_blocked_patterns = {} # {'pattern_name': {'failures': count, 'last_failed_outcome': 'P'/'B'}}
-        
-        self.trap_zone_active = False # สถานะ Trap Zone
-        self.last_prediction_context = { # เก็บข้อมูลการทำนายครั้งล่าสุดสำหรับ Learning
-            'prediction': '?',
-            'patterns': [],
-            'momentum': [],
-            'intuition_applied': False
+        self.intuition_performance = {
+            'PBP -> P': {'success': 0, 'fail': 0},
+            'BBPBB -> B': {'success': 0, 'fail': 0},
+            'PPBPP -> P': {'success': 0, 'fail': 0},
+            'Steady Outcome Guess': {'success': 0, 'fail': 0}
         }
-        self.backtest_results = {'hits': 0, 'misses': 0, 'total': 0, 'drawdown': 0, 'accuracy_pct': 0}
-        self.developer_view_components = [] # สำหรับสร้าง Developer View
 
-        # Weights สำหรับ Confidence Engine
+        # Weights for different analysis modules
         self.pattern_weights = {
-            'Pingpong': 1.0, 'Two-Cut': 0.9, 'Dragon': 0.95, 'Triple-Cut': 0.85,
-            'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7, 'Broken Pattern': 0.6
+            'Dragon': 1.0, 'FollowStreak': 0.95, 'Pingpong': 0.9, 'Two-Cut': 0.8,
+            'Triple-Cut': 0.8, 'One-Two Pattern': 0.7, 'Two-One Pattern': 0.7,
+            'Broken Pattern': 0.6
         }
         self.momentum_weights = {
-            'B3+ Momentum': 1.0, 'P3+ Momentum': 1.0, # ให้ weight สูงเพราะเป็นแรงเหวี่ยงที่ชัดเจน
+            'B3+ Momentum': 0.9, 'P3+ Momentum': 0.9, 'Steady Repeat Momentum': 0.85,
+            'Ladder Momentum (1-2-3)': 0.7, 'Ladder Momentum (X-Y-XX-Y)': 0.6
         }
+        
+        # Memory Logic: Stores patterns that have failed prediction
+        # { 'pattern_name': count_of_failures_in_current_room }
+        self.memory_blocked_patterns = {}
+        self.MEMORY_BLOCK_THRESHOLD = 2 # Block pattern if it failed this many times
 
-    def reset_engine_state(self):
-        """รีเซ็ตสถานะการเรียนรู้ทั้งหมดของ Engine (ไม่รวม history)"""
-        for stats in [self.pattern_stats, self.momentum_stats]:
-            for key in stats:
-                stats[key] = {'success': 0, 'fail': 0}
-        self.memory_blocked_patterns.clear()
-        self.trap_zone_active = False
+        # Context from the last prediction attempt for learning
         self.last_prediction_context = {
             'prediction': '?',
             'patterns': [],
             'momentum': [],
-            'intuition_applied': False
+            'intuition_applied': False,
+            'predicted_by': None # Store which specific pattern/logic made the prediction
         }
-        self.backtest_results = {'hits': 0, 'misses': 0, 'total': 0, 'drawdown': 0, 'accuracy_pct': 0}
-        self.developer_view_components = []
 
-    def _group_outcomes(self, history_data):
-        """Helper: จัดกลุ่มผลลัพธ์ที่ติดกัน เช่น P, P, B, B, B -> [PP], [BBB]"""
-        if not history_data:
-            return []
-        
-        grouped_outcomes = []
-        current_group = []
-        
-        for item in history_data:
-            outcome = item['main_outcome']
-            if not current_group:
-                current_group.append(outcome)
-            elif outcome == current_group[-1]:
-                current_group.append(outcome)
-            else:
-                grouped_outcomes.append(''.join(current_group))
-                current_group = [outcome]
-        
-        if current_group: # Add the last group
-            grouped_outcomes.append(''.join(current_group))
-            
-        return grouped_outcomes
+        self.trap_zone_active = False # Flag for trap zone detection
 
-    # --- 🧬 DNA Pattern Analysis ---
-    def detect_dna_patterns(self, history_segment):
-        """
-        ตรวจจับรูปแบบ DNA เช่น Dragon, Pingpong, Two-Cut
-        """
-        patterns = []
-        if len(history_segment) < 4: # ต้องการประวัติอย่างน้อย 4 ตาสำหรับรูปแบบเบื้องต้น
-            return patterns
-
-        seq_str = ''.join([item['main_outcome'] for item in history_segment])
-        
-        # Pingpong (B-P-B-P) - ต้องมีอย่างน้อย 4 ตัวขึ้นไป
-        if len(seq_str) >= 4:
-            if seq_str[-4:] == 'PBPB' or seq_str[-4:] == 'BPBP':
-                patterns.append('Pingpong')
-            elif len(seq_str) >= 6 and (seq_str[-6:] == 'PBPBPB' or seq_str[-6:] == 'BPBPBP'):
-                 patterns.append('Pingpong') # Stronger pingpong
-
-        # Dragon (BBBBB...) - ต้องมีอย่างน้อย 4 ตัวขึ้นไป
-        if len(seq_str) >= 4:
-            if seq_str.endswith('BBBB') or seq_str.endswith('PPPP'):
-                patterns.append('Dragon')
-
-        # Two-Cut (BB-PP-BB-PP)
-        if len(seq_str) >= 4:
-            if seq_str.endswith('BBPP') or seq_str.endswith('PPBB'):
-                patterns.append('Two-Cut')
-        
-        # Triple-Cut (BBB-PPP)
-        if len(seq_str) >= 6:
-            if seq_str.endswith('BBBPPP') or seq_str.endswith('PPPBBB'):
-                patterns.append('Triple-Cut')
-        
-        # One-Two Pattern (PBB / BPP)
-        if len(seq_str) >= 3:
-            if seq_str.endswith('PBB') or seq_str.endswith('BPP'):
-                patterns.append('One-Two Pattern')
-        
-        # Two-One Pattern (PPB / BBP)
-        if len(seq_str) >= 3:
-            if seq_str.endswith('PPB') or seq_str.endswith('BBP'):
-                patterns.append('Two-One Pattern')
-        
-        # Broken Pattern (BPBPPBP) - การเปลี่ยนแปลงที่รวดเร็วหรือแตกแถว
-        # ตรวจสอบรูปแบบสลับที่คาดว่าจะกลับมาเป็นปกติ
-        if len(history_segment) >= 5:
-            last_5 = [item['main_outcome'] for item in history_segment[-5:]]
-            # Ex: PBBPP, PPBBP - indicating a broken streak/pattern
-            if (last_5 == ['P','B','B','P','P'] or last_5 == ['B','P','P','B','B'] or
-                last_5 == ['P','P','B','B','P'] or last_5 == ['B','B','P','P','B']):
-                patterns.append('Broken Pattern')
-
-        return patterns
-
-    # --- 🚀 Momentum Tracker ---
-    def detect_momentum(self, history_segment):
-        """
-        ตรวจสอบแรงเหวี่ยง B3+, P3+
-        """
-        momentum = []
-        if len(history_segment) < 3:
-            return momentum
-
-        last_outcome = history_segment[-1]['main_outcome']
-        streak_count = 1
-        for i in range(len(history_segment) - 2, -1, -1):
-            if history_segment[i]['main_outcome'] == last_outcome:
-                streak_count += 1
-            else:
-                break
-        
-        if streak_count >= 3:
-            momentum.append(f"{last_outcome}{streak_count}+ Momentum") # B3+ Momentum, P4+ Momentum etc.
-        
-        # Ladder Momentum (BB-P-BBB-P-BBBB) - ซับซ้อนมาก, require Big Road visualization
-        # สำหรับการตรวจจับแบบ linear จะทำได้ยาก
-        # เช่น history = BBB P BBB P BBBB
-        # current_groups = self._group_outcomes(history_segment)
-        # if len(current_groups) >= 3:
-        #     # Simplified check: streaks growing with single interruptions
-        #     # Example: ['BB', 'P', 'BBB', 'P', 'BBBB']
-        #     # This requires more robust pattern recognition than simple string matching
-        #     pass 
-
-        return momentum
-
-    # --- ⚠️ Trap Zone Detection ---
-    def detect_trap_zone(self, history_segment):
-        """
-        ตรวจจับโซนอันตราย (Zone เปลี่ยนเร็ว)
-        """
-        self.trap_zone_active = False
-        if len(history_segment) < 2:
-            return
-
-        last_2 = ''.join([item['main_outcome'] for item in history_segment[-2:]])
-        last_4 = ''.join([item['main_outcome'] for item in history_segment[-4:]])
-        last_5 = ''.join([item['main_outcome'] for item in history_segment[-5:]])
-
-        # P1-B1, B1-P1 (ไม่เสถียร)
-        if last_2 == 'PB' or last_2 == 'BP':
-            self.trap_zone_active = True
-            self.developer_view_components.append("⚠️ Trap: P1-B1/B1-P1 (ไม่เสถียร)")
-            return
-
-        # B3-P1 หรือ P3-B1 → เสี่ยงกลับตัว
-        if len(history_segment) >= 4:
-            if (last_4 == 'BBBP' or last_4 == 'PPPB'):
-                self.trap_zone_active = True
-                self.developer_view_components.append("⚠️ Trap: B3-P1/P3-B1 (เสี่ยงกลับตัว)")
-                return
-        
-        # Pingpong (PBPB) - หาก Pingpong แตก หรือมีการสลับที่รวดเร็ว
-        # ตรวจจับ PBPBP หรือ BPBPB ที่ยาวแล้วเกิดการสลับอีกครั้งทันที
-        if len(history_segment) >= 5:
-            if (last_5 == 'PBPBP' or last_5 == 'BPBPB'): # ถ้ามี Pingpong ยาวๆ
-                # และเกิดการสลับอีกครั้ง
-                if len(history_segment) >= 6 and (history_segment[-6]['main_outcome'] == last_5[0]):
-                    self.trap_zone_active = True
-                    self.developer_view_components.append("⚠️ Trap: Pingpong Breaking")
-                    return
-
-
-    # --- 🎯 Confidence Engine ---
-    def calculate_confidence(self, patterns, momentum):
-        """
-        ระบบประเมินความมั่นใจจากความถี่รูปแบบซ้ำ, Momentum เสถียรหรือไม่, Trap Zone มีหรือไม่
-        """
-        total_score = 0
-        total_weight_sum = 0
-
-        # จาก DNA Patterns
-        for p_name in patterns:
-            if p_name in self.pattern_stats:
-                stats = self.pattern_stats[p_name]
-                if (stats['success'] + stats['fail']) > 0:
-                    success_rate = stats['success'] / (stats['success'] + stats['fail'])
-                    total_score += success_rate * self.pattern_weights.get(p_name, 0.5)
-                else: # ไม่เคยเกิด ให้ค่าเริ่มต้น
-                    total_score += self.pattern_weights.get(p_name, 0.5)
-                total_weight_sum += self.pattern_weights.get(p_name, 0.5)
-
-        # จาก Momentum
-        for m_name in momentum:
-            if m_name in self.momentum_stats:
-                stats = self.momentum_stats[m_name]
-                if (stats['success'] + stats['fail']) > 0:
-                    success_rate = stats['success'] / (stats['success'] + stats['fail'])
-                    total_score += success_rate * self.momentum_weights.get(m_name, 0.5)
-                else:
-                    total_score += self.momentum_weights.get(m_name, 0.5)
-                total_weight_sum += self.momentum_weights.get(m_name, 0.5)
-
-        # หากไม่มี Pattern หรือ Momentum ที่ตรวจจับได้เลย
-        if total_weight_sum == 0:
-            confidence = 50 # Default confidence if no patterns/momentum
-        else:
-            confidence = (total_score / total_weight_sum) * 100
-        
-        # ลด Confidence หากอยู่ใน Trap Zone
-        if self.trap_zone_active:
-            confidence *= 0.5 # ลดลง 50%
-            self.developer_view_components.append(f"Confidence reduced by Trap Zone.")
-
-        return round(confidence)
-
-    # --- 🔁 Memory Logic ---
-    def apply_memory_logic(self, current_prediction_candidate, active_patterns, active_momentum):
-        """
-        จดจำ Pattern ที่เคยพลาดในห้องเดียวกัน และไม่ใช้ซ้ำ Pattern เดิมที่ทำให้พลาด ≥ 2 ครั้ง
-        คืนค่าเป็น None หากถูก Memory Logic บล็อก หรือคืนค่าเดิมหากไม่ถูกบล็อก
-        """
-        relevant_patterns = active_patterns + active_momentum
-        
-        for pattern_name in relevant_patterns:
-            if pattern_name in self.memory_blocked_patterns:
-                failures_count = self.memory_blocked_patterns[pattern_name]['failures']
-                
-                # หาก Pattern นี้เคยทำให้พลาด ≥ 2 ครั้ง และกำลังจะทำนายเหมือนเดิม
-                if failures_count >= 2:
-                    self.developer_view_components.append(f"Memory Logic: Pattern '{pattern_name}' blocked (Failures: {failures_count})")
-                    return None # บล็อกการทำนายที่มาจาก Pattern นี้
-
-        return current_prediction_candidate
-
-    # --- 🧠 Intuition Logic ---
-    def apply_intuition_logic(self, history_segment):
-        """
-        หากไม่มี Pattern เด่น → ใช้ตรรกะขั้นสูง เช่น PBP → P
-        """
-        if len(history_segment) < 3:
-            return None
-
-        seq_str = ''.join([item['main_outcome'] for item in history_segment[-5:]]) # ดู 5 ตาหลัง
-
-        # PBP → P (Double Confirmed)
-        if seq_str.endswith('PBP'):
-            self.developer_view_components.append("Intuition: PBP -> P")
-            return 'P'
-        
-        # BBPBB → B (Reverse Trap) - ควรจะเป็น B-B-P-B-B
-        if seq_str.endswith('BBPBB'):
-            self.developer_view_components.append("Intuition: BBPBB -> B")
-            return 'B'
-
-        # 2P1B2P → P (Zone Flow) - ควรจะเป็น P-P-B-P-P
-        if seq_str.endswith('PPBPP'):
-            self.developer_view_components.append("Intuition: PPBPP -> P")
-            return 'P'
-        
-        # Steady Repeat: (PBPBPBP → จะกลับมาที่ P) - ถ้าเป็น Pingpong ยาวๆ แล้วถึงจุดที่คาดว่า Pingpong จะจบแล้วจะออกอะไร
-        # ถ้ามี PBPBPB (6 ตา) และกำลังจะออก B แต่คาดว่าจะเป็น P
-        if len(history_segment) >= 6:
-            last_6 = ''.join([item['main_outcome'] for item in history_segment[-6:]])
-            if last_6 == 'PBPBPB' and history_segment[-1]['main_outcome'] == 'B':
-                self.developer_view_components.append("Intuition: Steady Repeat (PBPBPB)")
-                return 'P' # คาดว่าจะกลับมาที่ P
-            elif last_6 == 'BPBPBP' and history_segment[-1]['main_outcome'] == 'P':
-                self.developer_view_components.append("Intuition: Steady Repeat (BPBPBP)")
-                return 'B' # คาดว่าจะกลับมาที่ B
-
-        return None # ไม่มี Intuition ที่ชัดเจน
-
-    # --- 🔬 Backtest Simulation ---
-    def _run_backtest_simulation(self, history_data):
-        """
-        ทดสอบผลย้อนหลังมือ #11–ปัจจุบัน คำนวณ Hit / Miss % และ Drawdown
-        history_data: ประวัติทั้งหมดที่ส่งมาจาก Streamlit
-        """
-        hits = 0
-        misses = 0
-        current_drawdown = 0
-        max_drawdown = 0
-        
-        # เริ่ม Backtest ตั้งแต่มือที่ 11
-        if len(history_data) < 11:
-            return {'hits': 0, 'misses': 0, 'total': 0, 'drawdown': 0, 'accuracy_pct': 0}
-
-        for i in range(10, len(history_data)): # เริ่มจาก index 10 (มือที่ 11)
-            segment = history_data[:i] # ประวัติที่ใช้ทำนายถึงมือปัจจุบัน
-            
-            # Simplified prediction for backtest:
-            patterns = self.detect_dna_patterns(segment)
-            momentum = self.detect_momentum(segment)
-            
-            simulated_prediction = '?'
-            if patterns or momentum:
-                last_outcome = segment[-1]['main_outcome']
-                if 'Dragon' in patterns:
-                    simulated_prediction = last_outcome
-                elif 'Pingpong' in patterns:
-                    simulated_prediction = 'B' if last_outcome == 'P' else 'P'
-                elif 'B3+ Momentum' in momentum and last_outcome == 'B':
-                    simulated_prediction = 'B'
-                elif 'P3+ Momentum' in momentum and last_outcome == 'P':
-                    simulated_prediction = 'P'
-                elif 'Two-Cut' in patterns: # Two-Cut typically suggests continuation
-                    simulated_prediction = last_outcome
-                elif 'Triple-Cut' in patterns: # Triple-Cut typically suggests continuation
-                    simulated_prediction = last_outcome
-                else:
-                    simulated_prediction = random.choice(['P', 'B']) # Fallback if no specific pattern for backtest
-            else:
-                simulated_prediction = random.choice(['P', 'B']) # Fallback for backtest
-            
-            actual_outcome = history_data[i]['main_outcome'] # Get actual outcome from full history
-
-            if simulated_prediction != '?' and simulated_prediction == actual_outcome:
-                hits += 1
-                current_drawdown = 0 # Reset drawdown on hit
-            elif simulated_prediction != '?' and actual_outcome != 'T' and simulated_prediction != actual_outcome:
-                misses += 1
-                current_drawdown += 1
-            
-            max_drawdown = max(max_drawdown, current_drawdown)
-
-        total_games = hits + misses
-        accuracy_pct = (hits / total_games * 100) if total_games > 0 else 0
-
-        self.backtest_results = {
-            'hits': hits,
-            'misses': misses,
-            'total': total_games,
-            'drawdown': max_drawdown,
-            'accuracy_pct': round(accuracy_pct, 1)
-        }
-        return self.backtest_results
-
-    # --- การอัปเดตการเรียนรู้ (เมื่อทราบผลลัพธ์จริง) ---
-    def update_learning_state(self, actual_outcome):
-        """
-        อัปเดตสถิติและ Memory Logic จากผลการทำนายครั้งล่าสุด
-        (นี้ถูกเรียกจาก Streamlit เมื่อเพิ่มผลลัพธ์)
-        """
-        predicted_outcome = self.last_prediction_context['prediction']
-        patterns_detected = self.last_prediction_context['patterns']
-        momentum_detected = self.last_prediction_context['momentum']
-
-        if predicted_outcome != '?' and actual_outcome != 'T': # ไม่นับผลเสมอในการเรียนรู้
-            if predicted_outcome == actual_outcome:
-                # ทำนายถูก: อัปเดต success count
-                for p_name in patterns_detected:
-                    if p_name in self.pattern_stats:
-                        self.pattern_stats[p_name]['success'] += 1
-                for m_name in momentum_detected:
-                    if m_name in self.momentum_stats:
-                        self.momentum_stats[m_name]['success'] += 1
-                # หากเคยถูกบล็อกด้วย Memory Logic, อาจจะ reset counter หรือลดค่าลง
-                # (สำหรับเวอร์ชั่นนี้ เราจะยังไม่ลดค่า เพื่อให้มัน "จำ" ได้นานขึ้น)
-            else:
-                # ทำนายผิด: อัปเดต fail count และ Memory Logic
-                for p_name in patterns_detected:
-                    if p_name in self.pattern_stats:
-                        self.pattern_stats[p_name]['fail'] += 1
-                        self.memory_blocked_patterns.setdefault(p_name, {'failures': 0, 'last_failed_outcome': predicted_outcome})['failures'] += 1
-                        self.memory_blocked_patterns[p_name]['last_failed_outcome'] = predicted_outcome
-                for m_name in momentum_detected:
-                    if m_name in self.momentum_stats:
-                        self.momentum_stats[m_name]['fail'] += 1
-                        self.memory_blocked_patterns.setdefault(m_name, {'failures': 0, 'last_failed_outcome': predicted_outcome})['failures'] += 1
-                        self.memory_blocked_patterns[m_name]['last_failed_outcome'] = predicted_outcome
-        
-        # หลังจากการเรียนรู้ ก็เคลียร์ last_prediction_context
-        self.last_prediction_context = { 
+    def reset_history(self):
+        """Resets all learning states and prediction contexts."""
+        for perf_dict in [self.pattern_performance, self.momentum_performance, self.intuition_performance]:
+            for key in perf_dict:
+                perf_dict[key]['success'] = 0
+                perf_dict[key]['fail'] = 0
+        self.memory_blocked_patterns.clear()
+        self.last_prediction_context = {
             'prediction': '?',
             'patterns': [],
             'momentum': [],
-            'intuition_applied': False
+            'intuition_applied': False,
+            'predicted_by': None
         }
+        self.trap_zone_active = False
 
+    def get_success_rate(self, perf_dict, key):
+        """Calculates success rate for a given pattern/momentum."""
+        stats = perf_dict.get(key, {'success': 0, 'fail': 0})
+        total = stats['success'] + stats['fail']
+        return stats['success'] / total if total > 0 else 0.5 # Default to 0.5 if no data
 
-    # --- Core Prediction Engine ---
-    def predict_next(self, history_data): # history_data is now an argument
+    def get_weighted_success_rate(self, perf_dict, key, base_weight):
+        """Calculates weighted success rate for confidence calculation."""
+        success_rate = self.get_success_rate(perf_dict, key)
+        return success_rate * base_weight
+
+    # --- 1. 🧬 DNA Pattern Analysis ---
+    def detect_dna_patterns(self, history):
         """
-        ประมวลผลการทำนายผลลัพธ์ถัดไปตามระบบ ORACLE 7 ขั้นตอน
-        history_data: ประวัติทั้งหมดที่ส่งมาจาก Streamlit
+        Detects common Baccarat patterns in the history.
+        Args:
+            history (list): List of dicts, each with 'main_outcome' (P, B, or T).
+        Returns:
+            list: List of detected pattern names.
         """
-        self.developer_view_components = [] # Reset developer view for this prediction cycle
+        patterns = []
+        if len(history) < 4: # Need at least 4 for basic patterns like Pingpong/Two-Cut
+            return patterns
+
+        # Get last 15 outcomes for pattern detection to be more robust
+        seq = ''.join([item['main_outcome'] for item in history[-15:] if item['main_outcome'] != 'T']) # Exclude Ties for core patterns
+
+        # Pingpong (e.g., PBPB, BPBP - at least 3 alternations)
+        if len(seq) >= 6 and (seq.endswith('PBPBPB') or seq.endswith('BPBPBP')):
+            patterns.append('Pingpong')
+        elif len(seq) >= 4 and (seq.endswith('PBPB') or seq.endswith('BPBP')):
+            patterns.append('Pingpong') # Shorter pingpong, lower confidence later
+
+        # Dragon (e.g., BBBBB..., PPPPP... - at least 4 consecutive)
+        if len(seq) >= 4:
+            if seq.endswith('BBBB'): patterns.append('Dragon')
+            if seq.endswith('PPPP'): patterns.append('Dragon')
         
-        # 1. รับ Input จากผู้ใช้ (ต้องมีประวัติอย่างน้อย 20 ตา)
-        if len(history_data) < 20:
-            # Note: This return is typically handled by Streamlit's UI logic,
-            # but it's kept here for completeness if predict_next is called directly.
+        # Two-Cut (e.g., BBPP or PPBB - at least 2 pairs)
+        if len(seq) >= 4:
+            if seq.endswith('BBPP'): patterns.append('Two-Cut')
+            if seq.endswith('PPBB'): patterns.append('Two-Cut')
+        
+        # Triple-Cut (e.g., BBBPPP or PPPBBB - at least 3 pairs)
+        if len(seq) >= 6:
+            if seq.endswith('BBBPPP'): patterns.append('Triple-Cut')
+            if seq.endswith('PPPBBB'): patterns.append('Triple-Cut')
+
+        # One-Two Pattern (e.g., P BB P BB or B PP B PP) - looks for alternating singles and doubles
+        if len(seq) >= 5:
+            if seq.endswith('PBBBB') or seq.endswith('BPBBB'): patterns.append('One-Two Pattern') # P-BB-P-BB
+            if seq.endswith('BPPPP') or seq.endswith('PBPPH'): patterns.append('Two-One Pattern') # B-PP-B-PP
+
+        # Broken Pattern (e.g., PPPPBB, BBPPBB) - indicates disruption in streak/pattern
+        if len(seq) >= 4:
+            if 'PPPB' in seq or 'BBBP' in seq: # A streak abruptly broken
+                patterns.append('Broken Pattern')
+        
+        # FollowStreak (Simple continuation, often implies trend following)
+        if len(seq) >= 3 and (seq[-1] == seq[-2] == seq[-3]):
+            patterns.append('FollowStreak') # e.g. BBB, PPP
+        
+        return list(set(patterns)) # Return unique patterns
+
+    # --- 2. 🚀 Momentum Tracker ---
+    def detect_momentum(self, history):
+        """
+        Detects momentum in the history.
+        Args:
+            history (list): List of dicts, each with 'main_outcome' (P, B, or T).
+        Returns:
+            list: List of detected momentum names.
+        """
+        momentum = []
+        if len(history) < 3: # Need at least 3 for basic momentum
+            return momentum
+
+        # Exclude Ties for streak calculation
+        relevant_history = [item['main_outcome'] for item in history if item['main_outcome'] != 'T']
+        if len(relevant_history) < 3:
+            return momentum
+
+        last_outcome = relevant_history[-1]
+        streak = 1
+        for i in range(len(relevant_history)-2, -1, -1):
+            if relevant_history[i] == last_outcome:
+                streak += 1
+            else:
+                break
+        
+        # B3+ Momentum / P3+ Momentum (any streak >= 3)
+        if streak >= 3:
+            momentum.append(f"{last_outcome}{streak}+ Momentum")
+
+        # Steady Repeat Momentum (e.g., PBPBPBP -> expect P)
+        # This requires more advanced pattern recognition, not just streak
+        # For a simplified linear check, if recent sequence is alternating and long, it's steady
+        if len(relevant_history) >= 6:
+            recent_seq = ''.join(relevant_history[-6:])
+            if recent_seq == 'PBPBPB' or recent_seq == 'BPBPBP':
+                momentum.append('Steady Repeat Momentum')
+
+        # Ladder Momentum (1-2-3) e.g., P, PP, PPP
+        # This is very complex to detect linearly without Big Road logic (columns)
+        # We will skip direct linear detection for now, as it's unreliable without board view.
+        # If implemented, it would check for increasing lengths of streaks/groups.
+
+        return list(set(momentum)) # Return unique momentum indicators
+
+    # --- 3. ⚠️ Trap Zone Detection ---
+    def detect_trap_zone(self, history):
+        """
+        Detects unstable or risky patterns that indicate a trap zone.
+        Args:
+            history (list): List of dicts, each with 'main_outcome' (P, B, or T).
+        Returns:
+            str or None: Name of the trap zone if detected, otherwise None.
+        """
+        self.trap_zone_active = False
+        if len(history) < 3: # Need at least 3 hands for trap
+            return None
+        
+        seq = ''.join([item['main_outcome'] for item in history[-3:] if item['main_outcome'] != 'T']) # Look at last 3 non-tie outcomes
+
+        # P1-B1 or B1-P1 (highly unstable, alternating singles)
+        if seq == 'PBP' or seq == 'BPPB' : # More robust detection for P1-B1
+            self.trap_zone_active = True
+            return 'P1-B1 Trap (Unstable)'
+        
+        # B3-P1 or P3-B1 (strong streak suddenly broken, high risk of reversal)
+        if len(history) >= 4:
+            recent_outcomes = [item['main_outcome'] for item in history[-4:] if item['main_outcome'] != 'T']
+            if len(recent_outcomes) >= 4:
+                if recent_outcomes == ['B', 'B', 'B', 'P']:
+                    self.trap_zone_active = True
+                    return 'B3-P1 Trap (Reversal Risk)'
+                if recent_outcomes == ['P', 'P', 'P', 'B']:
+                    self.trap_zone_active = True
+                    return 'P3-B1 Trap (Reversal Risk)'
+        
+        # Pingpong Breaking (e.g., PBPBPB -> then P or B, breaking the pingpong)
+        if len(history) >= 7:
+            recent_seq_full = ''.join([item['main_outcome'] for item in history[-7:] if item['main_outcome'] != 'T'])
+            if len(recent_seq_full) >= 7:
+                # Check for a pingpong that just ended
+                if (recent_seq_full[:-1] == 'PBPBPB' and recent_seq_full[-1] == 'B') or \
+                   (recent_seq_full[:-1] == 'BPBPBP' and recent_seq_full[-1] == 'P'):
+                    self.trap_zone_active = True
+                    return 'Pingpong Breaking Trap'
+
+        return None
+
+    # --- 4. 🎯 Confidence Engine ---
+    def calculate_confidence(self, detected_patterns, detected_momentum, intuition_applied=False):
+        """
+        Calculates a confidence score based on detected patterns, momentum, and trap zone.
+        Uses actual success rates of detected indicators.
+        Args:
+            detected_patterns (list): List of detected patterns.
+            detected_momentum (list): List of detected momentum.
+            intuition_applied (bool): True if intuition logic was used for prediction.
+        Returns:
+            int: Confidence score (0-100).
+        """
+        total_weighted_score = 0
+        total_weight_sum = 0
+
+        # Patterns contribute to confidence
+        for p in detected_patterns:
+            if p in self.pattern_weights:
+                weighted_rate = self.get_weighted_success_rate(self.pattern_performance, p, self.pattern_weights[p])
+                total_weighted_score += weighted_rate
+                total_weight_sum += self.pattern_weights[p]
+        
+        # Momentum contributes to confidence
+        for m in detected_momentum:
+            if m in self.momentum_weights:
+                weighted_rate = self.get_weighted_success_rate(self.momentum_performance, m, self.momentum_weights[m])
+                total_weighted_score += weighted_rate
+                total_weight_sum += self.momentum_weights[m]
+
+        # Intuition logic reduces confidence slightly if it was the primary predictor
+        if intuition_applied:
+            # Assign a lower "weight" to intuition itself, or apply a penalty
+            # For simplicity, we can apply a flat penalty if intuition was the primary driver
+            total_weighted_score *= 0.8 # Reduce score if intuition was the sole driver
+            total_weight_sum = max(1, total_weight_sum) # Ensure no division by zero
+
+        confidence_base = (total_weighted_score / total_weight_sum) if total_weight_sum > 0 else 0.5
+        
+        # Apply Trap Zone penalty
+        if self.trap_zone_active:
+            confidence_base *= 0.5 # Halve confidence if in a trap zone
+
+        return round(confidence_base * 100)
+
+    # --- 5. 🔁 Memory Logic ---
+    def apply_memory_logic(self, detected_patterns, detected_momentum, predicted_outcome):
+        """
+        Checks if the current prediction should be blocked based on past failures
+        of the active patterns/momentum in this 'room'.
+        Args:
+            detected_patterns (list): Patterns identified for the current prediction.
+            detected_momentum (list): Momentum identified for the current prediction.
+            predicted_outcome (str): The outcome that was initially predicted.
+        Returns:
+            bool: True if the prediction should be blocked, False otherwise.
+        """
+        active_indicators = detected_patterns + detected_momentum
+        
+        for indicator in active_indicators:
+            # If this indicator has failed at least MEMORY_BLOCK_THRESHOLD times
+            # and was part of the previous incorrect prediction
+            if self.memory_blocked_patterns.get(indicator, 0) >= self.MEMORY_BLOCK_THRESHOLD:
+                # This is a simplified memory logic. A more advanced one would
+                # check if this specific indicator, when predicting 'X', failed 'Y' times.
+                # For now, if any contributing indicator is blocked, we block the prediction.
+                return True
+        return False
+
+    # --- 6. 🧠 Intuition Logic ---
+    def apply_intuition_logic(self, history):
+        """
+        Applies advanced intuition logic when no clear patterns are found.
+        Args:
+            history (list): List of dicts, each with 'main_outcome'.
+        Returns:
+            str or None: Predicted outcome (P, B) if intuition applies, otherwise None.
+        """
+        if len(history) < 3: # Need at least 3 for intuition
+            return None
+        
+        seq = ''.join([item['main_outcome'] for item in history[-5:] if item['main_outcome'] != 'T']) # Last 5 non-tie outcomes
+
+        if len(seq) < 3: return None
+
+        # PBP -> P (Double Confirmed)
+        if seq.endswith('PBP') and len(seq) >= 3:
+            return {'prediction': 'P', 'reason': 'PBP -> P'}
+        # BBPBB -> B (Reverse Trap) - indicates a strong trend overcoming a single anomaly
+        if seq.endswith('BBPBB') and len(seq) >= 5:
+            return {'prediction': 'B', 'reason': 'BBPBB -> B'}
+        # PPBPP -> P (Zone Flow) - similar to BBPBB but for P
+        if seq.endswith('PPBPP') and len(seq) >= 5:
+            return {'prediction': 'P', 'reason': 'PPBPP -> P'}
+
+        # Steady Outcome Guess: If the last few outcomes are mostly one type, and it's not a strong streak
+        # For instance, in the last 5 non-tie outcomes, if 4 are P and 1 is B, guess P.
+        if len(seq) >= 5:
+            p_count = seq.count('P')
+            b_count = seq.count('B')
+            if p_count >= 4 and b_count <= 1:
+                return {'prediction': 'P', 'reason': 'Steady Outcome Guess (P)'}
+            if b_count >= 4 and p_count <= 1:
+                return {'prediction': 'B', 'reason': 'Steady Outcome Guess (B)'}
+
+        return None
+
+    # --- 7. 🔬 Backtest Simulation ---
+    def _run_backtest_simulation(self, full_history):
+        """
+        Performs a backtest simulation on the history from hand #11 onwards.
+        This re-runs predictions and updates learning for the backtest period
+        to calculate accuracy and drawdown.
+        Args:
+            full_history (list): The complete history of outcomes.
+        Returns:
+            tuple: (accuracy_percentage, hit_count, miss_count, max_drawdown_alert)
+        """
+        if len(full_history) < 20: # Need at least 20 hands for meaningful backtest (10 for base, then 10 for backtest)
+            return "N/A", 0, 0, False
+
+        # Create a temporary, clean engine for backtesting
+        temp_engine = OracleEngine()
+        hit_count = 0
+        miss_count = 0
+        current_drawdown = 0
+        max_drawdown_alert = False # True if drawdown >= 3 misses
+
+        # Populate initial 10 hands for BASE
+        for i in range(10):
+            temp_engine.update_learning_state_for_backtest(full_history[i]['main_outcome'], None) # No prediction made yet
+
+        # Start backtesting from hand #11 (index 10)
+        for i in range(10, len(full_history)):
+            history_for_prediction = full_history[:i] # History up to the hand BEFORE the current one
+            actual_outcome = full_history[i]['main_outcome']
+
+            # Make a prediction with the temp_engine based on available history
+            prediction_result = temp_engine.predict_next(history_for_prediction, is_backtest=True)
+            predicted_outcome = prediction_result['prediction']
+
+            # Update learning state of the temp_engine for the actual outcome of this hand
+            temp_engine.update_learning_state_for_backtest(actual_outcome, predicted_outcome, prediction_result.get('patterns', []), prediction_result.get('momentum', []), prediction_result.get('intuition_applied', False))
+
+            # Compare prediction with actual outcome for backtest metrics
+            if predicted_outcome != '?' and predicted_outcome != '⚠️' and actual_outcome != 'T': # Only count if a valid prediction was made and not a Tie
+                if predicted_outcome == actual_outcome:
+                    hit_count += 1
+                    current_drawdown = 0 # Reset drawdown on a hit
+                else:
+                    miss_count += 1
+                    current_drawdown += 1
+                    if current_drawdown >= 3: # Alert if 3 or more consecutive misses
+                        max_drawdown_alert = True
+            
+            # Reset temp_engine's last_prediction_context for the next iteration
+            temp_engine.last_prediction_context = {
+                'prediction': predicted_outcome,
+                'patterns': prediction_result.get('patterns', []),
+                'momentum': prediction_result.get('momentum', []),
+                'intuition_applied': prediction_result.get('intuition_applied', False),
+                'predicted_by': prediction_result.get('predicted_by', None)
+            }
+
+
+        total_predictions = hit_count + miss_count
+        accuracy = (hit_count / total_predictions * 100) if total_predictions > 0 else 0.0
+
+        return f"{accuracy:.1f}% ({hit_count}/{total_predictions})", hit_count, miss_count, max_drawdown_alert
+
+
+    # --- Main Prediction Logic ---
+    def predict_next(self, history, is_backtest=False):
+        """
+        Analyzes the given history and predicts the next outcome.
+        Args:
+            history (list): The complete history of outcomes up to the current point.
+            is_backtest (bool): Flag to indicate if this call is part of a backtest simulation.
+        Returns:
+            dict: Contains prediction, recommendation, risk, developer_view, accuracy.
+        """
+        # Ensure enough data for meaningful analysis
+        if len(history) < 20: # Requires at least 20 hands for full analysis and backtest
             return {
                 'prediction': '?',
                 'recommendation': 'Avoid ❌',
                 'risk': 'Not enough data',
-                'accuracy': 'N/A',
-                'developer_view': 'Not enough data for analysis'
+                'developer_view': 'Not enough data for full analysis. Requires at least 20 hands.',
+                'accuracy': 'N/A'
             }
+        
+        # --- 1. DNA Pattern Analysis ---
+        patterns = self.detect_dna_patterns(history)
+        
+        # --- 2. Momentum Tracker ---
+        momentum = self.detect_momentum(history)
 
-        history_segment = history_data[-30:] # วิเคราะห์จาก 30 ตาหลังสุด
+        # --- 3. Trap Zone Detection ---
+        trap_zone_name = self.detect_trap_zone(history)
+        self.trap_zone_active = (trap_zone_name is not None)
 
-        # 2. 🧬 DNA Pattern Analysis
-        patterns_detected = self.detect_dna_patterns(history_segment)
-        self.developer_view_components.append(f"DNA Patterns: {', '.join(patterns_detected) if patterns_detected else 'None'}")
+        # --- 4. 🎯 Confidence Engine ---
+        # Calculate confidence based on currently detected patterns and momentum
+        confidence = self.calculate_confidence(patterns, momentum)
 
-        # 3. 🚀 Momentum Tracker
-        momentum_detected = self.detect_momentum(history_segment)
-        self.developer_view_components.append(f"Momentum: {', '.join(momentum_detected) if momentum_detected else 'None'}")
-
-        # 4. ⚠️ Trap Zone Detection
-        self.detect_trap_zone(history_segment) # จะตั้งค่า self.trap_zone_active และเพิ่มข้อความลง dev_view_components เอง
-
-        # 5. 🎯 Confidence Engine
-        confidence = self.calculate_confidence(patterns_detected, momentum_detected)
-        self.developer_view_components.append(f"Confidence: {confidence}%")
-
-        # กำหนดค่าเริ่มต้นการทำนาย
         prediction = '?'
         recommendation = 'Avoid ❌'
         risk = 'Normal'
-        intuition_applied = False
+        predicted_by_logic = "None"
+        intuition_applied_flag = False
 
-        # ตัดสินใจทำนายตาม Confidence
-        if confidence >= 60:
-            last_outcome = history_segment[-1]['main_outcome']
-            
-            # --- กลยุทธ์การทำนายหลัก (ตามลำดับความสำคัญ) ---
-            # Dragon (ลากยาว)
-            if 'Dragon' in patterns_detected:
-                prediction = last_outcome
-                self.developer_view_components.append(f"Predict by: Dragon ({last_outcome} continuation)")
-            # Momentum 3+ (แรงเหวี่ยง)
-            elif f"{last_outcome}3+ Momentum" in momentum_detected:
-                prediction = last_outcome
-                self.developer_view_components.append(f"Predict by: Momentum ({last_outcome} continuation)")
-            # Pingpong (สลับ)
-            elif 'Pingpong' in patterns_detected:
-                prediction = 'B' if last_outcome == 'P' else 'P'
-                self.developer_view_components.append(f"Predict by: Pingpong (Opposite of {last_outcome})")
-            # Two-Cut (สองตัด)
-            elif 'Two-Cut' in patterns_detected:
-                prediction = last_outcome # คาดว่าจะออกซ้ำชุดที่สอง
-                self.developer_view_components.append(f"Predict by: Two-Cut ({last_outcome} continuation)")
-            # Triple-Cut (สามตัด)
-            elif 'Triple-Cut' in patterns_detected:
-                prediction = last_outcome # คาดว่าจะออกซ้ำชุดที่สอง
-                self.developer_view_components.append(f"Predict by: Triple-Cut ({last_outcome} continuation)")
-            # One-Two Pattern
-            elif 'One-Two Pattern' in patterns_detected:
-                # PBB -> P, BPP -> B (predicts the single opposite)
-                if len(history_segment) >= 3:
-                    if history_segment[-3]['main_outcome'] == 'P' and history_segment[-2]['main_outcome'] == 'B' and last_outcome == 'B':
-                        prediction = 'P'
-                    elif history_segment[-3]['main_outcome'] == 'B' and history_segment[-2]['main_outcome'] == 'P' and last_outcome == 'P':
-                        prediction = 'B'
-                    else: prediction = random.choice(['P', 'B']) # Fallback if not clear or not this exact pattern
-                else: prediction = random.choice(['P', 'B'])
-                self.developer_view_components.append(f"Predict by: One-Two Pattern ({prediction})")
-            # Two-One Pattern
-            elif 'Two-One Pattern' in patterns_detected:
-                # PPB -> P, BBP -> B (predicts continuation of the pair)
-                if len(history_segment) >= 3:
-                    if history_segment[-3]['main_outcome'] == 'P' and history_segment[-2]['main_outcome'] == 'P' and last_outcome == 'B':
-                        prediction = 'P'
-                    elif history_segment[-3]['main_outcome'] == 'B' and history_segment[-2]['main_outcome'] == 'B' and last_outcome == 'P':
-                        prediction = 'B'
-                    else: prediction = random.choice(['P', 'B']) # Fallback if not clear or not this exact pattern
-                else: prediction = random.choice(['P', 'B'])
-                self.developer_view_components.append(f"Predict by: Two-One Pattern ({prediction})")
-            # หากไม่มี Pattern ชัดเจน แต่ Confidence สูงพอ ให้ลองใช้ Intuition
-            else:
-                intuition_pred = self.apply_intuition_logic(history_segment)
-                if intuition_pred:
-                    prediction = intuition_pred
-                    intuition_applied = True
-                else:
-                    prediction = random.choice(['P', 'B']) # Fallback หากไม่มีอะไรชัดเจน
-                    self.developer_view_components.append("Predict by: Random Fallback (No strong pattern/intuition)")
-            
-            # 6. 🔁 Memory Logic: ตรวจสอบว่าการทำนายนี้ถูกบล็อกหรือไม่
-            original_prediction = prediction
-            prediction_after_memory = self.apply_memory_logic(prediction, patterns_detected, momentum_detected)
-            
-            if prediction_after_memory is None: # หากถูก Memory Logic บล็อก
-                self.developer_view_components.append(f"Memory Logic Blocked: Original '{original_prediction}' rejected.")
-                # ลองใช้ Intuition Logic อีกครั้ง
-                intuition_pred = self.apply_intuition_logic(history_segment)
-                if intuition_pred and intuition_pred != original_prediction: # ต้องไม่เป็นผลเดิมที่ถูกบล็อก
-                    prediction = intuition_pred
-                    intuition_applied = True
-                    self.developer_view_components.append(f"Memory Logic: Fallback to Intuition ({prediction}).")
-                else:
-                    # หาก Intuition ก็ไม่ได้ หรือได้ผลเดิมที่ถูกบล็อก, ให้สุ่ม P/B
-                    prediction = random.choice(['P', 'B']) 
-                    if prediction == original_prediction and original_prediction != '?': # ถ้าสุ่มได้อันที่ถูกบล็อกอีก
-                         prediction = 'B' if original_prediction == 'P' else 'P' # สลับไปอีกฝั่งแทน
-                    self.developer_view_components.append(f"Memory Logic: Fallback to {prediction} after block.")
-                risk = 'Memory Rejection' # เปลี่ยน Risk level
-            else:
-                prediction = prediction_after_memory # Use the prediction passed through memory logic
-
-            # กำหนด Recommendation หลังจาก Memory Logic
-            if prediction in ['P', 'B']:
-                recommendation = 'Play ✅'
-                if intuition_applied:
-                    self.developer_view_components.append("Intuition Logic Applied.")
-            else:
-                recommendation = 'Avoid ❌'
-                risk = 'Low Confidence / Undetermined'
-
-        else: # Confidence < 60%
-            prediction = '⚠️' # ใช้ ⚠️ เพื่อบ่งบอกว่าไม่ควรเล่น
+        # --- Prediction Decision Flow ---
+        if self.trap_zone_active:
+            prediction = '⚠️' # No prediction, avoid
+            recommendation = 'Avoid ❌'
+            risk = f"Trap Zone: {trap_zone_name}"
+            predicted_by_logic = "Trap Zone"
+        elif confidence < 60: # If confidence is too low, avoid
+            prediction = '⚠️'
             recommendation = 'Avoid ❌'
             risk = 'Low Confidence'
-            self.developer_view_components.append("Confidence < 60%. Not playing.")
-        
-        # 7. 🔬 Backtest Simulation
-        backtest_results = self._run_backtest_simulation(history_data) # Pass full history_data
-        backtest_accuracy_str = f"{backtest_results['accuracy_pct']}% ({backtest_results['hits']}/{backtest_results['total']})"
-        self.developer_view_components.append(f"Backtest Accuracy: {backtest_accuracy_str}")
-        
-        # ตรวจสอบ Drawdown
-        if backtest_results['drawdown'] >= 3:
-            risk = 'Drawdown Alert'
-            recommendation = 'Avoid ❌'
-            self.developer_view_components.append(f"Drawdown Alert! (Max Drawdown: {backtest_results['drawdown']})")
+            predicted_by_logic = "Low Confidence"
+        else:
+            # Try to predict based on strong patterns/momentum
+            last_outcome = history[-1]['main_outcome']
+            
+            # Prioritize Dragon/FollowStreak
+            if 'Dragon' in patterns:
+                prediction = last_outcome
+                predicted_by_logic = "Dragon"
+            elif 'FollowStreak' in patterns:
+                prediction = last_outcome
+                predicted_by_logic = "FollowStreak"
+            elif 'Pingpong' in patterns:
+                prediction = 'B' if last_outcome == 'P' else 'P'
+                predicted_by_logic = "Pingpong"
+            elif 'Two-Cut' in patterns: # Two-Cut (e.g., BBPP) predicts continuation of the pair
+                # If last two were BB (from BBPP), predict P. If last two were PP (from PPBB), predict B.
+                # This needs careful sequence analysis, assuming the current detection focuses on ending.
+                # Simplified: if last two were same and part of two-cut, predict opposite of current outcome for next pair
+                if len(history) >= 2 and history[-1]['main_outcome'] == history[-2]['main_outcome']:
+                    prediction = 'B' if history[-1]['main_outcome'] == 'P' else 'P' # Predict for the next pair
+                else:
+                    prediction = last_outcome # Fallback
+                predicted_by_logic = "Two-Cut"
+            
+            # --- 5. 🔁 Memory Logic ---
+            # If a prediction was made, check against memory
+            if prediction != '?' and prediction != '⚠️':
+                if self.apply_memory_logic(patterns, momentum, prediction):
+                    prediction = '⚠️' # Blocked by memory logic
+                    risk = 'Memory Blocked'
+                    recommendation = 'Avoid ❌'
+                    predicted_by_logic = "Memory Logic Block"
+            
+            # --- 6. 🧠 Intuition Logic ---
+            # If still no prediction or blocked by memory, try intuition
+            if prediction == '?' or predicted_by_logic == "Memory Logic Block":
+                intuition_result = self.apply_intuition_logic(history)
+                if intuition_result:
+                    prediction = intuition_result['prediction']
+                    intuition_applied_flag = True
+                    predicted_by_logic = f"Intuition ({intuition_result['reason']})"
+                    # Confidence might need to be adjusted down for intuition, but not too low
+                    confidence = min(confidence, 80) # Cap intuition confidence if it was high
 
-        # ตรวจสอบ Trap Zone สุดท้าย
-        if self.trap_zone_active:
-            risk = 'Trap Zone'
-            recommendation = 'Avoid ❌'
-            self.developer_view_components.append("Final Risk: Trap Zone Detected.")
+            # Fallback to random if all else fails (should be rare if intuition is good)
+            if prediction == '?':
+                prediction = random.choice(['P', 'B']) # Simplified random for B or P
+                predicted_by_logic = "Random Fallback"
+                risk = "Low Confidence / Random"
+                recommendation = "Avoid ❌"
+
+            # Final check recommendation based on prediction and risk
+            if prediction not in ['?', '⚠️']:
+                if 'Memory Blocked' in risk or 'Low Confidence' in risk: # Only avoid if explicitly risky
+                    recommendation = 'Avoid ❌'
+                elif 'Drawdown Alert' in risk:
+                    recommendation = 'Avoid ❌'
+                else:
+                    recommendation = 'Play ✅'
+            else:
+                recommendation = 'Avoid ❌' # If prediction is '?' or '⚠️', always avoid
 
 
-        # จัดรูปแบบ Developer View
-        grouped_outcomes_str = ', '.join([f"[{g}]" for g in self._group_outcomes(history_segment)])
-        final_dev_view = f"{grouped_outcomes_str}; {'; '.join(self.developer_view_components)}"
+        # --- Store context for next learning step ---
+        # This is for the main app loop, not backtest.
+        # Backtest uses its own update_learning_state_for_backtest
+        if not is_backtest:
+            self.last_prediction_context = {
+                'prediction': prediction,
+                'patterns': patterns,
+                'momentum': momentum,
+                'intuition_applied': intuition_applied_flag,
+                'predicted_by': predicted_by_logic
+            }
 
-        # เก็บ context สำหรับการเรียนรู้ครั้งถัดไป
-        self.last_prediction_context = {
-            'prediction': prediction,
-            'patterns': patterns_detected,
-            'momentum': momentum_detected,
-            'intuition_applied': intuition_applied
-        }
+        # --- 7. 🔬 Backtest Simulation (run once per full prediction cycle) ---
+        accuracy_str, hit_count, miss_count, drawdown_alert = self._run_backtest_simulation(history)
+        if drawdown_alert:
+            risk = "Drawdown Alert" # Override risk if drawdown is severe
+            recommendation = "Avoid ❌"
 
-        # ✅ โครงสร้างผลลัพธ์ของระบบ
+        # --- Developer View ---
+        # Construct developer view string
+        dev_view_patterns = ', '.join(patterns) if patterns else 'None'
+        dev_view_momentum = ', '.join(momentum) if momentum else 'None'
+        dev_view_trap = trap_zone_name if trap_zone_name else 'None'
+
+        developer_view_str = (
+            f"Current History: {''.join([item['main_outcome'] for item in history[-10:]])}; "
+            f"DNA Patterns: {dev_view_patterns}; "
+            f"Momentum: {dev_view_momentum}; "
+            f"Trap Zone: {dev_view_trap}; "
+            f"Confidence: {confidence}%; "
+            f"Predicted by: {predicted_by_logic}; "
+            f"Backtest Accuracy: {accuracy_str}"
+        )
+
         return {
             'prediction': prediction,
             'recommendation': recommendation,
             'risk': risk,
-            'accuracy': backtest_accuracy_str,
-            'developer_view': final_dev_view
+            'developer_view': developer_view_str,
+            'accuracy': accuracy_str
         }
+
+    def update_learning_state(self, actual_outcome):
+        """
+        Updates the engine's learning states based on the actual outcome of the previous hand.
+        This method is called by the Streamlit app after each result is added.
+        Args:
+            actual_outcome (str): The actual outcome of the hand (P, B, or T).
+        """
+        predicted_outcome = self.last_prediction_context['prediction']
+        patterns_detected = self.last_prediction_context['patterns']
+        momentum_detected = self.last_prediction_context['momentum']
+        intuition_applied = self.last_prediction_context['intuition_applied']
+        predicted_by = self.last_prediction_context['predicted_by']
+
+        # Only update learning if a valid prediction was made (not '?' or '⚠️')
+        if predicted_outcome not in ['?', '⚠️']:
+            if actual_outcome == predicted_outcome:
+                # Prediction was correct
+                for p in patterns_detected:
+                    if p in self.pattern_performance:
+                        self.pattern_performance[p]['success'] += 1
+                for m in momentum_detected:
+                    if m in self.momentum_performance:
+                        self.momentum_performance[m]['success'] += 1
+                if intuition_applied and predicted_by and "Intuition" in predicted_by:
+                    key = predicted_by.replace("Intuition (", "").replace(")", "")
+                    if key in self.intuition_performance:
+                        self.intuition_performance[key]['success'] += 1
+                    else: # Handle new intuition reasons
+                        self.intuition_performance[key] = {'success': 1, 'fail': 0}
+
+                # If successful, remove from memory blocked (decay)
+                for indicator in patterns_detected + momentum_detected:
+                    if indicator in self.memory_blocked_patterns:
+                        self.memory_blocked_patterns[indicator] = max(0, self.memory_blocked_patterns[indicator] - 1) # Decay
+            else:
+                # Prediction was incorrect
+                for p in patterns_detected:
+                    if p in self.pattern_performance:
+                        self.pattern_performance[p]['fail'] += 1
+                for m in momentum_detected:
+                    if m in self.momentum_performance:
+                        self.momentum_performance[m]['fail'] += 1
+                if intuition_applied and predicted_by and "Intuition" in predicted_by:
+                    key = predicted_by.replace("Intuition (", "").replace(")", "")
+                    if key in self.intuition_performance:
+                        self.intuition_performance[key]['fail'] += 1
+                    else: # Handle new intuition reasons
+                        self.intuition_performance[key] = {'success': 0, 'fail': 1}
+                
+                # Add to memory blocked if it failed
+                for indicator in patterns_detected + momentum_detected:
+                    self.memory_blocked_patterns[indicator] = self.memory_blocked_patterns.get(indicator, 0) + 1
+
+        # Clear context after learning
+        self.last_prediction_context = {
+            'prediction': '?',
+            'patterns': [],
+            'momentum': [],
+            'intuition_applied': False,
+            'predicted_by': None
+        }
+
+    def update_learning_state_for_backtest(self, actual_outcome, predicted_outcome_for_backtest, patterns_detected=[], momentum_detected=[], intuition_applied=False):
+        """
+        Simplified update for backtesting, as it takes prediction and patterns directly.
+        Args:
+            actual_outcome (str): The actual outcome of the hand.
+            predicted_outcome_for_backtest (str): The outcome that was predicted for this hand during backtest.
+            patterns_detected (list): Patterns that led to this prediction.
+            momentum_detected (list): Momentum that led to this prediction.
+            intuition_applied (bool): True if intuition was used.
+        """
+        if predicted_outcome_for_backtest not in ['?', '⚠️']:
+            if actual_outcome == predicted_outcome_for_backtest:
+                for p in patterns_detected:
+                    if p in self.pattern_performance: self.pattern_performance[p]['success'] += 1
+                for m in momentum_detected:
+                    if m in self.momentum_performance: self.momentum_performance[m]['success'] += 1
+                if intuition_applied:
+                    # Logic for intuition success in backtest needs to be specific to its reason
+                    pass # Simplified, not tracking specific intuition reasons in backtest
+                for indicator in patterns_detected + momentum_detected:
+                    if indicator in self.memory_blocked_patterns:
+                        self.memory_blocked_patterns[indicator] = max(0, self.memory_blocked_patterns[indicator] - 1)
+            else:
+                for p in patterns_detected:
+                    if p in self.pattern_performance: self.pattern_performance[p]['fail'] += 1
+                for m in momentum_detected:
+                    if m in self.momentum_performance: self.momentum_performance[m]['fail'] += 1
+                if intuition_applied:
+                    # Logic for intuition fail in backtest
+                    pass # Simplified
+                for indicator in patterns_detected + momentum_detected:
+                    self.memory_blocked_patterns[indicator] = self.memory_blocked_patterns.get(indicator, 0) + 1
