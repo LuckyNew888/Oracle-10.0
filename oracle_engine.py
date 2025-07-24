@@ -262,14 +262,13 @@ class OracleEngine:
                         elif last_col_len < prev_col_len: # Example: P P B (2,2,1) -> breaks
                             patterns_detected.append(('Big Eye Boy (2D Simple - Break)', tuple(last_col_actual)))
                 
-                # Small Road (2D Simple - Chop) - Example: P B P (columns of length 1)
-                # This needs 4 columns to determine if the 2nd and 4th columns' first outcomes are same.
+                # Small Road (2D Simple - Chop) - This needs 4 columns to determine pattern
                 if len(big_road_data) >= 4:
                     prev_prev_prev_col = big_road_data[-4]
                     prev_prev_prev_col_actual = [cell[0] for cell in prev_prev_prev_col if cell is not None and cell[0] in ['P', 'B', 'S6']] if prev_prev_prev_col else []
                     
                     if prev_prev_prev_col_actual: # Ensure the 4th column exists
-                        prev_prev_prev_col_len = len(prev_prev_prev_col_actual)
+                        prev_prev_prev_col_len = len(prev_prev_prev_col_actual) # Defined here
                         prev_prev_prev_col_first_outcome_val = 'B' if prev_prev_prev_col_actual[0] == 'S6' else prev_prev_prev_col_actual[0] 
 
                         if (last_col_len == prev_col_len and prev_col_len == prev_prev_col_len and prev_prev_col_len == prev_prev_prev_col_len and
@@ -279,9 +278,7 @@ class OracleEngine:
                             prev_prev_col_first_outcome != prev_prev_prev_col_first_outcome_val): # All single and alternating
                             patterns_detected.append(('Small Road (2D Simple - All Single Alternating)', tuple(last_col_actual)))
                 
-                # Cockroach Pig (2D Simple - Chop) - Example: P B B P (columns of length 1)
-                # Similar to Small Road, but usually 3rd and 4th column from the left
-                # This is a simplification.
+                # Cockroach Pig (2D Simple - Chop) - This needs 4 columns to determine pattern
                 if len(big_road_data) >= 4:
                     # Very basic check: are the last 4 columns short and alternating?
                     last4_cols = big_road_data[-4:]
