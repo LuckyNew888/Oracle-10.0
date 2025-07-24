@@ -34,11 +34,15 @@ h3 {
     margin-top: 0.2rem; /* Reduced space around buttons */
     margin-bottom: 0.2rem;
 }
-/* Specific style for prediction text to make it larger */
-.prediction-text {
-    font-size: 2.0em; /* Increased font size for prediction */
-    font-weight: bold;
+
+/* Prediction text will now use h1 tag for main sizing */
+.prediction-h1 {
+    text-align: center; /* Center the prediction text */
+    font-size: 2.5em; /* Make it even larger for clear visibility */
+    margin-top: 0.2rem;
+    margin-bottom: 0.2rem;
 }
+
 /* Reduce padding around columns to make buttons closer */
 /* This class name might change based on Streamlit versions */
 .st-emotion-cache-1colbu6 { 
@@ -84,7 +88,8 @@ if len(st.session_state.oracle_history) >= 20:
         prediction_text = result['prediction'] # Fallback for '?'
 
     # Adjust font size for prediction using HTML/CSS
-    st.markdown(f'<p class="prediction-text">ทำนาย: {prediction_text}</p>', unsafe_allow_html=True)
+    # Using <h1> tag directly for larger size
+    st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
     
     st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
     st.markdown(f"**📍 Risk:** {result['risk']}")
