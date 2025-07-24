@@ -8,7 +8,7 @@ st.set_page_config(
     page_title="Oracle AI Baccarat Predictor",
     page_icon="🔮",
     layout="centered", # 'centered' or 'wide'
-    initial_sidebar_state="collapsed" # 'auto', 'expanded', 'collapsed'
+    initial_sidebar_state="collapsed" 
 )
 
 # --- Initialize Session State ---
@@ -17,7 +17,7 @@ if 'oracle_engine' not in st.session_state:
 if 'history' not in st.session_state:
     st.session_state.history = []
 if 'drawdown' not in st.session_state:
-    st.session_state.drawdown = 0 # Track current drawdown (consecutive losses when following prediction)
+    st.session_state.drawdown = 0 
 if 'bet_log' not in st.session_state:
     st.session_state.bet_log = pd.DataFrame(columns=['Hand', 'Predict', 'Actual', 'Recommendation', 'Outcome'])
 if 'gemini_analysis_result' not in st.session_state:
@@ -38,21 +38,16 @@ def display_big_road(big_road_data):
         st.info("ไม่มีประวัติการเล่น (Big Road จะแสดงเมื่อมีผลลัพธ์).")
         return
 
-    # Create a layout for Big Road columns
-    # Using st.columns for individual cells is too slow and complex for large grids.
-    # A better approach is to render it as a single HTML/Markdown table or image.
-    # For simplicity, we'll use a basic text-based representation or a custom div.
-
     st.markdown("""
     <style>
     .big-road-container {
         display: flex;
-        flex-wrap: nowrap; /* Prevent wrapping for horizontal scroll */
-        overflow-x: auto; /* Enable horizontal scrolling */
+        flex-wrap: nowrap; 
+        overflow-x: auto; 
         border: 1px solid #333;
         padding: 5px;
         background-color: #1a1a1a;
-        min-height: 120px; /* Ensure minimum height */
+        min-height: 120px; 
     }
     .big-road-column {
         display: flex;
@@ -62,39 +57,41 @@ def display_big_road(big_road_data):
         margin: 0 2px;
     }
     .big-road-cell {
-        width: 18px; /* Smaller size for mobile */
-        height: 18px; /* Smaller size for mobile */
+        width: 25px; /* Slightly larger for better tap target, still compact */
+        height: 25px; /* Slightly larger for better tap target, still compact */
         border-radius: 50%;
         display: flex;
         justify-content: center;
         align-items: center;
-        font-size: 10px; /* Smaller font for mobile */
+        font-size: 10px; 
         font-weight: bold;
         color: white;
         margin: 1px;
-        flex-shrink: 0; /* Prevent cells from shrinking */
+        flex-shrink: 0; 
+        position: relative; /* For tie/natural indicators */
     }
-    .player-cell { background-color: #007bff; } /* Blue */
-    .banker-cell { background-color: #dc3545; } /* Red */
-    .s6-cell { background-color: #ffc107; color: black; } /* Yellow for Super 6 */
-    .tie-text { 
-        position: absolute; /* Position relative to the cell */
-        font-size: 8px; /* Smaller font for tie */
-        color: white;
-        text-shadow: 1px 1px 2px black;
-        top: 0;
-        right: 0;
-        line-height: 1; /* Adjust line height */
-    }
+    .player-cell { background-color: #007bff; } 
+    .banker-cell { background-color: #dc3545; } 
+    .s6-cell { background-color: #ffc107; color: black; } 
     .tie-indicator {
         position: absolute;
-        width: 6px; /* Small line for tie indicator */
-        height: 6px;
+        width: 8px; 
+        height: 8px;
         border-radius: 50%;
         background-color: green;
         top: 0;
         right: 0;
-        transform: translate(50%, -50%); /* Move to top-right corner */
+        transform: translate(25%, -25%); /* Move to top-right corner, adjust for cell size */
+    }
+    .natural-indicator { /* New style for Natural */
+        position: absolute;
+        width: 8px; 
+        height: 8px;
+        border-radius: 50%;
+        background-color: purple; /* Or any distinct color */
+        bottom: 0;
+        left: 0;
+        transform: translate(-25%, 25%);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -109,21 +106,18 @@ def display_big_road(big_road_data):
                 cell_text = ""
                 if outcome == 'P':
                     cell_class = "player-cell"
-                    cell_text = ""
                 elif outcome == 'B':
                     cell_class = "banker-cell"
-                    cell_text = ""
                 elif outcome == 'S6':
                     cell_class = "s6-cell"
-                    cell_text = "S6" # Show S6 in the cell
+                    cell_text = "S6" 
                 
                 tie_html = f'<div class="tie-indicator"></div>' if ties > 0 else ''
-                # Natural indicator (small line or corner) - can be added here if desired
-                # natural_html = '<span style="position: absolute; bottom: 0; right: 0; font-size: 6px; color: green;">N</span>' if is_natural else ''
+                natural_html = f'<div class="natural-indicator"></div>' if is_natural else '' # Add natural indicator
 
-                big_road_html += f'<div class="big-road-cell {cell_class}" style="position: relative;">{cell_text}{tie_html}</div>'
+                big_road_html += f'<div class="big-road-cell {cell_class}">{cell_text}{tie_html}{natural_html}</div>'
             else:
-                big_road_html += '<div class="big-road-cell" style="background-color: transparent;"></div>' # Empty cell for padding
+                big_road_html += '<div class="big-road-cell" style="background-color: transparent;"></div>' 
         big_road_html += '</div>'
     big_road_html += '</div>'
     st.markdown(big_road_html, unsafe_allow_html=True)
@@ -133,67 +127,51 @@ def display_big_road(big_road_data):
 def record_result(outcome_type):
     current_prediction_output = st.session_state.oracle_engine.predict_next(
         current_live_drawdown=st.session_state.drawdown,
-        current_big_road_data=_build_big_road_data(st.session_state.history)
+        current_big_road_data=_build_big_road_data(st.session_state.history),
+        history_for_prediction=st.session_state.history # Pass history for prediction context
     )
     predicted_side = current_prediction_output.get('prediction', '?')
     recommended_action = current_prediction_output.get('recommendation', 'Avoid ❌')
 
-    # Add the new hand to history
-    # For ties and S6, assume 0 for now as card data is not tracked
-    is_any_natural = False # Can't detect without card data
-    new_hand_data = {'main_outcome': outcome_type, 'ties': 0, 'is_any_natural': is_any_natural}
-
-    # If the outcome is S6, ensure 'main_outcome' is 'S6' and adjust 'ties' if needed
-    if outcome_type == 'S6':
-        new_hand_data['main_outcome'] = 'S6'
-        # If S6 also resulted in a tie, this would need to be passed
-        # For now, assuming S6 is a distinct outcome.
-
+    is_any_natural = False # We don't have card data, so this is always False for now.
+    # If your input method eventually captures natural, set it here.
+    
+    # Handle Tie specially, as it modifies the previous hand's entry in history
     if outcome_type == 'T':
-        # If last hand was P or B, increment its tie count
         if st.session_state.history:
             last_hand_main_outcome = st.session_state.history[-1]['main_outcome']
+            # Only increment ties if the last outcome was P, B, or S6.
+            # If the last outcome was already a T, we don't stack ties visually on the same Big Road cell.
+            # For logging purposes, we'll still record a new 'T' hand.
             if last_hand_main_outcome in ['P', 'B', 'S6']:
                 st.session_state.history[-1]['ties'] += 1
-                # No new hand is added to history for a tie that attaches to a previous P/B/S6
-                # However, for Big Road _display_ and backtesting, it's better to log the T.
-                # Let's adjust history for display purposes, but main outcome logic should stick to P/B/S6
-                # This part is tricky. For simplified history logging:
-                st.session_state.history.append(new_hand_data)
-            else:
-                # If T is the very first hand or consecutive T's, just add it.
-                st.session_state.history.append(new_hand_data)
-        else:
-            st.session_state.history.append(new_hand_data)
+            else: # If previous was also T, or empty history, just add T
+                st.session_state.history.append({'main_outcome': outcome_type, 'ties': 0, 'is_any_natural': is_any_natural})
+        else: # First hand is a Tie
+            st.session_state.history.append({'main_outcome': outcome_type, 'ties': 0, 'is_any_natural': is_any_natural})
     else:
-        st.session_state.history.append(new_hand_data)
+        st.session_state.history.append({'main_outcome': outcome_type, 'ties': 0, 'is_any_natural': is_any_natural})
 
-    # Update drawdown and bet log AFTER history is updated
+
+    # Update drawdown and bet log AFTER history is updated but based on the PREDICTED action for this hand
     outcome_status = "Recorded"
-    if predicted_side != '?': # Only evaluate outcome if a prediction was made
+    if predicted_side != '?': 
         is_correct = False
         if predicted_side == outcome_type:
             is_correct = True
-        elif predicted_side == 'B' and outcome_type == 'S6': # Banker prediction correct if S6 wins
+        elif predicted_side == 'B' and outcome_type == 'S6': 
             is_correct = True
 
         if recommended_action == 'Play ✅':
             if is_correct:
-                st.session_state.drawdown = 0 # Reset drawdown on a win
+                st.session_state.drawdown = 0 
             else:
-                st.session_state.drawdown += 1 # Increment drawdown on a loss
-        # If recommendation was 'Avoid', drawdown is not affected by this hand's outcome.
-    
-    # Update learning states for the engine
-    # Pass patterns/momentum/sequences *before* this hand was added to history.
-    # We need to re-evaluate patterns/momentum/sequences based on the state *before* this hand for learning.
-    # This implies running the detection functions on `st.session_state.history[:-1]` (previous state).
-    # However, `_update_learning` is called *after* the history is updated, so it should use the *new* history state.
-    # It's a bit of a chicken-and-egg problem for real-time update.
-    # For now, let's assume _update_learning operates on the history it sees.
+                st.session_state.drawdown += 1 
+        
+    # Update learning states for the engine based on the state *after* the hand
     st.session_state.oracle_engine._update_learning(
         predicted_outcome=predicted_side,
-        actual_outcome=outcome_type, # Use the actual outcome just recorded
+        actual_outcome=outcome_type, 
         patterns_detected=st.session_state.oracle_engine.detect_patterns(st.session_state.history, _build_big_road_data(st.session_state.history)),
         momentum_detected=st.session_state.oracle_engine.detect_momentum(st.session_state.history, _build_big_road_data(st.session_state.history)),
         sequences_detected=st.session_state.oracle_engine._detect_sequences(st.session_state.history)
@@ -201,32 +179,32 @@ def record_result(outcome_type):
 
     # Add to Bet Log
     new_log_entry = pd.DataFrame([{
-        'Hand': len(st.session_state.history),
+        'Hand': len(st.session_state.history), # Use current history length for Hand number
         'Predict': predicted_side,
         'Actual': outcome_type,
         'Recommendation': recommended_action,
-        'Outcome': outcome_status # Or "Win", "Loss", "Avoid" based on detailed logic
+        'Outcome': outcome_status 
     }])
     st.session_state.bet_log = pd.concat([st.session_state.bet_log, new_log_entry], ignore_index=True)
 
-    # Clear cache for backtest accuracy so it re-calculates on new data
-    _cached_backtest_accuracy.clear()
+    _cached_backtest_accuracy.clear() # Clear cache for backtest accuracy
 
 def undo_last_hand():
     if st.session_state.history:
-        st.session_state.history.pop() # Remove last hand
+        st.session_state.history.pop() 
         if not st.session_state.bet_log.empty:
-            st.session_state.bet_log = st.session_state.bet_log.iloc[:-1] # Remove last log entry
+            st.session_state.bet_log = st.session_state.bet_log.iloc[:-1] 
         
         # Recalculate drawdown from scratch based on the remaining history
-        # This is more robust than trying to "undo" drawdown changes directly.
         st.session_state.drawdown = 0
-        temp_engine_for_recalc = OracleEngine() # Use a temp engine for re-calc
+        temp_engine_for_recalc = OracleEngine() 
         for i, hand_data in enumerate(st.session_state.history):
             if i >= 2: # Only calculate prediction from the 3rd hand onwards
+                # Simulating the prediction that _would have been made at that point in history
                 sim_prediction_output = temp_engine_for_recalc.predict_next(
                     current_live_drawdown=0, # Drawdown not tracked during this recalc
-                    current_big_road_data=_build_big_road_data(st.session_state.history[:i])
+                    current_big_road_data=_build_big_road_data(st.session_state.history[:i]), # Big Road up to this point
+                    history_for_prediction=st.session_state.history[:i] # Pass history subset for prediction context
                 )
                 sim_predicted_side = sim_prediction_output.get('prediction')
                 sim_recommended_action = sim_prediction_output.get('recommendation')
@@ -243,20 +221,16 @@ def undo_last_hand():
                     else:
                         st.session_state.drawdown += 1
             
-            # Simplified update for temp_engine_for_recalc's learning state for subsequent predictions
-            if sim_predicted_side != '?': # Only if a prediction was made for that hand
-                 temp_engine_for_recalc._update_learning(
-                    predicted_outcome=sim_predicted_side,
-                    actual_outcome=hand_data['main_outcome'],
-                    patterns_detected=temp_engine_for_recalc.detect_patterns(st.session_state.history[:i+1], _build_big_road_data(st.session_state.history[:i+1])),
-                    momentum_detected=temp_engine_for_recalc.detect_momentum(st.session_state.history[:i+1], _build_big_road_data(st.session_state.history[:i+1])),
-                    sequences_detected=temp_engine_for_recalc._detect_sequences(st.session_state.history[:i+1])
-                )
+            # Update learning states for temp_engine_for_recalc based on the hand just processed
+            temp_engine_for_recalc._update_learning(
+                predicted_outcome=sim_predicted_side if 'sim_predicted_side' in locals() else '?', # Use simulated prediction or default
+                actual_outcome=hand_data['main_outcome'],
+                patterns_detected={}, # Simplify for recalculation
+                momentum_detected={},
+                sequences_detected={}
+            )
 
-        # Reset engine's internal learning state for the last hand
         st.session_state.oracle_engine.reset_learning_states_on_undo()
-
-        # Clear cache for backtest accuracy so it re-calculates
         _cached_backtest_accuracy.clear()
 
 def reset_shoe():
@@ -266,12 +240,12 @@ def reset_shoe():
     st.session_state.bet_log = pd.DataFrame(columns=['Hand', 'Predict', 'Actual', 'Recommendation', 'Outcome'])
     st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini"
     st.session_state.gemini_analysis_loading = False
-    _cached_backtest_accuracy.clear() # Clear cache when starting new shoe
+    _cached_backtest_accuracy.clear() 
 
 async def analyze_with_gemini_async():
     st.session_state.gemini_analysis_loading = True
     st.session_state.gemini_analysis_result = "กำลังวิเคราะห์ด้วย Gemini AI... กรุณารอสักครู่ ⏳"
-    st.rerun() # Rerun to show loading message
+    st.rerun() 
     
     try:
         if len(st.session_state.history) < 5:
@@ -283,55 +257,111 @@ async def analyze_with_gemini_async():
         st.session_state.gemini_analysis_result = f"❌ เกิดข้อผิดพลาดในการเรียกใช้ Gemini AI: {e}"
     finally:
         st.session_state.gemini_analysis_loading = False
-        st.rerun() # Rerun to show result
+        st.rerun() 
 
 def analyze_with_gemini_sync():
-    # Use asyncio.run for calling async function in a synchronous context if needed
-    # For Streamlit buttons, direct async call is handled by asyncio.run in a wrapper.
     asyncio.run(analyze_with_gemini_async())
 
 
 # --- UI Layout ---
 
-# Header Section
+# Custom CSS for overall styling and mobile responsiveness
 st.markdown(
     """
     <style>
+    /* General body styling */
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #f0f2f6; /* Light gray text */
+        background-color: #0e1117; /* Dark background */
+    }
+
+    /* Header styling */
     .header-container {
         display: flex;
         align-items: center;
-        gap: 15px; /* Space between icon and text */
+        gap: 15px;
         margin-bottom: 20px;
+        padding-top: 10px;
     }
     .header-text {
-        font-size: 3em; /* Larger font for main title */
+        font-size: 2.8em; /* Slightly smaller for mobile, still prominent */
         font-weight: bold;
-        color: gold; /* Gold color for "Oracle AI" */
-        margin: 0;
-        line-height: 1; /* Adjust line height for alignment */
-    }
-    .version-text {
-        font-size: 1.2em; /* Smaller font for version */
-        color: grey;
+        color: gold; 
         margin: 0;
         line-height: 1;
-        align-self: flex-end; /* Align to the bottom of the main text */
+    }
+    .version-text {
+        font-size: 1.1em; 
+        color: #bbb; /* Lighter grey for version */
+        margin: 0;
+        line-height: 1;
+        align-self: flex-end; 
     }
     .magic-ball-icon {
-        font-size: 3em; /* Icon size */
-        line-height: 1; /* Align with text */
+        font-size: 3.5em; /* Larger icon */
+        line-height: 1;
     }
-    /* General improvements for mobile */
-    .stButton>button {
-        width: 100%; /* Make buttons full width */
-        margin-bottom: 8px; /* Space between buttons */
-        height: 50px; /* Taller buttons for easier tapping */
-        font-size: 1.1em;
-    }
-    .stMarkdown h3 {
+
+    /* Section Headers */
+    h3 {
         margin-top: 25px;
         margin-bottom: 15px;
-        color: #ddd;
+        color: #f0f2f6; /* White for headers */
+        border-bottom: 1px solid #333; /* Subtle separator */
+        padding-bottom: 5px;
+    }
+
+    /* Button Styling */
+    .stButton>button {
+        width: 100%; 
+        margin-bottom: 8px; 
+        height: 55px; /* Taller buttons for easier tapping */
+        font-size: 1.2em; /* Larger font on buttons */
+        border-radius: 8px; /* Rounded corners */
+        background-color: #282b30; /* Darker background for buttons */
+        color: white;
+        border: none;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.3); /* Subtle shadow */
+    }
+    .stButton>button:hover {
+        background-color: #3e4247; /* Lighter on hover */
+    }
+    .stButton>button:active {
+        background-color: #1e2125; /* Darker on active */
+    }
+
+    /* Prediction/Recommendation Text Styling */
+    .prediction-value {
+        font-size: 2.2em; 
+        font-weight: bold;
+    }
+    .recommendation-value {
+        font-size: 1.6em; 
+        font-weight: bold;
+    }
+    .confidence-value, .risk-value, .drawdown-value, .tie-opportunity-value {
+        font-size: 1.3em; 
+        font-weight: bold;
+    }
+
+    /* Info/Warning/Error boxes */
+    .stAlert {
+        border-radius: 8px;
+        padding: 10px 15px;
+    }
+
+    /* Dataframe styling */
+    .stDataFrame {
+        font-size: 0.9em; /* Slightly smaller for compactness */
+    }
+    .stDataFrame table {
+        background-color: #1a1a1a; /* Dark table background */
+        color: #f0f2f6;
+    }
+    .stDataFrame th {
+        background-color: #282b30; /* Darker header background */
+        color: white;
     }
     </style>
     """,
@@ -339,20 +369,20 @@ st.markdown(
 )
 
 st.markdown(
-    """
+    f"""
     <div class="header-container">
         <span class="magic-ball-icon">🔮</span>
         <div>
             <p class="header-text">Oracle AI</p>
-            <p class="version-text">v{}</p>
+            <p class="version-text">v{st.session_state.oracle_engine.__version__}</p>
         </div>
     </div>
-    """.format(st.session_state.oracle_engine.__version__),
+    """,
     unsafe_allow_html=True
 )
 
 
-st.markdown("### บันทึกผลลัพธ์")
+st.markdown("<h3>บันทึกผลลัพธ์</h3>")
 col_p, col_b = st.columns(2)
 with col_p:
     st.button("P (Player)", on_click=record_result, args=('P',))
@@ -365,107 +395,106 @@ with col_t:
 with col_s6:
     st.button("S6 (Super6)", on_click=record_result, args=('S6',))
 
-st.button("Undo", on_click=undo_last_hand, help="ย้อนกลับตาที่แล้ว")
+# Action buttons
+st.button("ย้อนกลับ (Undo)", on_click=undo_last_hand, help="ย้อนกลับตาที่แล้ว")
 st.button("เริ่มต้นขอนใหม่", on_click=reset_shoe, help="ล้างประวัติทั้งหมดและเริ่มต้นใหม่")
 
 # Manually trigger Gemini analysis
 if not st.session_state.gemini_analysis_loading:
     st.button("วิเคราะห์ด้วย Gemini AI (แบบ Manual)", on_click=analyze_with_gemini_sync)
 else:
-    st.button("วิเคราะห์ด้วย Gemini AI (กำลังโหลด...) ⏳", disabled=True)
+    st.button("กำลังวิเคราะห์ด้วย Gemini AI... ⏳", disabled=True)
 
 
-st.markdown("---") # Separator
+st.markdown("---") 
 
 
 # --- Prediction and Recommendation ---
-st.markdown("### การทำนายและคำแนะนำ")
+st.markdown("<h3>การทำนายและคำแนะนำ</h3>")
 prediction_output = st.session_state.oracle_engine.predict_next(
     current_live_drawdown=st.session_state.drawdown,
-    current_big_road_data=_build_big_road_data(st.session_state.history)
+    current_big_road_data=_build_big_road_data(st.session_state.history),
+    history_for_prediction=st.session_state.history # Ensure prediction logic uses current history
 )
 
-st.write(f"**ทำนาย:** <span style='font-size: 2em; font-weight: bold; color: {'red' if prediction_output['prediction'] == 'B' else ('blue' if prediction_output['prediction'] == 'P' else ('yellow' if prediction_output['prediction'] == 'S6' else 'white'))}'>{prediction_output['prediction']}</span>", unsafe_allow_html=True)
-st.write(f"**คำแนะนำ:** <span style='font-size: 1.5em; font-weight: bold; color: {'green' if 'Play' in prediction_output['recommendation'] else 'red'}'>{prediction_output['recommendation']}</span>", unsafe_allow_html=True)
-st.write(f"**ความมั่นใจโดยรวม:** <span style='font-size: 1.2em; font-weight: bold;'>{prediction_output['overall_confidence']:.1f}%</span>", unsafe_allow_html=True)
-st.write(f"**ระดับความเสี่ยง:** <span style='font-size: 1.2em; font-weight: bold;'>{prediction_output['risk']}</span>", unsafe_allow_html=True)
+st.markdown(f"**ทำนาย:** <span class='prediction-value' style='color: {'red' if prediction_output['prediction'] == 'B' else ('blue' if prediction_output['prediction'] == 'P' else ('yellow' if prediction_output['prediction'] == 'S6' else 'white'))}'>{prediction_output['prediction']}</span>", unsafe_allow_html=True)
+st.markdown(f"**คำแนะนำ:** <span class='recommendation-value' style='color: {'lightgreen' if 'Play' in prediction_output['recommendation'] else 'red'}'>{prediction_output['recommendation']}</span>", unsafe_allow_html=True)
+st.markdown(f"**ความมั่นใจโดยรวม:** <span class='confidence-value'>{prediction_output['overall_confidence']:.1f}%</span>", unsafe_allow_html=True)
+st.markdown(f"**ระดับความเสี่ยง:** <span class='risk-value'>{prediction_output['risk']}</span>", unsafe_allow_html=True)
 
 
 # --- Drawdown Status ---
-st.markdown("### สถานะ Drawdown")
-drawdown_color = "green"
+st.markdown("<h3>สถานะ Drawdown</h3>")
+drawdown_color = "lightgreen"
 if st.session_state.drawdown >= 1: drawdown_color = "orange"
 if st.session_state.drawdown >= 2: drawdown_color = "red"
-if st.session_state.drawdown >= 3: drawdown_color = "#8b0000" # Dark red for critical
+if st.session_state.drawdown >= 3: drawdown_color = "#8b0000" 
 
-st.markdown(f"**Drawdown ปัจจุบัน:** <span style='font-size: 1.5em; font-weight: bold; color: {drawdown_color};'>{st.session_state.drawdown}</span>", unsafe_allow_html=True)
+st.markdown(f"**Drawdown ปัจจุบัน:** <span class='drawdown-value' style='color: {drawdown_color};'>{st.session_state.drawdown}</span>", unsafe_allow_html=True)
 st.markdown(f"ระดับความเสี่ยงโดยรวม: **{prediction_output['risk']}** (จาก AI)")
 
 
 # --- Tie / Super6 Opportunity ---
-st.markdown("### โอกาส Tie / Super6")
+st.markdown("<h3>โอกาส Tie / Super6</h3>")
 tie_analysis = st.session_state.oracle_engine.get_tie_opportunity_analysis(st.session_state.history)
-st.write(f"**โอกาส:** <span style='font-size: 1.5em; font-weight: bold; color: {'green' if tie_analysis['prediction'] == 'T' else 'white'}'>{tie_analysis['prediction']}</span>", unsafe_allow_html=True)
-st.write(f"**ความมั่นใจ:** {tie_analysis['confidence']:.1f}%")
-st.write(f"**เหตุผล:** {tie_analysis['reason']}")
+st.markdown(f"**โอกาส:** <span class='tie-opportunity-value' style='color: {'lightgreen' if tie_analysis['prediction'] == 'T' else 'white'}'>{tie_analysis['prediction']}</span>", unsafe_allow_html=True)
+st.markdown(f"**ความมั่นใจ:** {tie_analysis['confidence']:.1f}%")
+st.markdown(f"**เหตุผล:** {tie_analysis['reason']}")
 
-st.markdown("---") # Separator
+st.markdown("---") 
 
 
 # --- Big Road Display ---
-st.markdown("### ประวัติขอนปัจจุบัน (Big Road)")
+st.markdown("<h3>ประวัติขอนปัจจุบัน (Big Road)</h3>")
 current_big_road_data = _build_big_road_data(st.session_state.history)
 display_big_road(current_big_road_data)
 
-# Toggle Big Road explanation
 st.toggle("แสดงคำอธิบาย Big Road", key="show_big_road_tooltip")
 if st.session_state.show_big_road_tooltip:
     st.info("""
     **Big Road (บิ๊กโรด)** แสดงผลลัพธ์การเล่น Baccarat ในรูปแบบตาราง:
     * **วงกลมสีน้ำเงิน:** แทน Player Win
     * **วงกลมสีแดง:** แทน Banker Win (รวมถึง Super6)
-    * **วงกลมสีเหลือง (ถ้ามี):** แทน Super6 Win (มีข้อความ 'S6' ข้างใน)
-    * **เส้นทแยงมุมสีเขียว:** แสดง Tie (จะปรากฏบนวงกลม Player/Banker ล่าสุด)
+    * **วงกลมสีเหลือง:** แทน Super6 Win (มีข้อความ 'S6' ข้างใน)
+    * **จุดสีเขียวเล็กๆ ที่มุมบนขวา:** แสดง Tie (จะปรากฏบนวงกลม Player/Banker/Super6 ล่าสุด)
     * **คอลัมน์ใหม่:** เริ่มขึ้นเมื่อผลลัพธ์เปลี่ยนจาก Player เป็น Banker หรือ Banker เป็น Player
     * **คอลัมน์เดียวกัน:** ผลลัพธ์เดิมจะเรียงลงมาในคอลัมน์เดียวกัน
     """)
 
-st.markdown("---") # Separator
+st.markdown("---") 
 
 
 # --- Gemini AI Analysis ---
-st.markdown("### การวิเคราะห์จาก Gemini AI")
-# Display loading spinner or result
+st.markdown("<h3>การวิเคราะห์จาก Gemini AI</h3>")
 if st.session_state.gemini_analysis_loading:
-    st.spinner("กำลังวิเคราะห์ด้วย Gemini AI... กรุณารอสักครู่ ⏳")
-    # The actual text is set in analyze_with_gemini_async and will update after rerun
-    st.write(st.session_state.gemini_analysis_result)
+    st.info("กำลังวิเคราะห์ด้วย Gemini AI... กรุณารอสักครู่ ⏳") # Use st.info for better loading message
 else:
     st.markdown(st.session_state.gemini_analysis_result)
 
-st.markdown("---") # Separator
+st.markdown("---") 
 
 # --- Bet Log ---
-st.markdown("### Bet Log")
+st.markdown("<h3>Bet Log</h3>")
 if not st.session_state.bet_log.empty:
     st.dataframe(
         st.session_state.bet_log,
         hide_row_index=True,
-        use_container_width=True, # Adjust to screen width
-        height=(min(len(st.session_state.bet_log), 10) * 35) + 38 # Dynamic height up to 10 rows
+        use_container_width=True, 
+        height=(min(len(st.session_state.bet_log), 10) * 35) + 38 
     )
 else:
     st.info("ไม่มีบันทึกการเดิมพัน")
 
 
 # --- Historical Accuracy (Backtest) ---
-st.markdown("### ความแม่นยำทางประวัติศาสตร์")
-accuracy_results = _cached_backtest_accuracy(st.session_state.history, st.session_state.oracle_engine)
+st.markdown("<h3>ความแม่นยำทางประวัติศาสตร์</h3>")
+# Pass only the history data which is hashable
+accuracy_results = _cached_backtest_accuracy(st.session_state.history)
 
-st.write(f"**ความแม่นยำโดยรวม (จาก {accuracy_results['total_bets']} ครั้งที่ทำนาย):** <span style='font-size: 1.2em; font-weight: bold; color: {'lightgreen' if accuracy_results['overall_accuracy'] >= 60 else 'orange'}'>{accuracy_results['overall_accuracy']:.2f}%</span>", unsafe_allow_html=True)
-st.write(f"ความแม่นยำ Player: {accuracy_results['player_accuracy']:.2f}%")
-st.write(f"ความแม่นยำ Banker: {accuracy_results['banker_accuracy']:.2f}%")
-st.write(f"ความแม่นยำ Super6: {accuracy_results['s6_accuracy']:.2f}%")
+st.markdown(f"**ความแม่นยำโดยรวม (จาก {accuracy_results['total_bets']} ครั้งที่ทำนาย):** <span class='confidence-value' style='color: {'lightgreen' if accuracy_results['overall_accuracy'] >= 60 else 'orange'}'>{accuracy_results['overall_accuracy']:.2f}%</span>", unsafe_allow_html=True)
+st.markdown(f"ความแม่นยำ Player: {accuracy_results['player_accuracy']:.2f}%")
+st.markdown(f"ความแม่นยำ Banker: {accuracy_results['banker_accuracy']:.2f}%")
+st.markdown(f"ความแม่นยำ Super6: {accuracy_results['s6_accuracy']:.2f}%")
 
 st.markdown("---")
-st.caption("Oracle AI v{} - Powered by Streamlit & Google Gemini API".format(st.session_state.oracle_engine.__version__))
+st.caption(f"Oracle AI v{st.session_state.oracle_engine.__version__} - Powered by Streamlit & Google Gemini API")
