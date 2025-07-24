@@ -269,7 +269,7 @@ def remove_last_from_history():
         reset_all_history() # If no bet log, perform full reset
         return # Exit the function
 
-    # Retrieve last bet entry to decide history action and revert drawdown
+    # Retrieve last bet entry from bet_log
     last_bet_entry = st.session_state.bet_log.pop()
     st.session_state.debug_log.append(f"  UNDO: Bet log entry removed: {last_bet_entry}")
     
