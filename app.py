@@ -8,6 +8,24 @@ oracle = OracleEngine()
 if 'oracle_history' not in st.session_state:
     st.session_state.oracle_history = []
 
+# ============ กลยุทธ์การเล่น ==============
+strategy = st.selectbox("🎲 กลยุทธ์ที่คุณใช้", ['แทง P ทุกตา', 'แทง B ทุกตา'])
+
+# ====== คำนวณจำนวนตาแพ้ติดกัน (ไม่รวม T) =======
+def calculate_losing_streak(history, strategy_choice):
+    lose_against = {'แทง P ทุกตา': 'B', 'แทง B ทุกตา': 'P'}
+    target = lose_against[strategy_choice]
+    count = 0
+    for item in reversed(history):
+        outcome = item['main_outcome']
+        if outcome == 'T':
+            continue  # ข้ามผลเสมอ
+        if outcome == target:
+            count += 1
+        else:
+            break
+    return count
+
 # ตั้งค่าข้อมูลให้ OracleEngine
 oracle.history = st.session_state.oracle_history
 
@@ -15,29 +33,32 @@ oracle.history = st.session_state.oracle_history
 if len(oracle.history) >= 6:
     result = oracle.predict_next()
 
-    # แปลง Emoji ตามผล
-    prediction = result['prediction']
-    emoji_map = {'P': '🟦', 'B': '🟥', 'T': '⚪️'}
-    prediction_display = f"{emoji_map.get(prediction, '')} {prediction}"
+    # รวมข้อความ Developer View
+    raw_view = ''.join(result['developer_view'])  # ex: 'Broken Pattern'
 
-    # แปลง developer view ให้อ่านง่าย
+    # แปลเป็นข้อความเข้าใจง่าย
     dev_parts = []
-    for item in result['developer_view']:
-        if item == 'Broken Pattern':
-            dev_parts.append("📉 แพทเทิร์นขาด")
-        elif "Momentum" in item:
-            dev_parts.append(f"⚡ {item}")
-        elif "Dragon" in item:
-            dev_parts.append("🐉 Dragon Pattern")
-        else:
-            dev_parts.append(item)
-    developer_readable = " + ".join(dev_parts)
+    if 'Broken Pattern' in raw_view:
+        dev_parts.append("📉 แพทเทิร์นขาด")
+    if 'Dragon' in raw_view:
+        dev_parts.append("🐉 Dragon Pattern")
+    if 'Momentum' in raw_view:
+        dev_parts.append("⚡ โมเมนตัมแรง")
+    if not dev_parts:
+        dev_parts.append("🧠 ไม่มีแพทเทิร์นชัดเจน")
 
+    # แสดงทำนาย
+    emoji_map = {'P': '🟦', 'B': '🟥', 'T': '⚪️'}
+    prediction_display = f"{emoji_map.get(result['prediction'], '')} {result['prediction']}"
     st.markdown("### 🔮 การทำนาย")
     st.markdown(f"## ✅ Prediction: {prediction_display}")
     st.write(f"🎯 **Recommendation:** {result['recommendation']} ✅")
     st.write(f"📊 **Risk Level:** {result['risk']}")
-    st.write(f"🧬 **Developer View:** {developer_readable}")
+    st.write(f"🧬 **Developer View:** {' + '.join(dev_parts)}")
+    
+    # แพ้ติดกัน
+    losing_streak = calculate_losing_streak(oracle.history, strategy)
+    st.warning(f"📉 คุณแพ้ติดกัน {losing_streak} ตา (ตามกลยุทธ์ {strategy})")
 else:
     st.info("กรุณาใส่ผลย้อนหลังอย่างน้อย 6 ตา")
 
