@@ -5,8 +5,6 @@ import json # Import json for parsing structured responses from LLM
 import asyncio # For running async functions
 
 # Import OracleEngine and helper functions (note: _cached_backtest_accuracy and _build_big_road_data are global)
-# We assume _cached_backtest_accuracy and _build_big_road_data are defined globally in oracle_engine.py
-# If they are not, this import will cause an ImportError.
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
 
 # Define the current expected version of the OracleEngine
@@ -427,7 +425,7 @@ def record_bet_result(actual_result): # Simplified signature
         history_for_pattern_detection = st.session_state.history[:-1] if len(st.session_state.history) > 0 else []
         # FIX: Ensure _build_big_road_data is used if available
         big_road_data_for_pattern_detection = [] # Default
-        if '_build_big_road_data' in globals(): # Check if _build_big_road_data is globally available
+        if '_build_big_road_data' in globals() and callable(globals()['_build_big_road_data']): # Check if _build_big_road_data is globally available
             big_road_data_for_pattern_detection = _build_big_road_data(history_for_pattern_detection)
 
         st.session_state.oracle_engine._update_learning(
@@ -512,7 +510,7 @@ async def get_gemini_analysis(history_data):
                             2. **แนวโน้มปัจจุบัน:** แนวโน้มยังคงผันผวน แต่ Banker มีโอกาสที่จะสร้าง Streak ได้อีกครั้ง
                             3. **โอกาสของ Tie/Super6:**
                                * **Tie:** มีโอกาสปานกลาง (ประมาณ 10-15%) เนื่องจากมีการออก Tie ประปรายในประวัติ และบางครั้งก็เกิดขึ้นหลังจากรูปแบบ PBP.
-                               * **Super6:** โอกาสค่อนข้างต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา.
+                               * **Super6:** โอกาสค่อนต่ำ (ประมาณ 2-5%) เนื่องจาก Super6 เป็นผลลัพธ์ที่หายากและไม่มีรูปแบบที่ชัดเจนบ่งชี้ในประวัติที่ผ่านมา.
                             4. **คำแนะนำโดยรวม:** แนะนำให้ Bet Banker (B) ด้วยความระมัดระวัง. หากมี Tie เกิดขึ้น ให้ถือว่าเสมอตัว. หลีกเลี่ยง Super6 เว้นแต่จะมีข้อมูลเพิ่มเติมที่แข็งแกร่งกว่านี้.
                             """
                         }
