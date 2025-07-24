@@ -344,7 +344,7 @@ class OracleEngine:
                 if col_lengths[-1] == 2 and col_lengths[-2] == 1 and col_lengths[-3] == 2:
                     patterns['two_out_of_three_pattern'] = True
 
-        return patterns
+        return patterns;
 
     def detect_momentum(self, history, big_road_data):
         """
@@ -398,7 +398,7 @@ class OracleEngine:
             if (p1 > b1 + 2 and b2 > p2 + 2) or (b1 > p1 + 2 and p2 > b2 + 2):
                 momentum['swing_detected'] = True
 
-        return momentum
+        return momentum;
 
     def _detect_sequences(self, history):
         """
