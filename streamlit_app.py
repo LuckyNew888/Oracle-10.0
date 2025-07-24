@@ -7,10 +7,10 @@ import asyncio # For running async functions
 # Import OracleEngine and helper functions
 from oracle_engine import OracleEngine, _cached_backtest_accuracy, _build_big_road_data
 
-# Define the current expected version of OracleEngine
+# Define the current expected version of the OracleEngine
 # Increment this value whenever OracleEngine.py has significant structural changes
 # that might cause caching issues.
-CURRENT_ENGINE_VERSION = "1.9" # Version remains 1.9
+CURRENT_ENGINE_VERSION = "1.10" # Version must match OracleEngine.__version__
 
 # --- Streamlit App Setup and CSS ---
 st.set_page_config(page_title="🔮 Oracle AI v3.0", layout="centered")
@@ -263,36 +263,47 @@ if "debug_log" not in st.session_state: # Initialize debug log
 def remove_last_from_history():
     st.session_state.debug_log.append(f"--- UNDO initiated ---")
     st.session_state.debug_log.append(f"UNDO: History length before pop: {len(st.session_state.history)}")
-    old_drawdown_before_undo = st.session_state.live_drawdown # Capture current drawdown before any change
+    
+    if not st.session_state.bet_log:
+        st.session_state.debug_log.append(f"  UNDO: No bet log entries. Full reset.")
+        reset_all_history() # If no bet log, perform full reset
+        return # Exit the function
 
-    if st.session_state.history:
-        # Remove last history entry
-        st.session_state.history.pop()
-        
-        # Revert live_drawdown using the bet_log
-        if st.session_state.bet_log:
-            last_bet_entry = st.session_state.bet_log.pop()
-            st.session_state.debug_log.append(f"  UNDO: Bet log entry removed: {last_bet_entry}")
-            # Revert live_drawdown to the state before the removed hand
-            if "DrawdownBefore" in last_bet_entry:
-                st.session_state.live_drawdown = last_bet_entry["DrawdownBefore"]
-                st.session_state.debug_log.append(f"  UNDO: Drawdown reverted from {old_drawdown_before_undo} to {st.session_state.live_drawdown}")
-            else: # Fallback for older log entries or if key is missing
-                st.session_state.live_drawdown = 0 # Reset to safe state if info not available
-                st.session_state.debug_log.append(f"  UNDO: Drawdown reset to 0 (DrawdownBefore not found in log entry).")
-        else:
-            st.session_state.live_drawdown = 0 # No bet log, reset to 0
-            st.session_state.debug_log.append(f"  UNDO: No bet log entries. Drawdown reset to 0.")
+    # Retrieve last bet entry to decide history action and revert drawdown
+    last_bet_entry = st.session_state.bet_log.pop()
+    st.session_state.debug_log.append(f"  UNDO: Bet log entry removed: {last_bet_entry}")
+    
+    # Revert live_drawdown to the state BEFORE the removed hand
+    if "DrawdownBefore" in last_bet_entry:
+        st.session_state.live_drawdown = last_bet_entry["DrawdownBefore"]
+        st.session_state.debug_log.append(f"  UNDO: Drawdown reverted to {st.session_state.live_drawdown}.")
     else:
-        st.session_state.live_drawdown = 0 # History is already empty, reset drawdown to 0
-        st.session_state.debug_log.append(f"  UNDO: History already empty. Drawdown reset to 0.")
+        st.session_state.live_drawdown = 0 # Fallback
+        st.session_state.debug_log.append(f"  UNDO: Drawdown reset to 0 (DrawdownBefore not found).")
+
+    # Revert history based on how it was recorded (main_outcome or tie_increment)
+    if st.session_state.history:
+        if "history_action" in last_bet_entry and last_bet_entry["history_action"] == "tie_increment":
+            # If the last action was incrementing a tie, decrement the tie count on the *last* history entry
+            if st.session_state.history[-1]['ties'] > 0:
+                st.session_state.history[-1]['ties'] -= 1
+                st.session_state.debug_log.append(f"  UNDO: Decremented tie count on last history entry. New ties: {st.session_state.history[-1]['ties']}")
+            else: # Should not happen if history_action was accurate, but for safety
+                st.session_state.debug_log.append(f"  UNDO: Tie increment action but no ties to decrement. Popping last anyway.")
+                st.session_state.history.pop() # Fallback to pop if tie count already 0
+        else: # Default: pop the last history entry (for P, B, S6, or standalone T)
+            st.session_state.history.pop()
+            st.session_state.debug_log.append(f"  UNDO: Popped last history entry. New length: {len(st.session_state.history)}")
+    else:
+        st.session_state.debug_log.append(f"  UNDO: History already empty.")
+
 
     _cached_backtest_accuracy.clear()
-    st.session_state.oracle_engine.reset_learning_states_on_undo()
-    st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'} # Reset Tie analysis
-    st.session_state.hands_since_last_gemini_analysis = 0 # Reset Gemini counter on undo
-    st.session_state.gemini_analysis_result = "ยังไม่มีการวิเคราะห์จาก Gemini" # Reset Gemini analysis
-    st.session_state.gemini_continuous_analysis_mode = False # Reset continuous analysis mode
+    st.session_state.oracle_engine.reset_learning_states_on_undo() # This should affect stats, not history structure
+    st.session_state.tie_opportunity_data = {'prediction': '?', 'confidence': 0, 'reason': 'ยังไม่มีการวิเคราะห์'}
+    st.session_state.hands_since_last_gemini_analysis = 0
+    st.session_state.gemini_analysis_mode = False
+    st.session_state.gemini_continuous_analysis_mode = False # Ensure continuous mode is off
     st.session_state.debug_log.append(f"--- UNDO finished ---")
 
 
@@ -316,6 +327,7 @@ def record_bet_result(actual_result): # Simplified signature
     recommendation_status = st.session_state.last_prediction_data['recommendation']
     
     outcome_status = "Recorded" # Default outcome status for log
+    history_action = "append_new" # Default action for history update
 
     # --- Store current drawdown BEFORE updating for this hand ---
     drawdown_before_this_hand = st.session_state.live_drawdown
@@ -324,40 +336,33 @@ def record_bet_result(actual_result): # Simplified signature
     st.session_state.debug_log.append(f"  Drawdown BEFORE calculation: {drawdown_before_this_hand}")
 
     # --- Update live_drawdown based on the actual outcome and AI's prediction ---
-    # This logic is refined based on user feedback:
-    # If AI predicts P/B/S6 and actual is T, it's considered a "win" for breaking drawdown.
-    # If AI predicts P/B/S6 and actual is P/B/S6 (hit), it's a win.
-    # If AI predicts T/S6 and actual is T/S6 (hit), it's a win.
-    # Otherwise, it's a miss.
-
-    is_hit_for_drawdown = False
-    is_miss_for_drawdown = False
+    # User's logic:
+    # 1. If AI predicts P/B/S6 and actual is P/B/S6 (hit) -> live_drawdown = 0
+    # 2. If AI predicts P/B/S6 and actual is T -> live_drawdown = 0 (Tie is a neutral break, reset drawdown)
+    # 3. If AI predicts T and actual is T -> live_drawdown = 0
+    # 4. If AI predicts T and actual is P/B/S6 -> live_drawdown += 1
+    # 5. If AI predicts S6 and actual is P/B/T -> live_drawdown += 1
+    # 6. If AI predicts P/B/S6 and actual is P/B/S6 (miss) -> live_drawdown += 1
+    # 7. If predicted_side is '?' -> live_drawdown remains unchanged.
 
     if predicted_side != '?': # Only update drawdown if a specific prediction was made
+        is_hit_for_drawdown = False
+        is_miss_for_drawdown = False
+
         if predicted_side == 'P':
-            if actual_result == 'P':
-                is_hit_for_drawdown = True
-            elif actual_result == 'T': # User wants T to reset drawdown if P/B predicted
-                is_hit_for_drawdown = True
-            elif actual_result == 'B' or actual_result == 'S6':
-                is_miss_for_drawdown = True
+            if actual_result == 'P': is_hit_for_drawdown = True
+            elif actual_result == 'T': is_hit_for_drawdown = True # P predicted, T actual = reset drawdown
+            elif actual_result == 'B' or actual_result == 'S6': is_miss_for_drawdown = True
         elif predicted_side == 'B':
-            if actual_result == 'B' or actual_result == 'S6': # S6 is a Banker win, so predicting B is a hit
-                is_hit_for_drawdown = True
-            elif actual_result == 'T': # User wants T to reset drawdown if P/B predicted
-                is_hit_for_drawdown = True
-            elif actual_result == 'P':
-                is_miss_for_drawdown = True
+            if actual_result == 'B' or actual_result == 'S6': is_hit_for_drawdown = True
+            elif actual_result == 'T': is_hit_for_drawdown = True # B predicted, T actual = reset drawdown
+            elif actual_result == 'P': is_miss_for_drawdown = True
         elif predicted_side == 'T':
-            if actual_result == 'T':
-                is_hit_for_drawdown = True
-            elif actual_result in ['P', 'B', 'S6']: # If predicted T but actual is P/B/S6, it's a miss
-                is_miss_for_drawdown = True
+            if actual_result == 'T': is_hit_for_drawdown = True
+            elif actual_result in ['P', 'B', 'S6']: is_miss_for_drawdown = True
         elif predicted_side == 'S6':
-            if actual_result == 'S6':
-                is_hit_for_drawdown = True
-            elif actual_result in ['P', 'B', 'T']: # If predicted S6 but actual is P/B/T, it's a miss
-                is_miss_for_drawdown = True
+            if actual_result == 'S6': is_hit_for_drawdown = True
+            elif actual_result in ['P', 'B', 'T']: is_miss_for_drawdown = True
         
         if is_hit_for_drawdown:
             st.session_state.live_drawdown = 0
@@ -367,44 +372,47 @@ def record_bet_result(actual_result): # Simplified signature
             st.session_state.live_drawdown += 1
             st.session_state.debug_log.append(f"  Drawdown Logic: MISS! Drawdown incremented to {st.session_state.live_drawdown}.")
             # gemini_continuous_analysis_mode remains True if already active, or activates at drawdown 3
-        else: # This case should ideally not be reached if all outcomes are covered by hit/miss
-            st.session_state.debug_log.append(f"  Drawdown Logic: No change to drawdown (unexpected path).")
+        else: # This case should not be reached for specific predictions
+            st.session_state.debug_log.append(f"  Drawdown Logic: No change to drawdown (unexpected specific prediction path).")
     else: # If predicted_side is '?', live_drawdown remains unchanged.
         st.session_state.debug_log.append(f"  Drawdown Logic: No prediction ('?'). Drawdown remains {st.session_state.live_drawdown}.")
     
-    # --- Record Bet Log ---
+    # --- Update History for Oracle Engine (and determine history_action) ---
+    if actual_result == 'T':
+        found_pb_for_tie = False
+        # Loop in reverse to find the last P/B/S6 to attach the Tie to
+        for i in reversed(range(len(st.session_state.history))):
+            if st.session_state.history[i]['main_outcome'] in ['P', 'B', 'S6']:
+                st.session_state.history[i]['ties'] += 1
+                history_action = "tie_increment" # Action was incrementing ties on an existing entry
+                found_pb_for_tie = True
+                st.session_state.debug_log.append(f"  History Update: Tied 'T' to previous {st.session_state.history[i]['main_outcome']}. Tie count: {st.session_state.history[i]['ties']}")
+                break
+        if not found_pb_for_tie:
+            # If no P/B/S6 found, add T as a standalone entry
+            st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
+            history_action = "append_new" # Action was appending a new entry (standalone T)
+            st.session_state.debug_log.append(f"  History Update: Added 'T' as standalone entry.")
+    else:
+        # For P, B, S6 results, always append a new entry
+        st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
+        history_action = "append_new" # Action was appending a new entry
+        st.session_state.debug_log.append(f"  History Update: Added '{actual_result}' as new entry.")
+
+    # --- Record Bet Log (now includes history_action) ---
     st.session_state.bet_log.append({
         "Predict": predicted_side,
         "Actual": actual_result,
         "Recommendation": recommendation_status, # Log the recommendation
         "Outcome": outcome_status, # Simplified outcome
-        "DrawdownBefore": drawdown_before_this_hand # Store drawdown value BEFORE this hand's calculation
+        "DrawdownBefore": drawdown_before_this_hand, # Store drawdown value BEFORE this hand's calculation
+        "history_action": history_action # Store how history was modified (for UNDO)
     })
-    st.session_state.debug_log.append(f"  Drawdown value stored in bet_log for UNDO: {drawdown_before_this_hand}")
+    st.session_state.debug_log.append(f"  Bet Log stored with history_action: {history_action}")
 
-
-    # --- Update History for Oracle Engine ---
-    # This part should still happen to record the actual game outcome for future predictions
-    # Note: For Super6, we need to decide how it's recorded in history.
-    # For now, if actual_result is 'S6', it will be treated as 'S6'.
-    if actual_result == 'T':
-        found_pb_for_tie = False
-        for i in reversed(range(len(st.session_state.history))):
-            if st.session_state.history[i]['main_outcome'] in ['P', 'B', 'S6']: # Ties can attach to S6 too
-                st.session_state.history[i]['ties'] += 1
-                found_pb_for_tie = True
-                break
-        if not found_pb_for_tie:
-            st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
-    else:
-        # If actual_result is 'S6', it will be treated as a main_outcome.
-        # This simplifies the history structure for now.
-        st.session_state.history.append({'main_outcome': actual_result, 'ties': 0, 'is_any_natural': False})
 
     # --- Update Oracle Engine's Learning States ---
     # Only update learning if a prediction was made (i.e., not '?' for predicted_side)
-    # The _update_learning function now takes the full history for pattern detection
-    # so we pass st.session_state.history directly.
     if predicted_side != '?':
         # When updating learning, we use the history *before* the current result was added
         # to detect patterns that led to the prediction.
