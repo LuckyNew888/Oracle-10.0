@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.8 (Lower Threshold)" # System version identifier - Maximum Predict, very loose avoidance
+    VERSION = "Final V1.9 (Pattern Fix)" # System version identifier - Maximum Predict, very loose avoidance, Fixed Pattern Detection
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -152,15 +152,17 @@ class OracleEngine:
             if seq.endswith('BBBPPP'): patterns.append('Triple-Cut')
             if seq.endswith('PPPBBB'): patterns.append('Triple-Cut')
 
-        # One-Two Pattern (P-BB-P-BB or B-PP-B-PP) - improved linear detection
-        if len(seq) >= 5: 
-            if seq[-5:] == 'PBB P': patterns.append('One-Two Pattern') # P-BB-P
-            if seq[-5:] == 'BPP B': patterns.append('One-Two Pattern') # B-PP-B
+        # One-Two Pattern (P-BB-P or B-PP-B) - corrected linear detection for "1/2"
+        # This pattern has a length of 4 characters: XYYX
+        if len(seq) >= 4:
+            if seq[-4:] == 'PBBP': patterns.append('One-Two Pattern') # P-BB-P
+            if seq[-4:] == 'BPPB': patterns.append('One-Two Pattern') # B-PP-B
 
-        # Two-One Pattern (PP-B-PP-B or BB-P-BB-P) - improved linear detection
+        # Two-One Pattern (PP-B-PP or BB-P-BB) - corrected linear detection for "2/1"
+        # This pattern has a length of 5 characters: XXYXX
         if len(seq) >= 5: 
-            if seq[-5:] == 'PPB PP': patterns.append('Two-One Pattern') # PP-B-PP
-            if seq[-5:] == 'BBP BB': patterns.append('Two-One Pattern') # BB-P-BB
+            if seq[-5:] == 'PPBPP': patterns.append('Two-One Pattern') # PP-B-PP
+            if seq[-5:] == 'BBPBB': patterns.append('Two-One Pattern') # BB-P-BB
         
         # Broken Pattern (e.g., PPPPBB, BBPPBB) - indicates disruption in streak/pattern
         if len(seq) >= 4:
