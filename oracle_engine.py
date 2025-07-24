@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.5 (Fast Detect)" # System version identifier - Faster detection, single avoid criteria
+    VERSION = "Final V1.6 (Latest 12)" # System version identifier - Faster detection, single avoid criteria, latest 12 hands
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -128,8 +128,8 @@ class OracleEngine:
         if len(history) < 3: 
             return patterns
 
-        # Get last 15 outcomes for robust pattern detection, excluding Ties
-        seq = ''.join([item['main_outcome'] for item in history[-15:] if item['main_outcome'] != 'T']) 
+        # Get last 12 outcomes for robust pattern detection, excluding Ties (Changed from 15 to 12)
+        seq = ''.join([item['main_outcome'] for item in history[-12:] if item['main_outcome'] != 'T']) 
         # Changed min seq length from 4 to 3
         if len(seq) < 3: return patterns 
 
@@ -191,7 +191,7 @@ class OracleEngine:
             return momentum
 
         # Exclude Ties for streak calculation
-        relevant_history = [item['main_outcome'] for item in history if item['main_outcome'] != 'T']
+        relevant_history = [item['main_outcome'] for item in history[-12:] if item['main_outcome'] != 'T'] # Changed from 15 to 12
         if len(relevant_history) < 3:
             return momentum
 
@@ -292,7 +292,7 @@ class OracleEngine:
         if len(history) < 10: # Need at least 10 hands for meaningful bias
             return False, None
         
-        # Look at last 20 non-tie outcomes for bias
+        # Look at last 20 non-tie outcomes for bias (This is for overall bias, not affected by 12 recent hands)
         relevant_history = [item['main_outcome'] for item in history[-20:] if item['main_outcome'] != 'T']
         if len(relevant_history) < 10: # If not enough non-tie outcomes
             return False, None
@@ -538,7 +538,7 @@ class OracleEngine:
         # Core Avoid Condition 2: Confidence Threshold Override (<60%)
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
-        if confidence < 60: # Changed threshold from 50 to 60 as per request
+        if confidence < 60: # Threshold is 60% as per request
              prediction = '⚠️'
              risk = f'Low Confidence (<60%)'
              predicted_by_logic = f"Avoid (Confidence {confidence}%)"
