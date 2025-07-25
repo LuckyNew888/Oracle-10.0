@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.11 (Counter Predict)" # System version identifier - Lower Threshold, Counter Predict on Low Confidence
+    VERSION = "Final V1.12" # System version identifier - UI and Last Delete Bugfix
 
     def __init__(self):
         # Performance tracking for patterns and momentum
