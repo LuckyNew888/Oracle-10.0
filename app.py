@@ -4,9 +4,9 @@ import time
 from oracle_engine import OracleEngine # Ensure oracle_engine.py is in the same directory
 
 # Set Streamlit page configuration
-st.set_page_config(page_title=f"ORACLE Predictor", layout="centered") # Title doesn't need version here
+st.set_page_config(page_title=f"ORACLE Predictor", layout="centered") 
 
-# --- State Management for OracleEngine (Moved to top) ---
+# --- State Management for OracleEngine ---
 # Initialize OracleEngine only once
 if 'oracle_engine' not in st.session_state:
     st.session_state.oracle_engine = OracleEngine()
@@ -17,7 +17,7 @@ if 'oracle_history' not in st.session_state:
 if 'losing_streak_prediction' not in st.session_state:
     st.session_state.losing_streak_prediction = 0
 
-# Retrieve the OracleEngine instance from session_state (Moved to top)
+# Retrieve the OracleEngine instance from session_state
 oracle = st.session_state.oracle_engine
 
 # Custom CSS for centered gold title, reduced spacing, and prediction text size
@@ -25,15 +25,20 @@ st.markdown(f"""
 <style>
 /* Font import from Google Fonts - This might be blocked by CSP in some environments */
 /* Attempt to use Orbitron font for ORACLE, Inter for general text */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@700;900&display=swap');
+
+/* Ensure the main container has no unnecessary padding */
+.stApp {{
+    padding-top: 1rem; /* Adjust as needed to pull content up */
+}}
 
 .center-gold-title {{
     text-align: center;
-    color: gold;
+    color: gold; /* Explicitly set gold color */
     font-size: 3.5em; /* Main ORACLE text size */
-    font-weight: bold;
+    font-weight: 900; /* Make it extra bold for emphasis */
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-    margin-bottom: 0.5rem; /* Reduced space below title */
+    margin-bottom: 0.2rem; /* Reduced space below title */
     padding-bottom: 0px;
     font-family: 'Orbitron', 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Orbitron for ORACLE */
 }}
@@ -87,12 +92,29 @@ div[data-testid="stColumns"] > div {{
 st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{oracle.VERSION}</span></h1>', unsafe_allow_html=True)
 
 # --- Prediction Display Section ---
-st.markdown("<h3>ผลวิเคราะห์:</h3>", unsafe_allow_html=True) # Shortened title
+# Determine prediction mode for display
+current_prediction_mode = None
+if len(st.session_state.oracle_history) >= 15:
+    # Need to get prediction result to determine mode
+    temp_result = oracle.predict_next(st.session_state.oracle_history, is_backtest=False)
+    current_prediction_mode = temp_result['prediction_mode']
+
+mode_text = ""
+if current_prediction_mode == 'ตาม':
+    mode_text = "ผลวิเคราะห์: ⏮️ ตาม"
+elif current_prediction_mode == 'สวน':
+    mode_text = "ผลวิเคราะห์: ⏭️ สวน"
+elif current_prediction_mode == '⚠️': # If confidence too low to even counter
+    mode_text = "ผลวิเคราะห์: ⚠️ งดเดิมพัน"
+else: # Not enough data
+    mode_text = "ผลวิเคราะห์:"
+
+st.markdown(f"<h3>{mode_text}</h3>", unsafe_allow_html=True)
+
 
 # Check if enough history is available for analysis
 if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
     # Pass the full history to the engine for prediction
-    # Get the full result object including confidence for display
     result = oracle.predict_next(st.session_state.oracle_history)
 
     # Prepare prediction text with emojis and style
@@ -102,17 +124,19 @@ if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
     elif result['prediction'] == 'B':
         prediction_text = f"🔴 B"
     elif result['prediction'] == '⚠️':
-        prediction_text = f"⚠️ งดเดิมพัน"
+        prediction_text = f"⚠️" # Just the warning sign, text is in mode_text
     else:
         prediction_text = result['prediction'] # Fallback for '?'
 
     # Display prediction using h1 tag for large size
     st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
     
-    # Display Accuracy, Risk, Recommendation
+    # NEW: Display ตามสูตรชนะ / สวนสูตรชนะ
+    st.markdown(f"📈 **ตามสูตรชนะ** : {oracle.tam_sutr_wins} ครั้ง")
+    st.markdown(f"📉 **สวนสูตรชนะ** : {oracle.suan_sutr_wins} ครั้ง")
+
+    # Display Accuracy, Risk, Recommendation (Risk/Recommendation hidden in UI, still returned by engine for dev view)
     st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
-    st.markdown(f"**📍 Risk:** {result['risk']}")
-    st.markdown(f"**🧾 Recommendation:** {result['recommendation']}")
     
     # Display the system's losing streak
     if st.session_state.losing_streak_prediction > 0:
@@ -206,12 +230,31 @@ with col4:
                     history_segment_for_learning = st.session_state.oracle_history[:i+1] # History up to this point
                     actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
                     
-                    if len(history_segment_for_learning) >= 15: # Only if history is long enough for prediction to have occurred
-                        _ = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False) # Get context for learning from *previous* state
-                    
+                    # Need to simulate prediction to get context for update_learning_state, but only if enough data
+                    temp_prediction_context = {'prediction': '?', 'prediction_mode': None} # Default for short history
+                    if len(history_segment_for_learning) > 0: # Ensure history_segment_for_learning is not empty for next_pred
+                        # To correctly rebuild learning state, we need to know what the engine *would have predicted* at each step
+                        # This is a bit tricky with stateless engine and last_prediction_context
+                        # Simplest robust way: if it was long enough to predict, get prediction_context
+                        if len(history_segment_for_learning) >= 15: # Only if history was long enough for a prediction
+                            # Pass history *before* this outcome was added to get accurate context
+                            temp_pred_result = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False)
+                            main_oracle_rebuild.last_prediction_context = {
+                                'prediction': temp_pred_result['prediction'],
+                                'patterns': main_oracle_rebuild.detect_dna_patterns(history_segment_for_learning[:-1]),
+                                'momentum': main_oracle_rebuild.detect_momentum(history_segment_for_learning[:-1]),
+                                'intuition_applied': 'Intuition' in temp_pred_result['predicted_by'] if temp_pred_result['predicted_by'] else False,
+                                'predicted_by': temp_pred_result['predicted_by'],
+                                'dominant_pattern_id_at_prediction': main_oracle_rebuild.last_dominant_pattern_id, # This is tricky, might need to re-detect
+                                'prediction_mode': temp_pred_result['prediction_mode']
+                            }
+                        
                     main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, history_segment_for_learning)
-            
-            st.session_state.oracle_engine = main_oracle_rebuild
+                
+                st.session_state.oracle_engine = main_oracle_rebuild
+            else: # If history becomes empty after pop
+                st.session_state.oracle_engine = OracleEngine() # Reset fully
+                st.session_state.losing_streak_prediction = 0
         st.rerun()
 
 # --- Reset All Button ---
