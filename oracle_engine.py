@@ -9,7 +9,7 @@ class OracleEngine:
     It uses a stateless approach for history management, relying on the caller
     (e.g., Streamlit app) to provide the full history.
     """
-    VERSION = "Final V1.12" # System version identifier - UI and Last Delete Bugfix
+    VERSION = "Final V1.13" # System version identifier - UI and Win Counters
 
     def __init__(self):
         # Performance tracking for patterns and momentum
@@ -68,7 +68,8 @@ class OracleEngine:
             'momentum': [],
             'intuition_applied': False,
             'predicted_by': None,
-            'dominant_pattern_id_at_prediction': None
+            'dominant_pattern_id_at_prediction': None,
+            'prediction_mode': None # Added: 'ตาม' or 'สวน'
         }
 
         self.trap_zone_active = False # General Trap Zone flag
@@ -78,6 +79,10 @@ class OracleEngine:
         self._cached_hit_count = 0
         self._cached_miss_count = 0
         self._cached_drawdown_alert = False
+
+        # New: Counters for 'ตามสูตรชนะ' and 'สวนสูตรชนะ'
+        self.tam_sutr_wins = 0
+        self.suan_sutr_wins = 0
 
 
     def reset_history(self):
@@ -94,13 +99,15 @@ class OracleEngine:
         self.bias_zone_active = False
         self.bias_towards_outcome = None
         self.last_prediction_context = {
-            'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
+            'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None, 'prediction_mode': None
         }
         self.trap_zone_active = False
         self._cached_accuracy_str = "N/A"
         self._cached_hit_count = 0
         self._cached_miss_count = 0
         self._cached_drawdown_alert = False
+        self.tam_sutr_wins = 0 # Reset new counters
+        self.suan_sutr_wins = 0 # Reset new counters
 
 
     def get_success_rate(self, perf_dict, key):
@@ -494,19 +501,23 @@ class OracleEngine:
             history (list): The complete history of outcomes up to the current point.
             is_backtest (bool): Flag to indicate if this call is part of a backtest simulation.
         Returns:
-            dict: Contains prediction, recommendation, risk, developer_view, accuracy, confidence.
+            dict: Contains prediction, recommendation, risk, developer_view, accuracy, confidence, prediction_mode.
         """
         # Core Avoid Condition 1: Not Enough Data (Now 15 hands)
         if len(history) < 15: 
             if not is_backtest: 
-                self.last_prediction_context = {'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None}
+                self.last_prediction_context = {
+                    'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 
+                    'predicted_by': None, 'dominant_pattern_id_at_prediction': None, 'prediction_mode': None
+                }
             return {
                 'prediction': '?',
-                'recommendation': 'Avoid ❌', 
-                'risk': 'Not enough data',
+                'recommendation': 'Avoid ❌', # Recommendation is still returned but not displayed in UI
+                'risk': 'Not enough data', # Risk is still returned but not displayed in UI
                 'developer_view': f'Not enough data for full analysis. Requires at least 15 hands. (Current: {len(history)} hands)',
                 'accuracy': self._cached_accuracy_str, 
-                'confidence': 'N/A'
+                'confidence': 'N/A',
+                'prediction_mode': None # No mode if not enough data
             }
         
         # --- Dynamic Prediction Adjustment (Re-analyze every time) ---
@@ -525,10 +536,11 @@ class OracleEngine:
             current_dominant_pattern_id = patterns[0] 
 
         prediction = '?' # Default to unknown, will be set by logic below
-        risk = 'Normal' # Default risk, will be updated
+        risk = 'Normal' # Default risk, will be updated but not displayed in UI
         predicted_by_logic = "None"
         intuition_applied_flag = False
         confidence = 0 # Initialize confidence
+        prediction_mode = 'ตาม' # Default prediction mode is 'ตาม' (ตามสูตร), changes to 'สวน' if counter logic applies
 
         # Calculate confidence first
         confidence = self.calculate_confidence(patterns, momentum, False, None, bias_zone_active)
@@ -545,10 +557,12 @@ class OracleEngine:
                 prediction = 'B' if last_nontie_outcome == 'P' else 'P'
                 risk = f'High Risk: Countering Low Confidence ({confidence}%)'
                 predicted_by_logic = f"Counter (Low Confidence {confidence}%)"
+                prediction_mode = 'สวน' # Set mode to 'สวน'
             else: # If no non-tie outcomes in history to counter
                 prediction = '⚠️'
                 risk = f'Low Confidence ({confidence}%) - No Counter Base'
                 predicted_by_logic = f"Avoid (Confidence {confidence}%)"
+                prediction_mode = '⚠️' # Special mode for 'Avoid'
         else: # Confidence >= 50, proceed with normal pattern prediction
             
             # Prioritize strongest patterns/momentum
@@ -626,14 +640,13 @@ class OracleEngine:
                     predicted_by_logic = "Random Fallback (No Non-Tie Data)"
 
         # --- Set Risk Flags based on conditions (applies to P/B/⚠️ predictions) ---
-        # These flags are for informative purposes in 'risk' string.
+        # These flags are for informative purposes in 'risk' string (developer_view).
         # They no longer force 'Avoid' recommendation, unless prediction is '⚠️' (only by Low Confidence)
 
         # Trap Timer (Risk only, no longer forces ⚠️ prediction directly)
         if self.hands_to_skip_due_to_trap_timer > 0:
             if risk == 'Normal': risk = f"Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
             else: risk += f", Trap Timer ({self.hands_to_skip_due_to_trap_timer} skips left)"
-            #predicted_by_logic = "Trap Timer Active" # Keep predicted_by_logic from actual prediction
         
         # New Pattern Confirmation & First Bet Avoidance
         if not is_backtest and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"] and prediction != '⚠️': # Only apply if actually predicting and not low confidence avoid
@@ -648,7 +661,7 @@ class OracleEngine:
                 else: risk += ', New Pattern: First Bet Avoidance'
             elif self.new_pattern_confirmation_count < self.NEW_PATTERN_CONFIRMATION_REQUIRED:
                 if risk == 'Normal': risk = f"New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.new_pattern_confirmation_count} Confirmation(s)"
-                else: risk += f", New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.new_pattern_confirmation_count} Confirmation(s)"
+                else: risk += f", New Pattern: Awaiting {self.NEW_PATTERN_CONFIRMATION_REQUIRED - self.NEW_PATTERN_CONFIRMATION_REQUIRED} Confirmation(s)"
 
         # Trap Zone (General)
         if self.trap_zone_active and predicted_by_logic not in [f"Avoid (Confidence {confidence}%)"] and prediction != '⚠️':
@@ -687,7 +700,8 @@ class OracleEngine:
                 'momentum': momentum,
                 'intuition_applied': intuition_applied_flag,
                 'predicted_by': predicted_by_logic,
-                'dominant_pattern_id_at_prediction': current_dominant_pattern_id 
+                'dominant_pattern_id_at_prediction': current_dominant_pattern_id,
+                'prediction_mode': prediction_mode # Store the determined prediction mode
             }
 
         # --- Developer View ---
@@ -704,16 +718,18 @@ class OracleEngine:
             f"Bias Zone: {dev_view_bias}; "
             f"Confidence: {confidence}%; " 
             f"Predicted by: {predicted_by_logic}; "
+            f"Prediction Mode: {prediction_mode}; " # Added to dev view
             f"Backtest Accuracy: {self._cached_accuracy_str}" 
         )
 
         return {
             'prediction': prediction,
-            'recommendation': recommendation,
-            'risk': risk,
+            'recommendation': recommendation, # Still returned but not displayed in UI
+            'risk': risk, # Still returned but not displayed in UI
             'developer_view': developer_view_str,
             'accuracy': self._cached_accuracy_str, 
-            'confidence': confidence 
+            'confidence': confidence,
+            'prediction_mode': prediction_mode # Return the prediction mode for UI
         }
 
     def update_learning_state(self, actual_outcome, history_for_backtest_calc=None):
@@ -730,6 +746,7 @@ class OracleEngine:
         intuition_applied = self.last_prediction_context['intuition_applied']
         predicted_by = self.last_prediction_context['predicted_by']
         dominant_pattern_at_prediction = self.last_prediction_context['dominant_pattern_id_at_prediction']
+        prediction_mode_at_context = self.last_prediction_context['prediction_mode'] # Get the mode
 
         # Handle Trap Timer decrement first
         if self.hands_to_skip_due_to_trap_timer > 0:
@@ -769,6 +786,13 @@ class OracleEngine:
                     if key in self.intuition_performance: self.intuition_performance[key]['success'] += 1
                     else: self.intuition_performance[key] = {'success': 1, 'fail': 0}
 
+                # NEW: Update ตามสูตรชนะ / สวนสูตรชนะ counters
+                if actual_outcome != 'T': # Only count if not a Tie
+                    if prediction_mode_at_context == 'ตาม':
+                        self.tam_sutr_wins += 1
+                    elif prediction_mode_at_context == 'สวน':
+                        self.suan_sutr_wins += 1
+
                 # If successful, reduce memory blocked count for associated indicators (decay)
                 for indicator in patterns_detected + momentum_detected:
                     if indicator in self.memory_blocked_patterns:
@@ -795,7 +819,8 @@ class OracleEngine:
         
         # Clear context after learning, this context applies to the prediction *just made*
         self.last_prediction_context = {
-            'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None
+            'prediction': '?', 'patterns': [], 'momentum': [], 'intuition_applied': False, 
+            'predicted_by': None, 'dominant_pattern_id_at_prediction': None, 'prediction_mode': None
         }
 
     def update_learning_state_for_backtest(self, actual_outcome, predicted_outcome_for_backtest, patterns_detected, momentum_detected, intuition_applied):
