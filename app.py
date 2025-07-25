@@ -1,19 +1,19 @@
 import streamlit as st
 # Import everything needed from oracle_engine.py
 from oracle_engine import (
-    MIN_HISTORY_FOR_PREDICTION, MAX_HISTORY_FOR_ANALYSIS,
+    MIN_HISTORY_FOR_PREDICTION, MAX_HISTORY_FOR_ANALYSIS, # MAX_HISTORY_FOR_ANALYSIS is used in get_latest_history_string
     PREDICTION_THRESHOLD, COUNTER_PREDICTION_THRESHOLD,
     get_outcome_emoji, get_latest_history_string,
     analyze_dna_pattern, analyze_momentum, analyze_intuition, predict_outcome
 )
 
-# --- Configuration for app.py (UI specific) ---
-MAX_HISTORY_DISPLAY = 50 # Max history to store and display in UI
+# --- Configuration for app.py (UI specific, from V1.13) ---
+MAX_HISTORY_DISPLAY = 50 # Max history to store and display in UI (remains in app.py)
 
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="🔮 ORACLE Final V1.14 (Reliable Counter)", # Title updated for V1.14 with counter focus
+    page_title="🔮 ORACLE Final V1.13 (Split Files)", # Changed title to reflect V1.13 UI with split files
     page_icon="🔮",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -39,7 +39,7 @@ if 'prediction_wins' not in st.session_state:
 if 'counter_streak_count' not in st.session_state:
     st.session_state.counter_streak_count = 0 # Streak of wins when countering
 
-# --- UI Functions ---
+# --- UI Functions (from V1.13) ---
 
 def record_outcome(outcome):
     if st.session_state.last_prediction_data:
@@ -119,7 +119,7 @@ def reset_system():
     st.rerun()
 
 # --- Main App Layout ---
-st.title("🔮 ORACLE Final V1.14 (Reliable Counter)")
+st.title("🔮 ORACLE Final V1.13 (Split Files)") # UI Title reflects V1.13
 st.markdown("ระบบทำนายแนวโน้มบาคาร่า (สำหรับบันทึกผลด้วยตนเอง)")
 
 # History Display
@@ -210,7 +210,7 @@ st.markdown("---")
 
 st.button("🔄 รีเซ็ตระบบทั้งหมด", on_click=reset_system)
 
-# Developer View (Expandable Section)
+# Developer View (Expandable Section) - This section remains for debugging purposes
 with st.expander("🧬 มุมมองนักพัฒนา"):
     st.write("---")
     st.write("**สถานะ Session State:**")
