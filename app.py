@@ -3,7 +3,7 @@ import streamlit as st
 from oracle_engine import (
     MIN_HISTORY_FOR_PREDICTION, MAX_HISTORY_FOR_ANALYSIS,
     PREDICTION_THRESHOLD, COUNTER_PREDICTION_THRESHOLD,
-    get_outcome_emoji, get_latest_history_string, # These are also helper functions now in oracle_engine
+    get_outcome_emoji, get_latest_history_string,
     analyze_dna_pattern, analyze_momentum, analyze_intuition, predict_outcome
 )
 
@@ -128,8 +128,8 @@ if st.session_state.history:
     history_emojis = [get_outcome_emoji(h['main_outcome']) for h in st.session_state.history]
     history_display = "".join(history_emojis)
     
-    # This maintains the V1.13 long string display
-    st.markdown(f"<p style='font-size: 1.5em;'>{history_display}</p>", unsafe_allow_html=True)
+    # This is the V1.13 style display for history (long string)
+    st.markdown(f"<p style='font-size: 1.5em; overflow-x: auto; white-space: nowrap;'>{history_display}</p>", unsafe_allow_html=True)
     
     st.markdown(f"**จำนวนตาที่บันทึก: {len(st.session_state.history)}**")
 else:
