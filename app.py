@@ -1,275 +1,437 @@
 import streamlit as st
-import asyncio 
-import time
-from oracle_engine import OracleEngine # Ensure oracle_engine.py is in the same directory
+import random
+from collections import Counter
 
-# Set Streamlit page configuration
-st.set_page_config(page_title=f"ORACLE Predictor", layout="centered") 
+# --- Configuration ---
+MIN_HISTORY_FOR_PREDICTION = 15 # Adjusted from 20 to 15 for 'Enhanced Predict'
+MAX_HISTORY_DISPLAY = 50 # Max history to store and display
+MAX_HISTORY_FOR_ANALYSIS = 30 # For pattern analysis
+PREDICTION_THRESHOLD = 0.55 # Minimum confidence for a prediction
+COUNTER_PREDICTION_THRESHOLD = 0.65 # Higher threshold for 'สวน' prediction
+DNA_PATTERN_LENGTH = 5 # Length of pattern to look for in DNA analysis
+MOMENTUM_THRESHOLD = 0.70 # Threshold for strong momentum
+COUNTER_BIAS_STREAK_THRESHOLD = 3 # For counter bias detection
 
-# --- State Management for OracleEngine ---
-# Initialize OracleEngine only once
-if 'oracle_engine' not in st.session_state:
-    st.session_state.oracle_engine = OracleEngine()
-# Initialize history
-if 'oracle_history' not in st.session_state:
-    st.session_state.oracle_history = []
-# Initialize losing streak counter for the system's predictions
-if 'losing_streak_prediction' not in st.session_state:
-    st.session_state.losing_streak_prediction = 0
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="ORACLE Final V1.14 (Reliable Counter)",
+    page_icon="🔮",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
-# Retrieve the OracleEngine instance from session_state
-oracle = st.session_state.oracle_engine
+# --- Session State Initialization ---
+if 'history' not in st.session_state:
+    st.session_state.history = []
+if 'total_predictions' not in st.session_state:
+    st.session_state.total_predictions = 0
+if 'correct_predictions' not in st.session_state:
+    st.session_state.correct_predictions = 0
+if 'correct_counter_predictions' not in st.session_state:
+    st.session_state.correct_counter_predictions = 0
+if 'total_counter_predictions' not in st.session_state:
+    st.session_state.total_counter_predictions = 0
+if 'last_prediction_data' not in st.session_state:
+    st.session_state.last_prediction_data = None # Stores data of the last prediction made
+if 'prediction_counts' not in st.session_state:
+    st.session_state.prediction_counts = {} # {'P': count, 'B': count}
+if 'prediction_wins' not in st.session_state:
+    st.session_state.prediction_wins = {} # {'P': wins, 'B': wins}
+if 'counter_streak_count' not in st.session_state:
+    st.session_state.counter_streak_count = 0 # Streak of wins when countering
 
-# Custom CSS for centered gold title, reduced spacing, and prediction text size
-st.markdown(f"""
-<style>
-/* Font import from Google Fonts - This might be blocked by CSP in some environments */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@700;900&display=swap');
+# --- Helper Functions ---
 
-/* Ensure the main container has no unnecessary padding */
-.stApp {{
-    padding-top: 1rem; /* Adjust as needed to pull content up */
-}}
+# Function to get outcome emoji
+def get_outcome_emoji(outcome):
+    return "🟦" if outcome == 'P' else "🟥" if outcome == 'B' else "⚪️"
 
-.center-gold-title {{
-    text-align: center;
-    color: gold; /* Explicitly set gold color */
-    font-size: 3.5em; /* Main ORACLE text size */
-    font-weight: 900; /* Make it extra bold for emphasis */
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-    margin-bottom: 0.2rem; /* Reduced space below title */
-    padding-bottom: 0px;
-    font-family: 'Orbitron', 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Orbitron for ORACLE */
-}}
-.version-text {{
-    font-size: 0.5em; /* Smaller font size for version */
-    font-weight: normal;
-    color: #CCCCCC; /* Lighter color for less emphasis */
-    vertical-align: super; /* Slightly raise it */
-    margin-left: 0.2em; /* Space from ORACLE text */
-    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Standard font for version */
-}}
-h3 {{
-    margin-top: 0.5rem; /* Reduced space above h3 */
-    margin-bottom: 0.5rem; /* Reduced space below h3 */
-}}
-.stMarkdown, .stText, .stInfo, .stWarning, .stSuccess {{
-    margin-top: 0.2rem; /* Reduced space above various text elements */
-    margin-bottom: 0.2rem; /* Reduced space below various text elements */
-    font-family: 'Inter', sans-serif; /* General text font */
-}}
-.stButton>button {{
-    margin-top: 0.2rem; /* Reduced space around buttons */
-    margin-bottom: 0.2rem;
-    line-height: 1.2; /* Adjust line height for button text if needed */
-    font-family: 'Inter', sans-serif; /* Button text font */
-}}
+# Function to get latest history string
+def get_latest_history_string(num_results=MAX_HISTORY_FOR_ANALYSIS):
+    return "".join([h['main_outcome'] for h in st.session_state.history[-num_results:]])
 
-/* Prediction text will now use h1 tag for main sizing */
-.prediction-h1 {{
-    text-align: center; /* Center the prediction text */
-    font-size: 2.5em; /* Make it even larger for clear visibility */
-    margin-top: 0.2rem;
-    margin-bottom: 0.2rem;
-    font-family: 'Inter', sans-serif; /* Prediction text font */
-}}
+# --- Prediction Logic ---
 
-/* Reduce padding around columns to make buttons closer */
-div[data-testid="stColumns"] > div {{
-    padding-left: 0.2rem;
-    padding-right: 0.2rem;
-}}
-/* Ensure the history display also has less padding */
-.stMarkdown p {{ 
-    padding: 0px;
-    margin: 0px;
-}}
-</style>
-""", unsafe_allow_html=True)
+# 1. DNA Pattern Analysis
+def analyze_dna_pattern(history_str):
+    if len(history_str) < DNA_PATTERN_LENGTH:
+        return None, 0
 
-# Main title of the app, now showing version with smaller text
-st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{oracle.VERSION}</span></h1>', unsafe_allow_html=True)
-
-# --- Prediction Display Section ---
-# Determine prediction mode for display
-current_prediction_mode = None
-if len(st.session_state.oracle_history) >= 15:
-    # Need to get prediction result to determine mode
-    temp_result = oracle.predict_next(st.session_state.oracle_history, is_backtest=False)
-    current_prediction_mode = temp_result['prediction_mode']
-
-mode_text = ""
-mode_emoji = ""
-if current_prediction_mode == 'ตาม':
-    mode_emoji = "⏮️"
-    mode_text = "ตาม"
-elif current_prediction_mode == 'สวน':
-    mode_emoji = "⏭️"
-    mode_text = "สวน"
-elif current_prediction_mode == '⚠️': 
-    mode_emoji = "⚠️"
-    mode_text = "งดเดิมพัน"
-else: # Not enough data
-    mode_emoji = ""
-    mode_text = ""
-
-st.markdown(f"<h3>ผลวิเคราะห์: {mode_emoji} {mode_text}</h3>", unsafe_allow_html=True)
-
-
-# Check if enough history is available for analysis
-if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
-    # Pass the full history to the engine for prediction
-    result = oracle.predict_next(st.session_state.oracle_history)
-
-    # Prepare prediction text with emojis and style
-    prediction_text = ""
-    if result['prediction'] == 'P':
-        prediction_text = f"🔵 P"
-    elif result['prediction'] == 'B':
-        prediction_text = f"🔴 B"
-    elif result['prediction'] == '⚠️':
-        prediction_text = f"⚠️" 
-    else:
-        prediction_text = result['prediction'] # Fallback for '?'
-
-    # Display prediction using h1 tag for large size
-    st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
+    target_pattern = history_str[-DNA_PATTERN_LENGTH:]
     
-    # Display ตามสูตรชนะ / สวนสูตรชนะ
-    st.markdown(f"📈 **ตามสูตรชนะ** : {oracle.tam_sutr_wins} ครั้ง")
-    st.markdown(f"📉 **สวนสูตรชนะ** : {oracle.suan_sutr_wins} ครั้ง")
-
-    # Display Accuracy
-    st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
+    # Try finding the pattern and what came after it
+    # We look for patterns ending at different points in the history
+    # to see what typically follows them.
     
-    # Display the system's losing streak
-    if st.session_state.losing_streak_prediction > 0:
-        st.warning(f"**❌ แพ้ติดกัน:** {st.session_state.losing_streak_prediction} ครั้ง")
-    else:
-        st.success(f"**✅ แพ้ติดกัน:** 0 ครั้ง")
-else:
-    # Message when not enough data for analysis
-    st.info(f"🔮 ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย 15 ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
-
-# --- History Display Section ---
-st.markdown("<h3>📋 ประวัติผลลัพธ์</h3>", unsafe_allow_html=True)
-if st.session_state.oracle_history:
-    emoji_history = {'P': '🟦', 'B': '🟥', 'T': '⚪️'}
-    # Display history as a single string of emojis for compactness
-    st.write(' '.join(emoji_history.get(item['main_outcome'], '') for item in st.session_state.oracle_history))
-else:
-    st.info("ยังไม่มีผลลัพธ์ในประวัติ")
-
-# --- Record Outcome Buttons Section ---
-st.markdown("<h3>➕ บันทึกผลลัพธ์</h3>", unsafe_allow_html=True)
-col1, col2, col3, col4 = st.columns(4)
-
-# Function to handle adding a new result and updating learning/streak
-def add_new_result(outcome):
-    # Get the prediction result for the *current state* (before this new hand is added)
-    # This is needed to get the prediction and associated patterns/momentum for learning
-    # Only predict if enough history
-    if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
-        prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) 
-
-        # Update losing streak based on this prediction and the actual outcome
-        # Only count if the system actually predicted P or B (not '⚠️')
-        if prediction_for_learning['prediction'] in ['P', 'B']: 
-            if outcome == 'T': 
-                pass # Tie, losing streak does not change
-            elif prediction_for_learning['prediction'] == outcome: # Correct prediction
-                st.session_state.losing_streak_prediction = 0
-            else: # Incorrect prediction
-                st.session_session_state.losing_streak_prediction += 1
+    # Analyze what follows the pattern
+    followers = Counter()
+    for i in range(len(history_str) - DNA_PATTERN_LENGTH):
+        if history_str[i : i + DNA_PATTERN_LENGTH] == target_pattern:
+            if (i + DNA_PATTERN_LENGTH) < len(history_str):
+                followers[history_str[i + DNA_PATTERN_LENGTH]] += 1
     
-    st.session_state.oracle_history.append({'main_outcome': outcome}) 
+    total_followers = sum(followers.values())
     
-    # Pass the full current history to update_learning_state to trigger backtest calculation
-    oracle.update_learning_state(outcome, st.session_state.oracle_history) 
-    st.rerun() 
+    if total_followers == 0:
+        return None, 0
+    
+    most_common_follower = followers.most_common(1)
+    
+    if most_common_follower:
+        predicted_outcome = most_common_follower[0][0]
+        confidence = most_common_follower[0][1] / total_followers
+        return predicted_outcome, confidence
+    return None, 0
 
-with col1:
-    if st.button("🟦 P", use_container_width=True, key="add_p"):
-        add_new_result('P')
-with col2:
-    if st.button("🟥 B", use_container_width=True, key="add_b"):
-        add_new_result('B')
-with col3:
-    if st.button("⚪️ T", use_container_width=True, key="add_t"):
-        add_new_result('T')
-with col4:
-    if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
-        if st.session_state.oracle_history:
-            # Remove the last item
-            st.session_state.oracle_history.pop()
+# 2. Momentum Tracker
+def analyze_momentum(history_str):
+    if len(history_str) < 5: # Need at least 5 for a short trend
+        return None, 0
+
+    # Check recent streaks
+    last_outcome = history_str[-1]
+    last_streak_length = 0
+    for i in reversed(range(len(history_str))):
+        if history_str[i] == last_outcome:
+            last_streak_length += 1
+        else:
+            break
             
-            # Re-initialize engine and re-run history to update learning state correctly
-            # This is necessary because OracleEngine is stateless and needs to rebuild its internal state
-            # from the modified history.
-            st.session_state.oracle_engine = OracleEngine() # Create a fresh engine
+    if last_streak_length >= 3: # Strong streak
+        return last_outcome, min(1.0, 0.5 + (last_streak_length - 3) * 0.1) # Confidence increases with length
+    
+    # Check for alternating patterns (Ping-pong like)
+    if len(history_str) >= 4 and history_str[-4:] in ["PBPB", "BPBP"]:
+        # Predict the opposite of the last if it's alternating
+        predicted_outcome = 'P' if history_str[-1] == 'B' else 'B'
+        return predicted_outcome, 0.65 # Good confidence for clear alternating
+    
+    return None, 0
+
+# 3. Intuition (Simple Pattern Matching & Counter Bias)
+def analyze_intuition(history_str):
+    if len(history_str) < 3:
+        return None, 0, False # Outcome, Confidence, IsCounter
+
+    last_3 = history_str[-3:]
+    last_2 = history_str[-2:]
+    
+    # Counter Bias Logic (New from V1.14)
+    # If there's a strong streak, consider countering it IF it's not a common 'dragon' pattern
+    # This is an intuitive counter, not purely statistical.
+    if len(history_str) >= COUNTER_BIAS_STREAK_THRESHOLD:
+        last_outcome = history_str[-1]
+        streak_count = 0
+        for i in reversed(range(len(history_str))):
+            if history_str[i] == last_outcome:
+                streak_count += 1
+            else:
+                break
+        
+        if streak_count >= COUNTER_BIAS_STREAK_THRESHOLD:
+            # Check if this streak has been consistently followed (DNA-like check for counter)
+            # Find instances of this exact streak
+            streak_pattern = history_str[len(history_str) - streak_count:]
             
-            # Recalculate losing streak for the *remaining* history
-            current_losing_streak = 0
-            if len(st.session_state.oracle_history) >= 15: # Only if enough history for predictions
-                temp_oracle_for_streak = OracleEngine() # Use a temporary oracle to simulate predictions for streak calc
-                for i in range(15, len(st.session_state.oracle_history)):
-                    history_segment_for_pred = st.session_state.oracle_history[:i]
-                    actual_outcome_for_streak_calc = st.session_state.oracle_history[i]['main_outcome']
+            # Count how often this streak continues vs. breaks
+            continue_count = 0
+            break_count = 0
+            for i in range(len(history_str) - streak_count):
+                if history_str[i : i + streak_count] == streak_pattern:
+                    if (i + streak_count) < len(history_str):
+                        if history_str[i + streak_count] == last_outcome:
+                            continue_count += 1
+                        else:
+                            break_count += 1
+            
+            total_instances = continue_count + break_count
+            if total_instances > 0:
+                if break_count / total_instances >= 0.5: # If it breaks more than it continues
+                    return ('P' if last_outcome == 'B' else 'B'), COUNTER_PREDICTION_THRESHOLD, True # Predict counter with high confidence
+                elif continue_count / total_instances == 0 and total_instances >= 2: # If it never continued
+                    return ('P' if last_outcome == 'B' else 'B'), COUNTER_PREDICTION_THRESHOLD, True
 
-                    pred_result_for_streak = temp_oracle_for_streak.predict_next(history_segment_for_pred)
-                    
-                    if pred_result_for_streak['prediction'] in ['P', 'B']:
-                        if actual_outcome_for_streak_calc != 'T': # Only count if not Tie
-                            if pred_result_for_streak['prediction'] == actual_outcome_for_streak_calc:
-                                current_losing_streak = 0
-                            else:
-                                current_losing_streak += 1
-            st.session_state.losing_streak_prediction = current_losing_streak
+    # Simple Intuition (from previous versions, less prominent now)
+    if last_3 == "BBP" or last_3 == "PBB": # Two-cut pattern
+        return ('P' if last_3[-1] == 'B' else 'B'), 0.6, False
+    if last_3 == "PPB" or last_3 == "BPP": # Two-cut pattern
+        return ('B' if last_3[-1] == 'P' else 'P'), 0.6, False
+    
+    # Simple Ping-Pong
+    if last_2 == "BP" or last_2 == "PB":
+        return ('B' if last_2[-1] == 'P' else 'P'), 0.55, False # Predict opposite
+        
+    return None, 0, False # No intuition pattern found
 
-            # Rebuild the main oracle engine's state correctly by replaying remaining history
-            main_oracle_rebuild = OracleEngine()
-            if len(st.session_state.oracle_history) > 0:
-                # Need to simulate adding hands one by one to rebuild learning state
-                for i in range(len(st.session_state.oracle_history)):
-                    history_segment_for_learning = st.session_state.oracle_history[:i+1] # History up to this point
-                    actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
-                    
-                    # For update_learning_state, we need the context of the *previous* prediction
-                    temp_prediction_context = {'prediction': '?', 'prediction_mode': None, 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None}
-                    
-                    if len(history_segment_for_learning) > 0 and (len(history_segment_for_learning) -1) >= 15: # If prev history was long enough for a prediction
-                        # Simulate prediction for the *previous* state to get context
-                        temp_pred_result = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False)
-                        # Manually set last_prediction_context from the temp_pred_result
-                        main_oracle_rebuild.last_prediction_context = {
-                            'prediction': temp_pred_result['prediction'],
-                            'patterns': main_oracle_rebuild.detect_dna_patterns(history_segment_for_learning[:-1]), # Re-detect for context
-                            'momentum': main_oracle_rebuild.detect_momentum(history_segment_for_learning[:-1]), # Re-detect for context
-                            'intuition_applied': 'Intuition' in temp_pred_result['predicted_by'] if temp_pred_result['predicted_by'] else False,
-                            'predicted_by': temp_pred_result['predicted_by'],
-                            'dominant_pattern_id_at_prediction': main_oracle_rebuild.last_dominant_pattern_id, # This is still tricky without full context rebuild
-                            'prediction_mode': temp_pred_result['prediction_mode']
-                        }
+def predict_outcome():
+    history_str = get_latest_history_string()
+    
+    if len(history_str) < MIN_HISTORY_FOR_PREDICTION:
+        return {"prediction": "ไม่เพียงพอ", "confidence": 0, "predicted_by": [], "is_counter": False}
 
-                    main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, history_segment_for_learning)
-                
-                st.session_state.oracle_engine = main_oracle_rebuild
-            else: # If history becomes empty after pop
-                st.session_state.oracle_engine = OracleEngine() # Reset fully
-                st.session_state.losing_streak_prediction = 0
-        st.rerun()
+    predictions = []
+    
+    # 1. DNA Analysis
+    dna_pred, dna_conf = analyze_dna_pattern(history_str)
+    if dna_pred:
+        predictions.append({"outcome": dna_pred, "confidence": dna_conf, "source": "DNA"})
 
-# --- Reset All Button ---
-if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
-    st.session_state.oracle_history.clear() 
-    st.session_state.oracle_engine = OracleEngine() 
-    st.session_state.losing_streak_prediction = 0 
+    # 2. Momentum Analysis
+    momentum_pred, momentum_conf = analyze_momentum(history_str)
+    if momentum_pred:
+        predictions.append({"outcome": momentum_pred, "confidence": momentum_conf, "source": "Momentum"})
+
+    # 3. Intuition (incl. Counter Bias)
+    intuition_pred, intuition_conf, is_counter_intuition = analyze_intuition(history_str)
+    if intuition_pred:
+        predictions.append({"outcome": intuition_pred, "confidence": intuition_conf, "source": "Intuition", "is_counter": is_counter_intuition})
+    
+    # Combine predictions
+    if not predictions:
+        return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
+
+    # Prioritize Counter if very confident and from Intuition
+    for p in predictions:
+        if p.get('is_counter', False) and p['confidence'] >= COUNTER_PREDICTION_THRESHOLD:
+            return {"prediction": p['outcome'], 
+                    "confidence": p['confidence'], 
+                    "predicted_by": [p['source']], 
+                    "is_counter": True}
+
+    # Otherwise, find the strongest prediction (average confidence for same outcome)
+    outcome_scores = Counter()
+    outcome_sources = {} # To keep track of sources for each outcome
+    is_any_counter = False
+
+    for p in predictions:
+        outcome_scores[p['outcome']] += p['confidence']
+        if p['outcome'] not in outcome_sources:
+            outcome_sources[p['outcome']] = []
+        outcome_sources[p['outcome']].append(p['source'])
+        if p.get('is_counter', False):
+            is_any_counter = True
+
+    if not outcome_scores:
+        return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
+
+    # Sort by highest score first
+    sorted_outcomes = sorted(outcome_scores.items(), key=lambda item: item[1], reverse=True)
+    
+    best_outcome = sorted_outcomes[0][0]
+    best_confidence = sorted_outcomes[0][1] / len(outcome_sources[best_outcome]) # Average confidence
+    
+    # Final check against general prediction threshold
+    if best_confidence >= PREDICTION_THRESHOLD:
+        return {"prediction": best_outcome, 
+                "confidence": best_confidence, 
+                "predicted_by": outcome_sources[best_outcome],
+                "is_counter": is_any_counter}
+    else:
+        return {"prediction": "ไม่ชัดเจน", "confidence": best_confidence, "predicted_by": outcome_sources[best_outcome], "is_counter": is_any_counter}
+
+
+# --- UI Functions ---
+
+# Function to record outcome
+def record_outcome(outcome):
+    if st.session_state.last_prediction_data:
+        predicted_outcome = st.session_state.last_prediction_data['prediction']
+        confidence = st.session_state.last_prediction_data['confidence']
+        is_counter = st.session_state.last_prediction_data['is_counter']
+
+        if predicted_outcome != "ไม่เพียงพอ" and predicted_outcome != "ไม่พบรูปแบบ" and predicted_outcome != "ไม่ชัดเจน":
+            st.session_state.total_predictions += 1
+            if predicted_outcome == outcome:
+                st.session_state.correct_predictions += 1
+                if is_counter:
+                    st.session_state.counter_streak_count += 1
+                else:
+                    st.session_state.counter_streak_count = 0 # Reset if not counter or counter failed
+            else:
+                st.session_state.counter_streak_count = 0 # Reset on wrong prediction
+
+            # Update prediction win/loss counts per outcome type (P/B)
+            st.session_state.prediction_counts[predicted_outcome] = st.session_state.prediction_counts.get(predicted_outcome, 0) + 1
+            if predicted_outcome == outcome:
+                st.session_state.prediction_wins[predicted_outcome] = st.session_state.prediction_wins.get(predicted_outcome, 0) + 1
+
+            # Update counter stats if it was a counter prediction
+            if is_counter:
+                st.session_state.total_counter_predictions += 1
+                if predicted_outcome == outcome:
+                    st.session_state.correct_counter_predictions += 1
+
+    st.session_state.history.append({'main_outcome': outcome, 'timestamp': st.session_state.get('current_timestamp', 'N/A')})
+    # Keep history within MAX_HISTORY_DISPLAY limit
+    if len(st.session_state.history) > MAX_HISTORY_DISPLAY:
+        st.session_state.history = st.session_state.history[-MAX_HISTORY_DISPLAY:]
+    
+    # Clear last prediction data after recording outcome
+    st.session_state.last_prediction_data = None
+
+
+def delete_last_outcome():
+    if st.session_state.history:
+        # Revert prediction stats if the deleted outcome was the one that followed a prediction
+        if st.session_state.last_prediction_data:
+            # This logic is tricky if user deletes multiple outcomes.
+            # For simplicity, we only revert if the *immediately* previous action was a prediction and recording.
+            # A more robust system would timestamp predictions and outcomes more carefully.
+            
+            # Reset prediction data if the deleted outcome was the last one recorded and it affected stats
+            if st.session_state.total_predictions > 0 and st.session_state.last_prediction_data['prediction'] != "ไม่เพียงพอ":
+                # Assuming the last recorded outcome was the one related to the last prediction
+                last_recorded_outcome_info = st.session_state.history[-1]
+                last_predicted_outcome = st.session_state.last_prediction_data['prediction']
+                last_is_counter = st.session_state.last_prediction_data['is_counter']
+
+                st.session_state.total_predictions -= 1
+                if last_predicted_outcome == last_recorded_outcome_info['main_outcome']:
+                    st.session_state.correct_predictions -= 1
+                    # Revert counter streak only if it was incremented by this exact correct counter prediction
+                    if last_is_counter:
+                        st.session_state.counter_streak_count = max(0, st.session_state.counter_streak_count - 1)
+                else:
+                    # If it was a wrong prediction, and counter streak was reset, we can't easily undo its effect.
+                    # For simplicity, if it was wrong, the streak was already 0.
+                    pass 
+
+                st.session_state.prediction_counts[last_predicted_outcome] = st.session_state.prediction_counts.get(last_predicted_outcome, 1) - 1
+                if last_predicted_outcome == last_recorded_outcome_info['main_outcome']:
+                    st.session_state.prediction_wins[last_predicted_outcome] = st.session_state.prediction_wins.get(last_predicted_outcome, 0) - 1
+
+                if last_is_counter:
+                    st.session_state.total_counter_predictions -= 1
+                    if last_predicted_outcome == last_recorded_outcome_info['main_outcome']:
+                        st.session_state.correct_counter_predictions -= 1
+        
+        st.session_state.history.pop()
+        # After deleting, we need to re-run prediction to update the UI
+        st.session_state.last_prediction_data = None # Clear this to force re-prediction on next run
+
+def reset_system():
+    st.session_state.history = []
+    st.session_state.total_predictions = 0
+    st.session_state.correct_predictions = 0
+    st.session_state.correct_counter_predictions = 0
+    st.session_state.total_counter_predictions = 0
+    st.session_state.last_prediction_data = None
+    st.session_state.prediction_counts = {}
+    st.session_state.prediction_wins = {}
+    st.session_state.counter_streak_count = 0
     st.rerun()
 
-# --- Developer View (Moved to bottom and in an expander) ---
-# Only show if enough history is present
-if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
-    current_prediction_info = oracle.predict_next(st.session_state.oracle_history)
-    with st.expander("🧬 Developer View: คลิกเพื่อดูรายละเอียด"):
-        st.code(current_prediction_info['developer_view'], language='text')
+# --- Main App Layout ---
+st.title("🔮 ORACLE Final V1.14 (Reliable Counter)")
+st.markdown("ระบบทำนายแนวโน้มบาคาร่า (สำหรับบันทึกผลด้วยตนเอง)")
 
+# History Display
+st.subheader("📋 ประวัติผลลัพธ์")
+if st.session_state.history:
+    history_emojis = [get_outcome_emoji(h['main_outcome']) for h in st.session_state.history]
+    history_display = "".join(history_emojis)
+    # Wrap history to prevent horizontal overflow in narrow screens
+    wrapped_history = ""
+    for i in range(0, len(history_display), 20): # Wrap every 20 emojis
+        wrapped_history += history_display[i:i+20] + "\n"
+    st.markdown(f"<p style='word-wrap: break-word; font-size: 1.5em;'>{wrapped_history}</p>", unsafe_allow_html=True)
+    st.markdown(f"**จำนวนตาที่บันทึก: {len(st.session_state.history)}**")
+else:
+    st.write("ยังไม่มีประวัติ กรุณาเริ่มบันทึกผล")
+
+# Prediction Display
+st.subheader("🧠 ผลการวิเคราะห์และทำนาย")
+
+current_prediction = predict_outcome()
+st.session_state.last_prediction_data = current_prediction # Store for later use
+
+pred_emoji = get_outcome_emoji(current_prediction['prediction']) if current_prediction['prediction'] in ['P', 'B', 'T'] else "❓"
+confidence_percent = f"{current_prediction['confidence']*100:.1f}%"
+
+prediction_text = f"**ผลวิเคราะห์: {pred_emoji} {current_prediction['prediction']}** (ความมั่นใจ: {confidence_percent})"
+
+if current_prediction['predicted_by']:
+    predicted_by_str = ", ".join(current_prediction['predicted_by'])
+    prediction_text += f"\n*ทำนายโดย: {predicted_by_str}*"
+    if current_prediction.get('is_counter', False):
+        prediction_text += " (สวน)"
+
+if len(st.session_state.history) < MIN_HISTORY_FOR_PREDICTION:
+    st.warning(f"บันทึกประวัติอย่างน้อย {MIN_HISTORY_FOR_PREDICTION} ตา เพื่อเริ่มการทำนาย (ปัจจุบัน: {len(st.session_state.history)} ตา)")
+elif current_prediction['prediction'] == "ไม่พบรูปแบบ":
+    st.info("ระบบยังไม่พบรูปแบบที่ชัดเจนในการทำนาย")
+elif current_prediction['prediction'] == "ไม่ชัดเจน":
+    st.warning(f"รูปแบบยังไม่ชัดเจนพอ (ความมั่นใจ {confidence_percent} < {PREDICTION_THRESHOLD*100:.0f}%)")
+else:
+    if current_prediction.get('is_counter', False):
+        st.success(prediction_text)
+    else:
+        st.info(prediction_text)
+
+# Record Outcome Buttons
+st.subheader("➕ บันทึกผลลัพธ์")
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.button("🟦 P", on_click=record_outcome, args=('P',))
+with col2:
+    st.button("🟥 B", on_click=record_outcome, args=('B',))
+with col3:
+    st.button("⚪️ T", on_click=record_outcome, args=('T',))
+with col4:
+    st.button("❌ ลบล่าสุด", on_click=delete_last_outcome)
+
+st.markdown("---")
+
+# Performance Statistics
+st.subheader("📊 สถิติประสิทธิภาพ (รวม)")
+
+total_preds_display = st.session_state.total_predictions
+correct_preds_display = st.session_state.correct_predictions
+accuracy = (correct_preds_display / total_preds_display * 100) if total_preds_display > 0 else 0
+
+st.write(f"**🎯 ความแม่นยำ (รวม): {accuracy:.1f}%** ({correct_preds_display}/{total_preds_display} ครั้ง)")
+
+if st.session_state.total_counter_predictions > 0:
+    counter_accuracy = (st.session_state.correct_counter_predictions / st.session_state.total_counter_predictions * 100)
+    st.write(f"**🎯 ความแม่นยำ (สวน): {counter_accuracy:.1f}%** ({st.session_state.correct_counter_predictions}/{st.session_state.total_counter_predictions} ครั้ง)")
+    if st.session_state.correct_counter_predictions > 0 and st.session_state.total_counter_predictions > 0:
+        st.write(f"🔥 สวนสูตรชนะต่อเนื่อง: **{st.session_state.counter_streak_count}** ครั้ง")
+
+
+st.subheader("📈 สถิติแยกตามผลลัพธ์ที่ทำนาย")
+if st.session_state.prediction_counts:
+    for outcome, count in st.session_state.prediction_counts.items():
+        wins = st.session_state.prediction_wins.get(outcome, 0)
+        outcome_accuracy = (wins / count * 100) if count > 0 else 0
+        st.write(f"- ทำนาย {get_outcome_emoji(outcome)} {outcome}: **{outcome_accuracy:.1f}%** ({wins}/{count} ครั้ง)")
+else:
+    st.write("ยังไม่มีสถิติการทำนาย")
+
+st.markdown("---")
+
+st.button("🔄 รีเซ็ตระบบทั้งหมด", on_click=reset_system)
+
+# Developer View (Expandable Section)
+with st.expander("🧬 มุมมองนักพัฒนา"):
+    st.write("---")
+    st.write("**สถานะ Session State:**")
+    st.json(st.session_state.to_dict())
+    
+    st.write("---")
+    st.write("**ประวัติ (สำหรับวิเคราะห์ DNA):**")
+    st.write(get_latest_history_string())
+
+    st.write("---")
+    st.write("**ผลลัพธ์จากการวิเคราะห์แต่ละส่วน (Debug):**")
+    debug_history_str = get_latest_history_string()
+    
+    st.write(f"DNA Analysis: {analyze_dna_pattern(debug_history_str)}")
+    st.write(f"Momentum Analysis: {analyze_momentum(debug_history_str)}")
+    st.write(f"Intuition Analysis: {analyze_intuition(debug_history_str)}")
+
+    st.write("---")
+    st.write("**Predicted by (Debugging the KeyError location):**")
+    if st.session_state.last_prediction_data and 'predicted_by' in st.session_state.last_prediction_data:
+        st.write(f"st.session_state.last_prediction_data['predicted_by']: {st.session_state.last_prediction_data['predicted_by']}")
+    else:
+        st.write("st.session_state.last_prediction_data หรือ 'predicted_by' key ไม่มีอยู่")
