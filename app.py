@@ -330,11 +330,12 @@ st.subheader("📋 ประวัติผลลัพธ์")
 if st.session_state.history:
     history_emojis = [get_outcome_emoji(h['main_outcome']) for h in st.session_state.history]
     history_display = "".join(history_emojis)
-    # Wrap history to prevent horizontal overflow in narrow screens
-    wrapped_history = ""
-    for i in range(0, len(history_display), 20): # Wrap every 20 emojis
-        wrapped_history += history_display[i:i+20] + "\n"
-    st.markdown(f"<p style='word-wrap: break-word; font-size: 1.5em;'>{wrapped_history}</p>", unsafe_allow_html=True)
+    
+    # --- START OF MODIFIED SECTION FOR HISTORY DISPLAY ---
+    # Removed the wrapping logic to display as a single long line as in v1.13
+    st.markdown(f"<p style='font-size: 1.5em;'>{history_display}</p>", unsafe_allow_html=True)
+    # --- END OF MODIFIED SECTION ---
+
     st.markdown(f"**จำนวนตาที่บันทึก: {len(st.session_state.history)}**")
 else:
     st.write("ยังไม่มีประวัติ กรุณาเริ่มบันทึกผล")
