@@ -4,7 +4,21 @@ import time
 from oracle_engine import OracleEngine # Ensure oracle_engine.py is in the same directory
 
 # Set Streamlit page configuration
-st.set_page_config(page_title=f"ORACLE {OracleEngine.VERSION} Predictor", layout="centered")
+st.set_page_config(page_title=f"ORACLE Predictor", layout="centered") # Title doesn't need version here
+
+# --- State Management for OracleEngine (Moved to top) ---
+# Initialize OracleEngine only once
+if 'oracle_engine' not in st.session_state:
+    st.session_state.oracle_engine = OracleEngine()
+# Initialize history
+if 'oracle_history' not in st.session_state:
+    st.session_state.oracle_history = []
+# Initialize losing streak counter for the system's predictions
+if 'losing_streak_prediction' not in st.session_state:
+    st.session_state.losing_streak_prediction = 0
+
+# Retrieve the OracleEngine instance from session_state (Moved to top)
+oracle = st.session_state.oracle_engine
 
 # Custom CSS for centered gold title, reduced spacing, and prediction text size
 st.markdown(f"""
@@ -71,20 +85,6 @@ div[data-testid="stColumns"] > div {{
 
 # Main title of the app, now showing version with smaller text
 st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{oracle.VERSION}</span></h1>', unsafe_allow_html=True)
-
-# --- State Management for OracleEngine ---
-# Initialize OracleEngine only once
-if 'oracle_engine' not in st.session_state:
-    st.session_state.oracle_engine = OracleEngine()
-# Initialize history
-if 'oracle_history' not in st.session_state:
-    st.session_state.oracle_history = []
-# Initialize losing streak counter for the system's predictions
-if 'losing_streak_prediction' not in st.session_state:
-    st.session_state.losing_streak_prediction = 0
-
-# Retrieve the OracleEngine instance from session_state
-oracle = st.session_state.oracle_engine
 
 # --- Prediction Display Section ---
 st.markdown("<h3>ผลวิเคราะห์:</h3>", unsafe_allow_html=True) # Shortened title
@@ -180,63 +180,38 @@ with col4:
             # from the modified history.
             st.session_state.oracle_engine = OracleEngine() # Create a fresh engine
             
-            # Replay the remaining history to the new engine
-            # Only replay if there's history left, and if that history is long enough for prediction
-            if len(st.session_state.oracle_history) >= 1: # Replay from 1 hand
-                for i in range(len(st.session_state.oracle_history)):
-                    # Pass the sub-history for correct context when replaying
-                    # This simulates adding hands one by one
-                    oracle_for_replay = OracleEngine() # Create a temporary engine for each step of replay
-                    
-                    # Rebuild state from scratch for each hand in the replay
-                    temp_history_segment = st.session_state.oracle_history[:i+1]
-                    if len(temp_history_segment) >= 15: # Only predict if history is long enough
-                        # Simulate a prediction to capture context for learning update
-                        _ = oracle_for_replay.predict_next(temp_history_segment, is_backtest=False) 
-                    
-                    # Update learning state with the actual outcome of that hand
-                    oracle_for_replay.update_learning_state(temp_history_segment[-1]['main_outcome'], temp_history_segment)
-                    
-                    # Transfer the learned state from temp_engine to the main oracle engine
-                    # This is complex because we need to merge states, not just assign.
-                    # Simplest way: just re-init main oracle engine and replay all history through it.
-                    pass # We will do this after the loop.
+            # Recalculate losing streak for the *remaining* history
+            current_losing_streak = 0
+            if len(st.session_state.oracle_history) >= 15: # Only if enough history for predictions
+                temp_oracle_for_streak = OracleEngine() # Use a temporary oracle to simulate predictions for streak calc
+                for i in range(15, len(st.session_state.oracle_history)):
+                    history_segment_for_pred = st.session_state.oracle_history[:i]
+                    actual_outcome_for_streak_calc = st.session_state.oracle_history[i]['main_outcome']
 
-                # After popping, re-evaluate losing streak based on updated history
-                # We need to re-calculate current losing streak
-                current_losing_streak = 0
-                if len(st.session_state.oracle_history) >= 15: # Need enough history to predict
-                    temp_oracle = OracleEngine() # Use a temporary oracle to get predictions for streak
-                    for i in range(15, len(st.session_state.oracle_history)):
-                        hist_segment = st.session_state.oracle_history[:i]
-                        actual_outcome_for_streak = st.session_state.oracle_history[i]['main_outcome']
-                        
-                        pred_res = temp_oracle.predict_next(hist_segment)
-                        
-                        if pred_res['prediction'] in ['P', 'B']:
-                            if actual_outcome_for_streak != 'T':
-                                if pred_res['prediction'] == actual_outcome_for_streak:
-                                    current_losing_streak = 0
-                                else:
-                                    current_losing_streak += 1
-                st.session_state.losing_streak_prediction = current_losing_streak
-                
-                # Rebuild the main oracle engine's state correctly
-                main_oracle_rebuild = OracleEngine()
-                if len(st.session_state.oracle_history) > 0:
-                    for i in range(len(st.session_state.oracle_history)):
-                        hist_segment = st.session_state.oracle_history[:i] # History *before* current hand is added
-                        actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
-                        
-                        if len(hist_segment) >= 15: # Only if history is long enough to have predicted
-                            _ = main_oracle_rebuild.predict_next(hist_segment, is_backtest=False) # Get context for learning
-                        
-                        main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, st.session_state.oracle_history[:i+1]) # Pass full segment for backtest
-                
-                st.session_state.oracle_engine = main_oracle_rebuild
-            else: # If history becomes empty after pop
-                st.session_state.oracle_engine = OracleEngine() # Reset fully
-                st.session_state.losing_streak_prediction = 0
+                    pred_result_for_streak = temp_oracle_for_streak.predict_next(history_segment_for_pred)
+                    
+                    if pred_result_for_streak['prediction'] in ['P', 'B']:
+                        if actual_outcome_for_streak_calc != 'T': # Only count if not Tie
+                            if pred_result_for_streak['prediction'] == actual_outcome_for_streak_calc:
+                                current_losing_streak = 0
+                            else:
+                                current_losing_streak += 1
+            st.session_state.losing_streak_prediction = current_losing_streak
+
+            # Rebuild the main oracle engine's state correctly by replaying remaining history
+            main_oracle_rebuild = OracleEngine()
+            if len(st.session_state.oracle_history) > 0:
+                for i in range(len(st.session_state.oracle_history)):
+                    # For each step in history, simulate adding it
+                    history_segment_for_learning = st.session_state.oracle_history[:i+1] # History up to this point
+                    actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
+                    
+                    if len(history_segment_for_learning) >= 15: # Only if history is long enough for prediction to have occurred
+                        _ = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False) # Get context for learning from *previous* state
+                    
+                    main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, history_segment_for_learning)
+            
+            st.session_state.oracle_engine = main_oracle_rebuild
         st.rerun()
 
 # --- Reset All Button ---
