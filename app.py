@@ -24,7 +24,6 @@ oracle = st.session_state.oracle_engine
 st.markdown(f"""
 <style>
 /* Font import from Google Fonts - This might be blocked by CSP in some environments */
-/* Attempt to use Orbitron font for ORACLE, Inter for general text */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@700;900&display=swap');
 
 /* Ensure the main container has no unnecessary padding */
@@ -100,16 +99,21 @@ if len(st.session_state.oracle_history) >= 15:
     current_prediction_mode = temp_result['prediction_mode']
 
 mode_text = ""
+mode_emoji = ""
 if current_prediction_mode == 'ตาม':
-    mode_text = "ผลวิเคราะห์: ⏮️ ตาม"
+    mode_emoji = "⏮️"
+    mode_text = "ตาม"
 elif current_prediction_mode == 'สวน':
-    mode_text = "ผลวิเคราะห์: ⏭️ สวน"
-elif current_prediction_mode == '⚠️': # If confidence too low to even counter
-    mode_text = "ผลวิเคราะห์: ⚠️ งดเดิมพัน"
+    mode_emoji = "⏭️"
+    mode_text = "สวน"
+elif current_prediction_mode == '⚠️': 
+    mode_emoji = "⚠️"
+    mode_text = "งดเดิมพัน"
 else: # Not enough data
-    mode_text = "ผลวิเคราะห์:"
+    mode_emoji = ""
+    mode_text = ""
 
-st.markdown(f"<h3>{mode_text}</h3>", unsafe_allow_html=True)
+st.markdown(f"<h3>ผลวิเคราะห์: {mode_emoji} {mode_text}</h3>", unsafe_allow_html=True)
 
 
 # Check if enough history is available for analysis
@@ -124,18 +128,18 @@ if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
     elif result['prediction'] == 'B':
         prediction_text = f"🔴 B"
     elif result['prediction'] == '⚠️':
-        prediction_text = f"⚠️" # Just the warning sign, text is in mode_text
+        prediction_text = f"⚠️" 
     else:
         prediction_text = result['prediction'] # Fallback for '?'
 
     # Display prediction using h1 tag for large size
     st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
     
-    # NEW: Display ตามสูตรชนะ / สวนสูตรชนะ
+    # Display ตามสูตรชนะ / สวนสูตรชนะ
     st.markdown(f"📈 **ตามสูตรชนะ** : {oracle.tam_sutr_wins} ครั้ง")
     st.markdown(f"📉 **สวนสูตรชนะ** : {oracle.suan_sutr_wins} ครั้ง")
 
-    # Display Accuracy, Risk, Recommendation (Risk/Recommendation hidden in UI, still returned by engine for dev view)
+    # Display Accuracy
     st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
     
     # Display the system's losing streak
@@ -176,7 +180,7 @@ def add_new_result(outcome):
             elif prediction_for_learning['prediction'] == outcome: # Correct prediction
                 st.session_state.losing_streak_prediction = 0
             else: # Incorrect prediction
-                st.session_state.losing_streak_prediction += 1
+                st.session_session_state.losing_streak_prediction += 1
     
     st.session_state.oracle_history.append({'main_outcome': outcome}) 
     
@@ -225,30 +229,28 @@ with col4:
             # Rebuild the main oracle engine's state correctly by replaying remaining history
             main_oracle_rebuild = OracleEngine()
             if len(st.session_state.oracle_history) > 0:
+                # Need to simulate adding hands one by one to rebuild learning state
                 for i in range(len(st.session_state.oracle_history)):
-                    # For each step in history, simulate adding it
                     history_segment_for_learning = st.session_state.oracle_history[:i+1] # History up to this point
                     actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
                     
-                    # Need to simulate prediction to get context for update_learning_state, but only if enough data
-                    temp_prediction_context = {'prediction': '?', 'prediction_mode': None} # Default for short history
-                    if len(history_segment_for_learning) > 0: # Ensure history_segment_for_learning is not empty for next_pred
-                        # To correctly rebuild learning state, we need to know what the engine *would have predicted* at each step
-                        # This is a bit tricky with stateless engine and last_prediction_context
-                        # Simplest robust way: if it was long enough to predict, get prediction_context
-                        if len(history_segment_for_learning) >= 15: # Only if history was long enough for a prediction
-                            # Pass history *before* this outcome was added to get accurate context
-                            temp_pred_result = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False)
-                            main_oracle_rebuild.last_prediction_context = {
-                                'prediction': temp_pred_result['prediction'],
-                                'patterns': main_oracle_rebuild.detect_dna_patterns(history_segment_for_learning[:-1]),
-                                'momentum': main_oracle_rebuild.detect_momentum(history_segment_for_learning[:-1]),
-                                'intuition_applied': 'Intuition' in temp_pred_result['predicted_by'] if temp_pred_result['predicted_by'] else False,
-                                'predicted_by': temp_pred_result['predicted_by'],
-                                'dominant_pattern_id_at_prediction': main_oracle_rebuild.last_dominant_pattern_id, # This is tricky, might need to re-detect
-                                'prediction_mode': temp_pred_result['prediction_mode']
-                            }
-                        
+                    # For update_learning_state, we need the context of the *previous* prediction
+                    temp_prediction_context = {'prediction': '?', 'prediction_mode': None, 'patterns': [], 'momentum': [], 'intuition_applied': False, 'predicted_by': None, 'dominant_pattern_id_at_prediction': None}
+                    
+                    if len(history_segment_for_learning) > 0 and (len(history_segment_for_learning) -1) >= 15: # If prev history was long enough for a prediction
+                        # Simulate prediction for the *previous* state to get context
+                        temp_pred_result = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False)
+                        # Manually set last_prediction_context from the temp_pred_result
+                        main_oracle_rebuild.last_prediction_context = {
+                            'prediction': temp_pred_result['prediction'],
+                            'patterns': main_oracle_rebuild.detect_dna_patterns(history_segment_for_learning[:-1]), # Re-detect for context
+                            'momentum': main_oracle_rebuild.detect_momentum(history_segment_for_learning[:-1]), # Re-detect for context
+                            'intuition_applied': 'Intuition' in temp_pred_result['predicted_by'] if temp_pred_result['predicted_by'] else False,
+                            'predicted_by': temp_pred_result['predicted_by'],
+                            'dominant_pattern_id_at_prediction': main_oracle_rebuild.last_dominant_pattern_id, # This is still tricky without full context rebuild
+                            'prediction_mode': temp_pred_result['prediction_mode']
+                        }
+
                     main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, history_segment_for_learning)
                 
                 st.session_state.oracle_engine = main_oracle_rebuild
