@@ -10,27 +10,26 @@ st.set_page_config(page_title=f"ORACLE {OracleEngine.VERSION} Predictor", layout
 st.markdown(f"""
 <style>
 /* Font import from Google Fonts - This might be blocked by CSP in some environments */
-/* Attempt to use Inter font if available on system */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&display=swap');
+/* Attempt to use Orbitron font for ORACLE, Inter for general text */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@700&display=swap');
 
 .center-gold-title {{
     text-align: center;
     color: gold;
-    font-size: 3.5em; /* Adjust font size as needed */
+    font-size: 3.5em; /* Main ORACLE text size */
     font-weight: bold;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     margin-bottom: 0.5rem; /* Reduced space below title */
     padding-bottom: 0px;
-    /* Prioritize system fonts like Inter, Segoe UI, Roboto, Arial.
-       If Inter from Google Fonts is blocked, system fonts will be used. */
-    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    font-family: 'Orbitron', 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Orbitron for ORACLE */
 }}
 .version-text {{
-    font-size: 0.6em; /* Smaller font size for version */
+    font-size: 0.5em; /* Smaller font size for version */
     font-weight: normal;
     color: #CCCCCC; /* Lighter color for less emphasis */
     vertical-align: super; /* Slightly raise it */
     margin-left: 0.2em; /* Space from ORACLE text */
+    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Standard font for version */
 }}
 h3 {{
     margin-top: 0.5rem; /* Reduced space above h3 */
@@ -39,11 +38,13 @@ h3 {{
 .stMarkdown, .stText, .stInfo, .stWarning, .stSuccess {{
     margin-top: 0.2rem; /* Reduced space above various text elements */
     margin-bottom: 0.2rem; /* Reduced space below various text elements */
+    font-family: 'Inter', sans-serif; /* General text font */
 }}
 .stButton>button {{
     margin-top: 0.2rem; /* Reduced space around buttons */
     margin-bottom: 0.2rem;
     line-height: 1.2; /* Adjust line height for button text if needed */
+    font-family: 'Inter', sans-serif; /* Button text font */
 }}
 
 /* Prediction text will now use h1 tag for main sizing */
@@ -52,6 +53,7 @@ h3 {{
     font-size: 2.5em; /* Make it even larger for clear visibility */
     margin-top: 0.2rem;
     margin-bottom: 0.2rem;
+    font-family: 'Inter', sans-serif; /* Prediction text font */
 }}
 
 /* Reduce padding around columns to make buttons closer */
@@ -68,7 +70,7 @@ div[data-testid="stColumns"] > div {{
 """, unsafe_allow_html=True)
 
 # Main title of the app, now showing version with smaller text
-st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{OracleEngine.VERSION}</span></h1>', unsafe_allow_html=True)
+st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{oracle.VERSION}</span></h1>', unsafe_allow_html=True)
 
 # --- State Management for OracleEngine ---
 # Initialize OracleEngine only once
@@ -170,14 +172,72 @@ with col3:
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
-            st.session_state.oracle_history.pop() 
+            # Remove the last item
+            st.session_state.oracle_history.pop()
             
-            # Reset the engine and losing streak for simplicity and performance
-            st.session_state.oracle_engine = OracleEngine() 
-            st.session_state.losing_streak_prediction = 0 
-            st.session_state.oracle_history.clear() # Clear history as it's a full reset now
-            st.warning("ประวัติถูกลบหมดแล้วเพื่อประสิทธิภาพ โปรดบันทึกใหม่") 
-            st.rerun()
+            # Re-initialize engine and re-run history to update learning state correctly
+            # This is necessary because OracleEngine is stateless and needs to rebuild its internal state
+            # from the modified history.
+            st.session_state.oracle_engine = OracleEngine() # Create a fresh engine
+            
+            # Replay the remaining history to the new engine
+            # Only replay if there's history left, and if that history is long enough for prediction
+            if len(st.session_state.oracle_history) >= 1: # Replay from 1 hand
+                for i in range(len(st.session_state.oracle_history)):
+                    # Pass the sub-history for correct context when replaying
+                    # This simulates adding hands one by one
+                    oracle_for_replay = OracleEngine() # Create a temporary engine for each step of replay
+                    
+                    # Rebuild state from scratch for each hand in the replay
+                    temp_history_segment = st.session_state.oracle_history[:i+1]
+                    if len(temp_history_segment) >= 15: # Only predict if history is long enough
+                        # Simulate a prediction to capture context for learning update
+                        _ = oracle_for_replay.predict_next(temp_history_segment, is_backtest=False) 
+                    
+                    # Update learning state with the actual outcome of that hand
+                    oracle_for_replay.update_learning_state(temp_history_segment[-1]['main_outcome'], temp_history_segment)
+                    
+                    # Transfer the learned state from temp_engine to the main oracle engine
+                    # This is complex because we need to merge states, not just assign.
+                    # Simplest way: just re-init main oracle engine and replay all history through it.
+                    pass # We will do this after the loop.
+
+                # After popping, re-evaluate losing streak based on updated history
+                # We need to re-calculate current losing streak
+                current_losing_streak = 0
+                if len(st.session_state.oracle_history) >= 15: # Need enough history to predict
+                    temp_oracle = OracleEngine() # Use a temporary oracle to get predictions for streak
+                    for i in range(15, len(st.session_state.oracle_history)):
+                        hist_segment = st.session_state.oracle_history[:i]
+                        actual_outcome_for_streak = st.session_state.oracle_history[i]['main_outcome']
+                        
+                        pred_res = temp_oracle.predict_next(hist_segment)
+                        
+                        if pred_res['prediction'] in ['P', 'B']:
+                            if actual_outcome_for_streak != 'T':
+                                if pred_res['prediction'] == actual_outcome_for_streak:
+                                    current_losing_streak = 0
+                                else:
+                                    current_losing_streak += 1
+                st.session_state.losing_streak_prediction = current_losing_streak
+                
+                # Rebuild the main oracle engine's state correctly
+                main_oracle_rebuild = OracleEngine()
+                if len(st.session_state.oracle_history) > 0:
+                    for i in range(len(st.session_state.oracle_history)):
+                        hist_segment = st.session_state.oracle_history[:i] # History *before* current hand is added
+                        actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
+                        
+                        if len(hist_segment) >= 15: # Only if history is long enough to have predicted
+                            _ = main_oracle_rebuild.predict_next(hist_segment, is_backtest=False) # Get context for learning
+                        
+                        main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, st.session_state.oracle_history[:i+1]) # Pass full segment for backtest
+                
+                st.session_state.oracle_engine = main_oracle_rebuild
+            else: # If history becomes empty after pop
+                st.session_state.oracle_engine = OracleEngine() # Reset fully
+                st.session_state.losing_streak_prediction = 0
+        st.rerun()
 
 # --- Reset All Button ---
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
