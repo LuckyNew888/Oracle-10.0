@@ -1,194 +1,207 @@
+# oracle_engine.py
+
 import random
-from collections import Counter
 
-# --- Configuration for Prediction Logic (Includes V1.14 improvements) ---
-MIN_HISTORY_FOR_PREDICTION = 15
-MAX_HISTORY_FOR_ANALYSIS = 30
-PREDICTION_THRESHOLD = 0.55
-COUNTER_PREDICTION_THRESHOLD = 0.65 # V1.14 improved threshold for countering
-DNA_PATTERN_LENGTH = 5
-MOMENTUM_THRESHOLD = 0.70 # Retained from V1.13
-COUNTER_BIAS_STREAK_THRESHOLD = 3
+class OracleEngine:
+    """
+    OracleEngine เป็นคลาสที่ใช้สำหรับจัดการตรรกะการทำนายผลลัพธ์
+    และติดตามสถานะการเรียนรู้ของระบบ
+    """
 
-# --- Helper Functions (from V1.13, retained) ---
+    VERSION = "V1.14" # กำหนดเวอร์ชันของ OracleEngine
 
-def get_outcome_emoji(outcome):
-    return "🟦" if outcome == 'P' else "🟥" if outcome == 'B' else "⚪️"
+    def __init__(self):
+        """
+        เริ่มต้น OracleEngine กำหนดค่าเริ่มต้นสำหรับสถิติการชนะ
+        และตัวแปรสถานะที่จำเป็น
+        """
+        # สถิติการชนะของแต่ละกลยุทธ์
+        self.tam_sutr_wins = 0      # จำนวนครั้งที่ทำนาย 'ตาม' แล้วชนะ
+        self.suan_sutr_wins = 0     # จำนวนครั้งที่ทำนาย 'สวน' แล้วชนะ
+        self.pattern_analysis_wins = 0 # จำนวนครั้งที่ชนะจากการวิเคราะห์รูปแบบ
+        self.momentum_wins = 0      # จำนวนครั้งที่ชนะจากการวิเคราะห์โมเมนตัม
+        self.intuition_wins = 0     # จำนวนครั้งที่ชนะจากการทำนายด้วยสัญชาตญาณ (ในกรณีที่ระบบไม่มีข้อมูลพอ)
 
-def get_latest_history_string(history_list, num_results=MAX_HISTORY_FOR_ANALYSIS):
-    return "".join([h['main_outcome'] for h in history_list[-num_results:]])
+        # ตัวแปรสถานะสำหรับการเรียนรู้และการทำนาย
+        self.last_prediction_context = None # เก็บข้อมูลการทำนายครั้งล่าสุด เพื่อใช้อัปเดตสถานะการเรียนรู้
+        self.last_dominant_pattern_id = None # ID ของรูปแบบที่โดดเด่นครั้งล่าสุด (สำหรับ mock data)
 
-# --- Prediction Logic (Updated to V1.14 intelligence) ---
+        # สำหรับการทดสอบ (คุณสามารถปรับปรุงหรือเพิ่มตรรกะที่นี่ได้)
+        self.prediction_counter = 0 # ตัวนับรอบ เพื่อให้ผลทำนายจำลองเปลี่ยนไปเรื่อยๆ
 
-# 1. DNA Pattern Analysis (Improved: Weighted Recent Matches from V1.14)
-def analyze_dna_pattern(history_str):
-    if len(history_str) < DNA_PATTERN_LENGTH:
-        return None, 0
+    def detect_dna_patterns(self, history):
+        """
+        (Placeholder) ตรวจจับรูปแบบ DNA จากประวัติผลลัพธ์
+        ในเวอร์ชันจริง คุณจะใช้ตรรกะที่ซับซ้อนในการระบุรูปแบบซ้ำๆ
+        และอาจจะกำหนด ID ให้กับรูปแบบที่โดดเด่น
 
-    target_pattern = history_str[-DNA_PATTERN_LENGTH:]
-    
-    followers = Counter()
-    weighted_total = 0
-    
-    for i in range(len(history_str) - DNA_PATTERN_LENGTH):
-        if history_str[i : i + DNA_PATTERN_LENGTH] == target_pattern:
-            if (i + DNA_PATTERN_LENGTH) < len(history_str):
-                follower_outcome = history_str[i + DNA_PATTERN_LENGTH]
-                
-                # Assign a weight based on recency: more recent matches get higher weight (V1.14 improvement)
-                weight = 1
-                if i >= (len(history_str) - DNA_PATTERN_LENGTH - 10): 
-                    weight = 2 
-                
-                followers[follower_outcome] += weight
-                weighted_total += weight
-    
-    if weighted_total == 0:
-        return None, 0
-    
-    most_common_follower = followers.most_common(1)
-    
-    if most_common_follower:
-        predicted_outcome = most_common_follower[0][0]
-        confidence = most_common_follower[0][1] / weighted_total # Confidence based on weighted count
-        return predicted_outcome, confidence
-    return None, 0
+        Args:
+            history (list): รายการประวัติผลลัพธ์ เช่น [{'main_outcome': 'P'}, ...]
 
-# 2. Momentum Tracker (Retained largely from V1.13, similar to V1.14)
-def analyze_momentum(history_str):
-    if len(history_str) < 5:
-        return None, 0
-
-    last_outcome = history_str[-1]
-    last_streak_length = 0
-    for i in reversed(range(len(history_str))):
-        if history_str[i] == last_outcome:
-            last_streak_length += 1
+        Returns:
+            dict: ข้อมูลเกี่ยวกับรูปแบบที่ตรวจพบ
+        """
+        # อัปเดต last_dominant_pattern_id สำหรับการทดสอบใน app.py
+        if len(history) % 2 == 0:
+            self.last_dominant_pattern_id = "PatternA"
         else:
-            break
-            
-    if last_streak_length >= 3:
-        # V1.14 had a dynamic confidence here, V1.13 had fixed 0.70
-        # Let's use the V1.14 dynamic confidence for better intelligence
-        return last_outcome, min(1.0, 0.5 + (last_streak_length - 3) * 0.1)
-    
-    if len(history_str) >= 4 and history_str[-4:] in ["PBPB", "BPBP"]:
-        predicted_outcome = 'P' if history_str[-1] == 'B' else 'B'
-        return predicted_outcome, 0.65 # Retained from V1.13/V1.14
-    
-    return None, 0
+            self.last_dominant_pattern_id = "PatternB"
+        return {"detected_patterns": "Mock Pattern Analysis"} # Placeholder
 
-# 3. Intuition (V1.14 with Dynamic Confidence for Counter Bias)
-def analyze_intuition(history_str):
-    if len(history_str) < 3:
-        return None, 0, False
+    def detect_momentum(self, history):
+        """
+        (Placeholder) ตรวจจับโมเมนตัมจากประวัติผลลัพธ์
+        ในเวอร์ชันจริง คุณจะวิเคราะห์แนวโน้มของผลลัพธ์
 
-    last_3 = history_str[-3:]
-    last_2 = history_str[-2:]
-    
-    # Counter Bias Logic (Improved in V1.14 with dynamic confidence)
-    if len(history_str) >= COUNTER_BIAS_STREAK_THRESHOLD:
-        last_outcome = history_str[-1]
-        streak_count = 0
-        for i in reversed(range(len(history_str))):
-            if history_str[i] == last_outcome:
-                streak_count += 1
+        Args:
+            history (list): รายการประวัติผลลัพธ์
+
+        Returns:
+            str: ข้อมูลเกี่ยวกับโมเมนตัมที่ตรวจพบ
+        """
+        if len(history) > 5 and history[-1]['main_outcome'] == history[-2]['main_outcome']:
+            return "Strong Momentum"
+        return "No Strong Momentum" # Placeholder
+
+    def predict_next(self, history, is_backtest=False):
+        """
+        ทำนายผลลัพธ์ถัดไปตามประวัติที่ให้มา
+
+        Args:
+            history (list): รายการประวัติผลลัพธ์ เช่น [{'main_outcome': 'P'}, ...]
+            is_backtest (bool): ระบุว่ากำลังทำงานในโหมด backtest หรือไม่
+
+        Returns:
+            dict: พจนานุกรมที่มีผลทำนายและความเกี่ยวข้อง
+                - 'prediction': 'P', 'B', 'T', '⚠️' (งดเดิมพัน), หรือ '?' (ยังไม่มีข้อมูล)
+                - 'prediction_mode': 'ตาม', 'สวน', '⚠️', หรือ None
+                - 'accuracy': ความแม่นยำของระบบ (string เช่น "75.00%")
+                - 'developer_view': ข้อมูลรายละเอียดสำหรับนักพัฒนา
+                - 'predicted_by': ระบุว่าทำนายด้วยวิธีใด (Pattern, Momentum, Intuition)
+        """
+        # อัปเดตตัวนับเพื่อทำให้ผลทำนายจำลองเปลี่ยนไปเรื่อยๆ
+        if not is_backtest:
+            self.prediction_counter += 1
+
+        # กำหนดผลลัพธ์เริ่มต้น
+        prediction = "?"
+        prediction_mode = None
+        predicted_by = "Not enough data"
+        accuracy = "N/A"
+        developer_view = "ยังไม่มีข้อมูลเพียงพอสำหรับวิเคราะห์ (ต้องมีอย่างน้อย 15 ตา)"
+
+        # ตรวจสอบว่ามีข้อมูลเพียงพอสำหรับการทำนายหรือไม่
+        if len(history) >= 15:
+            # (Placeholder) ตรรกะการทำนายจริงจะอยู่ตรงนี้
+            # สำหรับตอนนี้ เราจะใช้ตรรกะง่ายๆ เพื่อให้ app.py ทำงานได้
+
+            # Simulate prediction based on simple alternating logic or random
+            if self.prediction_counter % 2 == 0:
+                prediction = "P"
+                predicted_by = "Pattern Analysis" # จำลองว่ามาจาก Pattern
             else:
-                break
+                prediction = "B"
+                predicted_by = "Momentum" # จำลองว่ามาจาก Momentum
+
+            # Simulate prediction mode
+            prediction_mode = random.choice(["ตาม", "สวน"])
+
+            # Simulate when to warn (e.g., if history shows high volatility or mixed signals)
+            if len(history) % 5 == 0 and random.random() < 0.3: # Randomly show warning
+                 prediction = "⚠️"
+                 prediction_mode = "⚠️"
+                 predicted_by = "Intuition (Low Confidence)"
+
+            # Simulate accuracy (placeholder)
+            total_playable_predictions = max(1, len(history) - 14) # Assuming first 14 are warm-up
+            accurate_predictions = 0
+            # This would normally involve replaying history and checking past predictions
+            # For this mock, let's just use a fixed number or simple calculation
+            if total_playable_predictions > 0:
+                accurate_predictions = int(total_playable_predictions * 0.75) # Simulate 75% accuracy
             
-        if streak_count >= COUNTER_BIAS_STREAK_THRESHOLD:
-            streak_pattern = history_str[len(history_str) - streak_count:]
-            
-            continue_count = 0
-            break_count = 0
-            
-            for i in range(len(history_str) - streak_count):
-                if (i + streak_count) < len(history_str) and history_str[i : i + streak_count] == streak_pattern:
-                    if i == (len(history_str) - streak_count):
-                        continue # Exclude the current streak itself
-                            
-                    if history_str[i + streak_count] == last_outcome:
-                        continue_count += 1
-                    else:
-                        break_count += 1
-            
-            total_instances = continue_count + break_count
-            if total_instances > 0:
-                if break_count > continue_count:
-                    # Dynamic confidence based on break rate (V1.14 improvement)
-                    dynamic_counter_conf = min(0.85, COUNTER_PREDICTION_THRESHOLD + (break_count / total_instances) * (0.85 - COUNTER_PREDICTION_THRESHOLD))
-                    return ('P' if last_outcome == 'B' else 'B'), dynamic_counter_conf, True
-                elif continue_count == 0 and total_instances >= 2:
-                    return ('P' if last_outcome == 'B' else 'B'), COUNTER_PREDICTION_THRESHOLD, True
-    
-    # Simple Intuition Patterns (from V1.13, retained)
-    if last_3 == "BBP" or last_3 == "PBB":
-        return ('P' if last_3[-1] == 'B' else 'B'), 0.6, False
-    if last_3 == "PPB" or last_3 == "BPP":
-        return ('B' if last_3[-1] == 'P' else 'P'), 0.6, False
-    
-    if last_2 == "BP" or last_2 == "PB":
-        return ('B' if last_2[-1] == 'P' else 'P'), 0.55, False
+            accuracy = f"{((self.pattern_analysis_wins + self.momentum_wins + self.intuition_wins) / max(1, total_playable_predictions)) * 100:.2f}%"
+
+
+            # Generate developer view info
+            developer_view = f"""
+            ---
+            [Developer View]
+            Input History Length: {len(history)}
+            Simulated Prediction: {prediction} (Predicted by: {predicted_by})
+            Simulated Prediction Mode: {prediction_mode}
+
+            Internal State (Mock):
+            - tam_sutr_wins: {self.tam_sutr_wins}
+            - suan_sutr_wins: {self.suan_sutr_wins}
+            - pattern_analysis_wins: {self.pattern_analysis_wins}
+            - momentum_wins: {self.momentum_wins}
+            - intuition_wins: {self.intuition_wins}
+            - Last dominant pattern ID: {self.last_dominant_pattern_id}
+
+            Detected Patterns (Mock): {self.detect_dna_patterns(history)}
+            Detected Momentum (Mock): {self.detect_momentum(history)}
+            ---
+            """
         
-    return None, 0, False
+        # Store prediction context if not in backtest, for update_learning_state
+        if not is_backtest:
+            self.last_prediction_context = {
+                'prediction': prediction,
+                'prediction_mode': prediction_mode,
+                'patterns': self.detect_dna_patterns(history),
+                'momentum': self.detect_momentum(history),
+                'intuition_applied': 'Intuition' in predicted_by, # Check if 'Intuition' was part of predicted_by
+                'predicted_by': predicted_by,
+                'dominant_pattern_id_at_prediction': self.last_dominant_pattern_id,
+            }
 
-# Main prediction function (Updated to use V1.14 logic from sub-functions)
-def predict_outcome(history_list):
-    history_str = get_latest_history_string(history_list)
-    
-    if len(history_str) < MIN_HISTORY_FOR_PREDICTION:
-        return {"prediction": "ไม่เพียงพอ", "confidence": 0, "predicted_by": [], "is_counter": False}
+        return {
+            'prediction': prediction,
+            'prediction_mode': prediction_mode,
+            'accuracy': accuracy,
+            'developer_view': developer_view,
+            'predicted_by': predicted_by # Ensure this is always returned
+        }
 
-    predictions = []
-    
-    dna_pred, dna_conf = analyze_dna_pattern(history_str)
-    if dna_pred:
-        predictions.append({"outcome": dna_pred, "confidence": dna_conf, "source": "DNA"})
+    def update_learning_state(self, actual_outcome, current_full_history):
+        """
+        อัปเดตสถานะการเรียนรู้ของ OracleEngine หลังจากทราบผลลัพธ์จริง
+        ฟังก์ชันนี้จะใช้ self.last_prediction_context เพื่ออัปเดตสถิติ
+        """
+        if self.last_prediction_context:
+            predicted = self.last_prediction_context['prediction']
+            predicted_mode = self.last_prediction_context['prediction_mode']
+            predicted_by = self.last_prediction_context['predicted_by']
+            intuition_applied = self.last_prediction_context['intuition_applied']
 
-    momentum_pred, momentum_conf = analyze_momentum(history_str)
-    if momentum_pred:
-        predictions.append({"outcome": momentum_pred, "confidence": momentum_conf, "source": "Momentum"})
+            # Only update win/loss if the system made a valid prediction (not '⚠️' or '?')
+            if predicted in ['P', 'B']:
+                if actual_outcome != 'T': # ไม่นับ Tie ในการอัปเดตสถานะชนะ/แพ้
+                    if predicted == actual_outcome:
+                        # อัปเดตตามโหมดการทำนาย
+                        if predicted_mode == 'ตาม':
+                            self.tam_sutr_wins += 1
+                        elif predicted_mode == 'สวน':
+                            self.suan_sutr_wins += 1
+                        
+                        # อัปเดตตามวิธีการทำนาย
+                        if "Pattern" in predicted_by:
+                            self.pattern_analysis_wins += 1
+                        elif "Momentum" in predicted_by:
+                            self.momentum_wins += 1
+                        elif "Intuition" in predicted_by:
+                             self.intuition_wins += 1
+                        # หากชนะ ก็รีเซ็ต last_prediction_context เพื่อเตรียมพร้อมสำหรับการทำนายถัดไป
+                        self.last_prediction_context = None 
+                    else:
+                        # หากแพ้ ก็ยังคง last_prediction_context ไว้ เพื่อให้รู้ว่าแพ้ด้วยการทำนายครั้งล่าสุดนี้
+                        pass # Losing streak handled in app.py
 
-    intuition_pred, intuition_conf, is_counter_intuition = analyze_intuition(history_str)
-    if intuition_pred:
-        predictions.append({"outcome": intuition_pred, "confidence": intuition_conf, "source": "Intuition", "is_counter": is_counter_intuition})
-    
-    if not predictions:
-        return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
+            # หลังจากอัปเดตสถานะการเรียนรู้แล้ว ให้รีเซ็ต last_prediction_context
+            # เพื่อให้การทำนายครั้งต่อไปเป็น "ใหม่"
+            self.last_prediction_context = None
 
-    # Prioritize Counter prediction if it's highly confident (V1.14 logic for this check)
-    for p in predictions:
-        if p.get('is_counter', False) and p['confidence'] >= COUNTER_PREDICTION_THRESHOLD:
-            return {"prediction": p['outcome'], 
-                    "confidence": p['confidence'], 
-                    "predicted_by": [p['source']], 
-                    "is_counter": True}
-
-    outcome_scores = Counter()
-    outcome_sources = {}
-    is_any_counter_in_other_preds = False
-
-    for p in predictions:
-        if not p.get('is_counter', False) or p['confidence'] < COUNTER_PREDICTION_THRESHOLD:
-            outcome_scores[p['outcome']] += p['confidence']
-            if p['outcome'] not in outcome_sources:
-                outcome_sources[p['outcome']] = []
-            outcome_sources[p['outcome']].append(p['source'])
-            if p.get('is_counter', False):
-                is_any_counter_in_other_preds = True
-
-    if not outcome_scores:
-        return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
-
-    sorted_outcomes = sorted(outcome_scores.items(), key=lambda item: item[1], reverse=True)
-    
-    best_outcome = sorted_outcomes[0][0]
-    best_confidence = sorted_outcomes[0][1] / len(outcome_sources[best_outcome])
-    
-    if best_confidence >= PREDICTION_THRESHOLD:
-        return {"prediction": best_outcome, 
-                "confidence": best_confidence, 
-                "predicted_by": outcome_sources[best_outcome],
-                "is_counter": is_any_counter_in_other_preds}
-    else:
-        return {"prediction": "ไม่ชัดเจน", "confidence": best_confidence, "predicted_by": outcome_sources[best_outcome], "is_counter": is_any_counter_in_other_preds}
+        # (Optional) คุณอาจจะใช้ current_full_history เพื่อปรับโมเดลการเรียนรู้ที่นี่
+        # เช่น Re-train model, Adjust weights for patterns, etc.
+        # สำหรับเวอร์ชันจำลองนี้ เราจะยังไม่ทำอะไรซับซ้อน
