@@ -29,27 +29,27 @@ def analyze_dna_pattern(history_str):
         return None, 0
 
     target_pattern = history_str[-DNA_PATTERN_LENGTH:]
-    
+
     followers = Counter()
     weighted_total = 0
-    
+
     for i in range(len(history_str) - DNA_PATTERN_LENGTH):
         if history_str[i : i + DNA_PATTERN_LENGTH] == target_pattern:
             if (i + DNA_PATTERN_LENGTH) < len(history_str):
                 follower_outcome = history_str[i + DNA_PATTERN_LENGTH]
-                
+
                 weight = 1
                 if i >= (len(history_str) - DNA_PATTERN_LENGTH - 10): 
                     weight = 2 
-                
+
                 followers[follower_outcome] += weight
                 weighted_total += weight
-    
+
     if weighted_total == 0:
         return None, 0
-    
+
     most_common_follower = followers.most_common(1)
-    
+
     if most_common_follower:
         predicted_outcome = most_common_follower[0][0]
         confidence = most_common_follower[0][1] / weighted_total
@@ -68,14 +68,14 @@ def analyze_momentum(history_str):
             last_streak_length += 1
         else:
             break
-            
+
     if last_streak_length >= 3:
         return last_outcome, min(1.0, 0.5 + (last_streak_length - 3) * 0.1)
-    
+
     if len(history_str) >= 4 and history_str[-4:] in ["PBPB", "BPBP"]:
         predicted_outcome = 'P' if history_str[-1] == 'B' else 'B'
         return predicted_outcome, 0.65
-    
+
     return None, 0
 
 # 3. Intuition (Simple Pattern Matching & Counter Bias - Improved: Dynamic Confidence)
@@ -85,7 +85,7 @@ def analyze_intuition(history_str):
 
     last_3 = history_str[-3:]
     last_2 = history_str[-2:]
-    
+
     # Counter Bias Logic
     if len(history_str) >= COUNTER_BIAS_STREAK_THRESHOLD:
         last_outcome = history_str[-1]
@@ -95,13 +95,13 @@ def analyze_intuition(history_str):
                 streak_count += 1
             else:
                 break
-        
+
         if streak_count >= COUNTER_BIAS_STREAK_THRESHOLD:
             streak_pattern = history_str[len(history_str) - streak_count:]
-            
+
             continue_count = 0
             break_count = 0
-            
+
             for i in range(len(history_str) - streak_count):
                 if history_str[i : i + streak_count] == streak_pattern:
                     if (i + streak_count) < len(history_str):
@@ -109,7 +109,7 @@ def analyze_intuition(history_str):
                             continue_count += 1
                         else:
                             break_count += 1
-            
+
             total_instances = continue_count + break_count
             if total_instances > 0:
                 if break_count > continue_count:
@@ -117,27 +117,27 @@ def analyze_intuition(history_str):
                     return ('P' if last_outcome == 'B' else 'B'), dynamic_counter_conf, True
                 elif continue_count == 0 and total_instances >= 2:
                     return ('P' if last_outcome == 'B' else 'B'), COUNTER_PREDICTION_THRESHOLD, True
-    
+
     # Simple Intuition
     if last_3 == "BBP" or last_3 == "PBB":
         return ('P' if last_3[-1] == 'B' else 'B'), 0.6, False
     if last_3 == "PPB" or last_3 == "BPP":
         return ('B' if last_3[-1] == 'P' else 'P'), 0.6, False
-    
+
     if last_2 == "BP" or last_2 == "PB":
         return ('B' if last_2[-1] == 'P' else 'P'), 0.55, False
-        
+
     return None, 0, False
 
 # Main prediction function (now accepts history_list)
 def predict_outcome(history_list):
     history_str = get_latest_history_string(history_list) # Pass history_list here
-    
+
     if len(history_str) < MIN_HISTORY_FOR_PREDICTION:
         return {"prediction": "ไม่เพียงพอ", "confidence": 0, "predicted_by": [], "is_counter": False}
 
     predictions = []
-    
+
     dna_pred, dna_conf = analyze_dna_pattern(history_str)
     if dna_pred:
         predictions.append({"outcome": dna_pred, "confidence": dna_conf, "source": "DNA"})
@@ -149,7 +149,7 @@ def predict_outcome(history_list):
     intuition_pred, intuition_conf, is_counter_intuition = analyze_intuition(history_str)
     if intuition_pred:
         predictions.append({"outcome": intuition_pred, "confidence": intuition_conf, "source": "Intuition", "is_counter": is_counter_intuition})
-    
+
     if not predictions:
         return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
 
@@ -176,10 +176,10 @@ def predict_outcome(history_list):
         return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
 
     sorted_outcomes = sorted(outcome_scores.items(), key=lambda item: item[1], reverse=True)
-    
+
     best_outcome = sorted_outcomes[0][0]
     best_confidence = sorted_outcomes[0][1] / len(outcome_sources[best_outcome])
-    
+
     if best_confidence >= PREDICTION_THRESHOLD:
         return {"prediction": best_outcome, 
                 "confidence": best_confidence, 
