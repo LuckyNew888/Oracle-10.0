@@ -1,411 +1,186 @@
-# app.py
 import streamlit as st
-import asyncio
+import asyncio 
 import time
-import json 
-import streamlit.components.v1 as components 
+from oracle_engine import OracleEngine # Ensure oracle_engine.py is in the same directory
 
-# --- Import OracleEngine from the separate file ---
-# Ensure your oracle_engine.py is in the same directory
-from oracle_engine import OracleEngine
-
-# --- Function to generate BigRoad HTML for Streamlit component ---
-def get_big_road_html(results_history):
-    # This history will be processed in JavaScript to form the BigRoad
-    js_history_str = json.dumps(results_history)
-
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="th">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>BigRoad Display</title>
-        <!-- Tailwind CSS CDN -->
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            body {{
-                font-family: 'Inter', sans-serif;
-                background-color: transparent; /* Make background transparent to blend with Streamlit */
-                margin: 0;
-                padding: 0;
-                overflow: hidden; /* Prevent extra scrollbars in component body */
-            }}
-            #bigRoadDisplay {{
-                background-color: #1a202c; /* Similar to bg-gray-900 */
-                border-radius: 0.75rem; /* rounded-xl */
-                box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.6); /* shadow-inner */
-                overflow-x: auto; /* Enable horizontal scrolling for BigRoad */
-                border: 1px solid #4a5568; /* border-gray-700 */
-                padding: 0.5rem 0.25rem; /* Padding for the display area */
-                max-height: 250px; /* Limit height for the BigRoad display */
-                min-height: 150px; /* Ensure a minimum height even if empty */
-                display: flex; /* Use flexbox for the outer container to align grid */
-                justify-content: flex-start; /* Align grid to start (left) */
-                align-items: flex-start; /* Align grid to top */
-            }}
-            /* Hide scrollbar for BigRoadDisplay on most browsers, but still allow scrolling */
-            #bigRoadDisplay::-webkit-scrollbar {{
-                height: 8px; /* Thinner scrollbar */
-            }}
-            #bigRoadDisplay::-webkit-scrollbar-track {{
-                background: #2d3748; /* Darker track */
-                border-radius: 4px;
-            }}
-            #bigRoadDisplay::-webkit-scrollbar-thumb {{
-                background: #a0aec0; /* Lighter thumb */
-                border-radius: 4px;
-            }}
-            #bigRoadDisplay::-webkit-scrollbar-thumb:hover {{
-                background: #cbd5e0; /* Even lighter on hover */
-            }}
-            #bigRoadGrid {{
-                display: grid;
-                grid-auto-flow: column; /* Cells flow horizontally first, then wrap */
-                grid-template-rows: repeat(6, minmax(0, 1fr)); /* Fixed 6 rows for BigRoad */
-                gap: 1px; /* Gap between cells */
-                width: max-content; /* Allow grid to expand horizontally based on content */
-                min-width: 100%; /* Ensure it takes at least 100% of parent width initially for smaller content */
-                padding: 0;
-                margin: 0;
-            }}
-            .big-road-cell {{
-                width: 38px; /* Fixed width for each cell */
-                height: 38px; /* Fixed height for each cell */
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border: 1px solid rgba(255,255,255,0.08); /* Subtle grid lines */
-                border-radius: 9999px; /* Fully rounded (circle) */
-                position: relative;
-                overflow: visible; /* Allow overflow for ellipse positioning */
-                background-color: #111827; /* Background for empty cells, bg-gray-900 */
-            }}
-            .main-circle {{
-                width: 32px; /* Inner circle size */
-                height: 32px;
-                border-radius: 9999px; /* Fully rounded (circle) */
-                border-width: 2px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3); /* Soft shadow */
-            }}
-            /* Specific colors for Banker, Player */
-            .bg-red-500 {{ background-color: #ef4444; }}
-            .border-red-600 {{ border-color: #dc2626; }}
-            .bg-blue-500 {{ background-color: #3b82f6; }}
-            .border-blue-600 {{ border-color: #2563eb; }}
-            /* Tie Ellipse */
-            .tie-ellipse {{
-                position: absolute;
-                top: 0;
-                right: 0;
-                transform: translate(30%, -30%); /* Position off the main circle */
-                background-color: #22c55e; /* Green-500 from Tailwind for ellipse */
-                color: white;
-                font-size: 0.75rem; /* text-xs */
-                font-weight: bold;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 9999px; /* rounded-full to make it look like an ellipse */
-                width: 24px; /* w-6 */
-                height: 16px; /* h-4 for ellipse shape */
-                box-shadow: 0 1px 2px rgba(0,0,0,0.4);
-                z-index: 10;
-                border: 1px solid rgba(255,255,255,0.2); /* Slight white border */
-            }}
-        </style>
-    </head>
-    <body>
-        <div id="bigRoadDisplay">
-            <div id="bigRoadGrid">
-                <!-- Cells will be dynamically generated by JavaScript -->
-            </div>
-        </div>
-
-        <script>
-            const rawBigRoadResults = {js_history_str}; // Raw history from Streamlit
-            const MAX_ROWS = 6;
-            const MIN_DISPLAY_COLS = 20; // Minimum columns to always display for a wider view
-
-            function renderBigRoad() {
-                const bigRoadGrid = document.getElementById('bigRoadGrid');
-                bigRoadGrid.innerHTML = ''; // Clear existing cells for a fresh render
-
-                // Calculate virtual grid based on actual BigRoad logic
-                const virtualGrid = Array(MAX_ROWS).fill(0).map(() => Array(200).fill(null)); // Max 200 columns for now
-                let currentColumn = 0;
-                let currentRow = 0;
-                let lastNonTieOutcome = null; // Stores the type of the last P or B that defined a column
-                let lastNonTieGridPos = {row: -1, col: -1}; // Stores grid position of the last P or B circle
-                let consecutiveTieCount = 0; // Accumulates ties until a P or B occurs
-
-                for (let i = 0; i < rawBigRoadResults.length; i++) {
-                    const result = rawBigRoadResults[i];
-                    const resultType = result.main_outcome;
-
-                    if (resultType === 'T') {
-                        consecutiveTieCount++; // Just accumulate the tie count
-                        // Ties do NOT create their own circles in the main BigRoad
-                        // The tie count will be attached to the LAST non-tie circle
-                        continue; // Skip to next iteration
-                    }
-
-                    // If we reached a P or B (non-tie outcome)
-                    if (lastNonTieOutcome === null) { // First P or B outcome
-                        // Initial placement
-                        currentRow = 0;
-                        currentColumn = 0;
-                    } else if (resultType !== lastNonTieOutcome) {
-                        // Change of type (P to B or B to P) -> new column
-                        currentColumn++;
-                        currentRow = 0;
-                    } else { // Same type (P to P or B to B)
-                        if (currentRow < MAX_ROWS - 1) {
-                            // If there's still room in the current column (not yet 6 rows full)
-                            currentRow++; // Move down in the same column
-                        } else {
-                            // If the current column is already full (currentRow is MAX_ROWS - 1),
-                            // then move to a new column and start at the top (row 0)
-                            currentColumn++;
-                            currentRow = 0; // <--- This is the change for "หางมังกร" rule
-                        }
-                    }
-
-                    // Store the P/B result in the virtual grid
-                    // Also attach the accumulated tie count to this P/B result
-                    virtualGrid[currentRow][currentColumn] = {
-                        type: resultType,
-                        tieCount: consecutiveTieCount // This will be 0 if no ties preceded, or N if N ties preceded
-                    };
-                    
-                    // Update tracker for the last non-tie outcome and its position
-                    lastNonTieOutcome = resultType;
-                    lastNonTieGridPos = {row: currentRow, col: currentColumn};
-                    consecutiveTieCount = 0; // Reset tie counter for the next sequence
-                }
-
-                // AFTER the loop: If history ends with ties, attach them to the very last P/B circle
-                if (consecutiveTieCount > 0 && lastNonTieGridPos.row !== -1) {
-                    // Find the last actual P/B circle plotted and update its tieCount
-                    const lastPlottedCircle = virtualGrid[lastNonTieGridPos.row][lastNonTieGridPos.col];
-                    if (lastPlottedCircle) {
-                        lastPlottedCircle.tieCount = consecutiveTieCount;
-                    }
-                }
-
-                // Determine actual MAX_COLS needed for rendering
-                const renderedMaxCol = Math.max(MIN_DISPLAY_COLS, currentColumn + 5); // Add buffer cols for future plays
-                bigRoadGrid.style.gridTemplateColumns = `repeat(${renderedMaxCol}, minmax(0, 1fr))`;
-
-
-                // Render the physical HTML grid based on the populated virtual grid
-                for (let r = 0; r < MAX_ROWS; r++) {
-                    for (let c = 0; c < renderedMaxCol; c++) {
-                        const result = virtualGrid[r][c]; // Get result from our processed grid
-
-                        const cellDiv = document.createElement('div');
-                        cellDiv.className = 'big-road-cell'; // Base styling for the grid cell
-
-                        if (result) {
-                            let mainCircleClass = ''; // Class for the main circle's color and border
-                            switch (result.type) {
-                                case 'B':
-                                    mainCircleClass = 'bg-red-500 border-red-600';
-                                    break;
-                                case 'P':
-                                    mainCircleClass = 'bg-blue-500 border-blue-600';
-                                    break;
-                                // No 'T' case here for main circle as 'T's don't create their own circles in this logic
-                            }
-
-                            // Create the main colored circle (Banker or Player)
-                            const mainCircle = document.createElement('div');
-                            mainCircle.className = `main-circle ${mainCircleClass}`;
-                            cellDiv.appendChild(mainCircle);
-
-                            // Add the tie ellipse if this P/B result has an associated tie count
-                            if (result.tieCount > 0) {
-                                const tieEllipse = document.createElement('div');
-                                tieEllipse.className = 'tie-ellipse';
-                                tieEllipse.textContent = result.tieCount; // Display the consecutive tie count
-                                cellDiv.appendChild(tieEllipse); // Add ellipse to the cell
-                            }
-                        }
-                        // Add empty cell background for null grid spots
-                        bigRoadGrid.appendChild(cellDiv);
-                    }
-                }
-                
-                // Automatically scroll the BigRoad display to the far right to show the most recent results
-                const bigRoadDisplay = document.getElementById('bigRoadDisplay');
-                // Use a slight delay to ensure the content has rendered before scrolling
-                setTimeout(() => {
-                    bigRoadDisplay.scrollLeft = bigRoadDisplay.scrollWidth;
-                }, 100); 
-            }
-
-            // Call renderBigRoad when the component loads in the browser
-            renderBigRoad();
-        </script>
-    </body>
-    </html>
-    """
-    return html_content
-
-# --- Streamlit App Configuration ---
+# Set Streamlit page configuration
 st.set_page_config(page_title=f"ORACLE Predictor", layout="centered") 
 
-# --- State Management for OracleEngine and History ---
+# --- State Management for OracleEngine ---
+# Initialize OracleEngine only once
 if 'oracle_engine' not in st.session_state:
     st.session_state.oracle_engine = OracleEngine()
+# Initialize history
 if 'oracle_history' not in st.session_state:
     st.session_state.oracle_history = []
+# Initialize losing streak counter for the system's predictions
 if 'losing_streak_prediction' not in st.session_state:
     st.session_state.losing_streak_prediction = 0
 
+# Retrieve the OracleEngine instance from session_state
 oracle = st.session_state.oracle_engine
 
-# --- Custom CSS for Streamlit UI ---
+# Custom CSS for centered gold title, reduced spacing, and prediction text size
 st.markdown(f"""
 <style>
-/* Font import from Google Fonts - Using Inter and Orbitron */
+/* Font import from Google Fonts - This might be blocked by CSP in some environments */
+/* Attempt to use Orbitron font for ORACLE, Inter for general text */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@700;900&display=swap');
 
+/* Ensure the main container has no unnecessary padding */
 .stApp {{
-    padding-top: 1rem; 
+    padding-top: 1rem; /* Adjust as needed to pull content up */
 }}
 
 .center-gold-title {{
     text-align: center;
-    color: gold; 
-    font-size: 3.5em; 
-    font-weight: 900; 
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); 
-    margin-bottom: 0.2rem; 
+    color: gold; /* Explicitly set gold color */
+    font-size: 3.5em; /* Main ORACLE text size */
+    font-weight: 900; /* Make it extra bold for emphasis */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    margin-bottom: 0.2rem; /* Reduced space below title */
     padding-bottom: 0px;
-    font-family: 'Orbitron', 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; 
+    font-family: 'Orbitron', 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Orbitron for ORACLE */
 }}
 .version-text {{
-    font-size: 0.5em; 
+    font-size: 0.5em; /* Smaller font size for version */
     font-weight: normal;
-    color: #CCCCCC; 
-    vertical-align: super; 
-    margin-left: 0.2em; 
-    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; 
+    color: #CCCCCC; /* Lighter color for less emphasis */
+    vertical-align: super; /* Slightly raise it */
+    margin-left: 0.2em; /* Space from ORACLE text */
+    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; /* Standard font for version */
 }}
 h3 {{
-    margin-top: 0.5rem;
-    margin-bottom: 0.5rem;
+    margin-top: 0.5rem; /* Reduced space above h3 */
+    margin-bottom: 0.5rem; /* Reduced space below h3 */
 }}
 .stMarkdown, .stText, .stInfo, .stWarning, .stSuccess {{
-    margin-top: 0.2rem;
-    margin-bottom: 0.2rem;
-    font-family: 'Inter', sans-serif; 
+    margin-top: 0.2rem; /* Reduced space above various text elements */
+    margin-bottom: 0.2rem; /* Reduced space below various text elements */
+    font-family: 'Inter', sans-serif; /* General text font */
 }}
 .stButton>button {{
-    margin-top: 0.2rem;
+    margin-top: 0.2rem; /* Reduced space around buttons */
     margin-bottom: 0.2rem;
-    line-height: 1.2; 
-    font-family: 'Inter', sans-serif; 
+    line-height: 1.2; /* Adjust line height for button text if needed */
+    font-family: 'Inter', sans-serif; /* Button text font */
 }}
 
+/* Prediction text will now use h1 tag for main sizing */
 .prediction-h1 {{
-    text-align: center; 
-    font-size: 2.5em; 
+    text-align: center; /* Center the prediction text */
+    font-size: 2.5em; /* Make it even larger for clear visibility */
     margin-top: 0.2rem;
     margin-bottom: 0.2rem;
-    font-family: 'Inter', sans-serif; 
+    font-family: 'Inter', sans-serif; /* Prediction text font */
 }}
 
+/* Reduce padding around columns to make buttons closer */
 div[data-testid="stColumns"] > div {{
     padding-left: 0.2rem;
     padding-right: 0.2rem;
 }}
+/* Ensure the history display also has less padding */
+.stMarkdown p {{ 
+    padding: 0px;
+    margin: 0px;
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# Main title of the app, dynamically displaying the version from OracleEngine
+# Main title of the app, now showing version with smaller text
 st.markdown(f'<h1 class="center-gold-title">🔮 ORACLE <span class="version-text">{oracle.VERSION}</span></h1>', unsafe_allow_html=True)
 
 # --- Prediction Display Section ---
+# Determine prediction mode for display
 current_prediction_mode = None
-if len(st.session_state.oracle_history) >= OracleEngine.PREDICTION_THRESHOLD: 
+if len(st.session_state.oracle_history) >= 15:
+    # Need to get prediction result to determine mode
     temp_result = oracle.predict_next(st.session_state.oracle_history, is_backtest=False)
     current_prediction_mode = temp_result['prediction_mode']
 
 mode_text = ""
 if current_prediction_mode == 'ตาม':
-    mode_text = "ผลวิเคราะห์: ⏮️ **ตาม**" 
+    mode_text = "ผลวิเคราะห์: ⏮️ ตาม"
 elif current_prediction_mode == 'สวน':
-    mode_text = "ผลวิเคราะห์: ⏭️ **สวน**" 
-elif current_prediction_mode == '⚠️':
-    mode_text = "ผลวิเคราะห์: ⚠️ **งดเดิมพัน**" 
-else:
-    mode_text = "ผลวิเคราะห์:" 
+    mode_text = "ผลวิเคราะห์: ⏭️ สวน"
+elif current_prediction_mode == '⚠️': # If confidence too low to even counter
+    mode_text = "ผลวิเคราะห์: ⚠️ งดเดิมพัน"
+else: # Not enough data
+    mode_text = "ผลวิเคราะห์:"
 
 st.markdown(f"<h3>{mode_text}</h3>", unsafe_allow_html=True)
 
-if len(st.session_state.oracle_history) >= OracleEngine.PREDICTION_THRESHOLD: 
+
+# Check if enough history is available for analysis
+if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
+    # Pass the full history to the engine for prediction
     result = oracle.predict_next(st.session_state.oracle_history)
 
+    # Prepare prediction text with emojis and style
     prediction_text = ""
     if result['prediction'] == 'P':
-        prediction_text = f"🔵 P" 
+        prediction_text = f"🔵 P"
     elif result['prediction'] == 'B':
-        prediction_text = f"🔴 B" 
+        prediction_text = f"🔴 B"
     elif result['prediction'] == '⚠️':
-        prediction_text = f"⚠️" 
+        prediction_text = f"⚠️" # Just the warning sign, text is in mode_text
     else:
-        prediction_text = result['prediction'] 
+        prediction_text = result['prediction'] # Fallback for '?'
 
+    # Display prediction using h1 tag for large size
     st.markdown(f'<h1 class="prediction-h1">{prediction_text}</h1>', unsafe_allow_html=True)
     
+    # NEW: Display ตามสูตรชนะ / สวนสูตรชนะ
     st.markdown(f"📈 **ตามสูตรชนะ** : {oracle.tam_sutr_wins} ครั้ง")
     st.markdown(f"📉 **สวนสูตรชนะ** : {oracle.suan_sutr_wins} ครั้ง")
 
+    # Display Accuracy, Risk, Recommendation (Risk/Recommendation hidden in UI, still returned by engine for dev view)
     st.markdown(f"**🎯 Accuracy:** {result['accuracy']}")
     
+    # Display the system's losing streak
     if st.session_state.losing_streak_prediction > 0:
         st.warning(f"**❌ แพ้ติดกัน:** {st.session_state.losing_streak_prediction} ครั้ง")
     else:
         st.success(f"**✅ แพ้ติดกัน:** 0 ครั้ง")
 else:
-    st.info(f"🔮 ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย {OracleEngine.PREDICTION_THRESHOLD} ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
+    # Message when not enough data for analysis
+    st.info(f"🔮 ผลการทำนาย กรุณาใส่ผลย้อนหลังอย่างน้อย 15 ตา เพื่อเริ่มต้นการวิเคราะห์ (ปัจจุบันมี {len(st.session_state.oracle_history)} ตา)")
 
-# --- Total Tie Count Display ---
-# Calculate the number of 'T' outcomes in the history
-tie_count = sum(1 for item in st.session_state.oracle_history if item['main_outcome'] == 'T')
-st.markdown(f"🤝 **เสมอทั้งหมด:** {tie_count} ครั้ง")
-
-st.markdown("---") 
-st.markdown("<h3>📊 BigRoad ผลลัพธ์</h3>", unsafe_allow_html=True)
-# Embed the BigRoad HTML component
-components.html(get_big_road_html(st.session_state.oracle_history), height=250, scrolling=True)
-
-st.markdown("---") 
+# --- History Display Section ---
+st.markdown("<h3>📋 ประวัติผลลัพธ์</h3>", unsafe_allow_html=True)
+if st.session_state.oracle_history:
+    emoji_history = {'P': '🟦', 'B': '🟥', 'T': '⚪️'}
+    # Display history as a single string of emojis for compactness
+    st.write(' '.join(emoji_history.get(item['main_outcome'], '') for item in st.session_state.oracle_history))
+else:
+    st.info("ยังไม่มีผลลัพธ์ในประวัติ")
 
 # --- Record Outcome Buttons Section ---
 st.markdown("<h3>➕ บันทึกผลลัพธ์</h3>", unsafe_allow_html=True)
 col1, col2, col3, col4 = st.columns(4)
 
+# Function to handle adding a new result and updating learning/streak
 def add_new_result(outcome):
-    prediction_for_learning = None
-    if len(st.session_state.oracle_history) >= OracleEngine.PREDICTION_THRESHOLD: 
+    # Get the prediction result for the *current state* (before this new hand is added)
+    # This is needed to get the prediction and associated patterns/momentum for learning
+    # Only predict if enough history
+    if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
         prediction_for_learning = oracle.predict_next(st.session_state.oracle_history, is_backtest=False) 
 
-        if prediction_for_learning and prediction_for_learning['prediction'] in ['P', 'B']: 
+        # Update losing streak based on this prediction and the actual outcome
+        # Only count if the system actually predicted P or B (not '⚠️')
+        if prediction_for_learning['prediction'] in ['P', 'B']: 
             if outcome == 'T': 
-                pass 
-            elif prediction_for_learning['prediction'] == outcome: 
-                st.session_state.losing_streak_prediction = 0 
-            else: 
-                st.session_state.losing_streak_prediction += 1 
+                pass # Tie, losing streak does not change
+            elif prediction_for_learning['prediction'] == outcome: # Correct prediction
+                st.session_state.losing_streak_prediction = 0
+            else: # Incorrect prediction
+                st.session_state.losing_streak_prediction += 1
     
     st.session_state.oracle_history.append({'main_outcome': outcome}) 
     
+    # Pass the full current history to update_learning_state to trigger backtest calculation
     oracle.update_learning_state(outcome, st.session_state.oracle_history) 
     st.rerun() 
 
@@ -421,66 +196,78 @@ with col3:
 with col4:
     if st.button("❌ ลบล่าสุด", use_container_width=True, key="remove_last"):
         if st.session_state.oracle_history:
+            # Remove the last item
             st.session_state.oracle_history.pop()
             
-            st.session_state.oracle_engine = OracleEngine() 
+            # Re-initialize engine and re-run history to update learning state correctly
+            # This is necessary because OracleEngine is stateless and needs to rebuild its internal state
+            # from the modified history.
+            st.session_state.oracle_engine = OracleEngine() # Create a fresh engine
             
+            # Recalculate losing streak for the *remaining* history
             current_losing_streak = 0
-            temp_oracle_for_streak = OracleEngine() 
-            
-            for i in range(OracleEngine.PREDICTION_THRESHOLD, len(st.session_state.oracle_history)):
-                history_segment_for_pred = st.session_state.oracle_history[:i] 
-                actual_outcome_for_streak_calc = st.session_state.oracle_history[i]['main_outcome']
+            if len(st.session_state.oracle_history) >= 15: # Only if enough history for predictions
+                temp_oracle_for_streak = OracleEngine() # Use a temporary oracle to simulate predictions for streak calc
+                for i in range(15, len(st.session_state.oracle_history)):
+                    history_segment_for_pred = st.session_state.oracle_history[:i]
+                    actual_outcome_for_streak_calc = st.session_state.oracle_history[i]['main_outcome']
 
-                pred_result_for_streak = temp_oracle_for_streak.predict_next(history_segment_for_pred)
-                
-                if pred_result_for_streak and pred_result_for_streak['prediction'] in ['P', 'B']:
-                    if actual_outcome_for_streak_calc != 'T':
-                        if pred_result_for_streak['prediction'] == actual_outcome_for_streak_calc:
-                            current_losing_streak = 0 
-                        else:
-                            current_losing_streak += 1 
+                    pred_result_for_streak = temp_oracle_for_streak.predict_next(history_segment_for_pred)
+                    
+                    if pred_result_for_streak['prediction'] in ['P', 'B']:
+                        if actual_outcome_for_streak_calc != 'T': # Only count if not Tie
+                            if pred_result_for_streak['prediction'] == actual_outcome_for_streak_calc:
+                                current_losing_streak = 0
+                            else:
+                                current_losing_streak += 1
             st.session_state.losing_streak_prediction = current_losing_streak
 
+            # Rebuild the main oracle engine's state correctly by replaying remaining history
             main_oracle_rebuild = OracleEngine()
             if len(st.session_state.oracle_history) > 0:
                 for i in range(len(st.session_state.oracle_history)):
-                    history_segment_for_learning = st.session_state.oracle_history[:i+1] 
+                    # For each step in history, simulate adding it
+                    history_segment_for_learning = st.session_state.oracle_history[:i+1] # History up to this point
                     actual_outcome_to_learn = st.session_state.oracle_history[i]['main_outcome']
                     
-                    if len(history_segment_for_learning) > OracleEngine.PREDICTION_THRESHOLD -1: 
-                        temp_pred_result = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False)
+                    # Need to simulate prediction to get context for update_learning_state, but only if enough data
+                    temp_prediction_context = {'prediction': '?', 'prediction_mode': None} # Default for short history
+                    if len(history_segment_for_learning) > 0: # Ensure history_segment_for_learning is not empty for next_pred
+                        # To correctly rebuild learning state, we need to know what the engine *would have predicted* at each step
+                        # This is a bit tricky with stateless engine and last_prediction_context
+                        # Simplest robust way: if it was long enough to predict, get prediction_context
+                        if len(history_segment_for_learning) >= 15: # Only if history was long enough for a prediction
+                            # Pass history *before* this outcome was added to get accurate context
+                            temp_pred_result = main_oracle_rebuild.predict_next(history_segment_for_learning[:-1], is_backtest=False)
+                            main_oracle_rebuild.last_prediction_context = {
+                                'prediction': temp_pred_result['prediction'],
+                                'patterns': main_oracle_rebuild.detect_dna_patterns(history_segment_for_learning[:-1]),
+                                'momentum': main_oracle_rebuild.detect_momentum(history_segment_for_learning[:-1]),
+                                'intuition_applied': 'Intuition' in temp_pred_result['predicted_by'] if temp_pred_result['predicted_by'] else False,
+                                'predicted_by': temp_pred_result['predicted_by'],
+                                'dominant_pattern_id_at_prediction': main_oracle_rebuild.last_dominant_pattern_id, # This is tricky, might need to re-detect
+                                'prediction_mode': temp_pred_result['prediction_mode']
+                            }
                         
-                        main_oracle_rebuild.last_prediction_context = {
-                            'prediction': temp_pred_result['prediction'],
-                            'prediction_mode': temp_pred_result['prediction_mode'],
-                            'patterns': temp_pred_result['patterns'] if 'patterns' in temp_pred_result else {},
-                            'momentum': temp_pred_result['momentum'] if 'momentum' in temp_pred_result else {},
-                            'intuition_applied': temp_pred_result['intuition_applied'] if 'intuition_applied' in temp_pred_result else False,
-                            'predicted_by': temp_pred_result['predicted_by'] if 'predicted_by' in temp_pred_result else 'N/A',
-                            'dominant_pattern_id_at_prediction': temp_pred_result['dominant_pattern_id_at_prediction'] if 'dominant_pattern_id_at_prediction' in temp_pred_result else 'N/A',
-                            'confidence': temp_pred_result['confidence'] if 'confidence' in temp_pred_result else 0.5
-                        }
-                    else:
-                         main_oracle_rebuild.last_prediction_context = None 
-
                     main_oracle_rebuild.update_learning_state(actual_outcome_to_learn, history_segment_for_learning)
                 
-                st.session_state.oracle_engine = main_oracle_rebuild 
-            else: 
-                st.session_state.oracle_engine = OracleEngine() 
-                st.session_state.losing_streak_prediction = 0 
-        st.rerun() 
+                st.session_state.oracle_engine = main_oracle_rebuild
+            else: # If history becomes empty after pop
+                st.session_state.oracle_engine = OracleEngine() # Reset fully
+                st.session_state.losing_streak_prediction = 0
+        st.rerun()
 
 # --- Reset All Button ---
 if st.button("🔄 Reset ระบบทั้งหมด", use_container_width=True, key="reset_all"):
     st.session_state.oracle_history.clear() 
     st.session_state.oracle_engine = OracleEngine() 
     st.session_state.losing_streak_prediction = 0 
-    st.rerun() 
+    st.rerun()
 
-# --- Developer View Expander ---
-if len(st.session_state.oracle_history) >= OracleEngine.PREDICTION_THRESHOLD: 
+# --- Developer View (Moved to bottom and in an expander) ---
+# Only show if enough history is present
+if len(st.session_state.oracle_history) >= 15: # Data threshold for prediction
     current_prediction_info = oracle.predict_next(st.session_state.oracle_history)
     with st.expander("🧬 Developer View: คลิกเพื่อดูรายละเอียด"):
         st.code(current_prediction_info['developer_view'], language='text')
+
