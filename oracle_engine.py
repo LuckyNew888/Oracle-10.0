@@ -1,16 +1,16 @@
 import random
 from collections import Counter
 
-# --- Configuration for Prediction Logic ---
+# --- Configuration for Prediction Logic (Includes V1.14 improvements) ---
 MIN_HISTORY_FOR_PREDICTION = 15
 MAX_HISTORY_FOR_ANALYSIS = 30
 PREDICTION_THRESHOLD = 0.55
-COUNTER_PREDICTION_THRESHOLD = 0.65
+COUNTER_PREDICTION_THRESHOLD = 0.65 # V1.14 improved threshold for countering
 DNA_PATTERN_LENGTH = 5
-MOMENTUM_THRESHOLD = 0.70
+MOMENTUM_THRESHOLD = 0.70 # Retained from V1.13
 COUNTER_BIAS_STREAK_THRESHOLD = 3
 
-# --- Helper Functions ---
+# --- Helper Functions (from V1.13, retained) ---
 
 def get_outcome_emoji(outcome):
     return "🟦" if outcome == 'P' else "🟥" if outcome == 'B' else "⚪️"
@@ -18,8 +18,9 @@ def get_outcome_emoji(outcome):
 def get_latest_history_string(history_list, num_results=MAX_HISTORY_FOR_ANALYSIS):
     return "".join([h['main_outcome'] for h in history_list[-num_results:]])
 
-# --- Prediction Logic ---
+# --- Prediction Logic (Updated to V1.14 intelligence) ---
 
+# 1. DNA Pattern Analysis (Improved: Weighted Recent Matches from V1.14)
 def analyze_dna_pattern(history_str):
     if len(history_str) < DNA_PATTERN_LENGTH:
         return None, 0
@@ -34,6 +35,7 @@ def analyze_dna_pattern(history_str):
             if (i + DNA_PATTERN_LENGTH) < len(history_str):
                 follower_outcome = history_str[i + DNA_PATTERN_LENGTH]
                 
+                # Assign a weight based on recency: more recent matches get higher weight (V1.14 improvement)
                 weight = 1
                 if i >= (len(history_str) - DNA_PATTERN_LENGTH - 10): 
                     weight = 2 
@@ -48,10 +50,11 @@ def analyze_dna_pattern(history_str):
     
     if most_common_follower:
         predicted_outcome = most_common_follower[0][0]
-        confidence = most_common_follower[0][1] / weighted_total
+        confidence = most_common_follower[0][1] / weighted_total # Confidence based on weighted count
         return predicted_outcome, confidence
     return None, 0
 
+# 2. Momentum Tracker (Retained largely from V1.13, similar to V1.14)
 def analyze_momentum(history_str):
     if len(history_str) < 5:
         return None, 0
@@ -65,14 +68,17 @@ def analyze_momentum(history_str):
             break
             
     if last_streak_length >= 3:
+        # V1.14 had a dynamic confidence here, V1.13 had fixed 0.70
+        # Let's use the V1.14 dynamic confidence for better intelligence
         return last_outcome, min(1.0, 0.5 + (last_streak_length - 3) * 0.1)
     
     if len(history_str) >= 4 and history_str[-4:] in ["PBPB", "BPBP"]:
         predicted_outcome = 'P' if history_str[-1] == 'B' else 'B'
-        return predicted_outcome, 0.65
+        return predicted_outcome, 0.65 # Retained from V1.13/V1.14
     
     return None, 0
 
+# 3. Intuition (V1.14 with Dynamic Confidence for Counter Bias)
 def analyze_intuition(history_str):
     if len(history_str) < 3:
         return None, 0, False
@@ -80,7 +86,7 @@ def analyze_intuition(history_str):
     last_3 = history_str[-3:]
     last_2 = history_str[-2:]
     
-    # Counter Bias Logic
+    # Counter Bias Logic (Improved in V1.14 with dynamic confidence)
     if len(history_str) >= COUNTER_BIAS_STREAK_THRESHOLD:
         last_outcome = history_str[-1]
         streak_count = 0
@@ -98,9 +104,8 @@ def analyze_intuition(history_str):
             
             for i in range(len(history_str) - streak_count):
                 if (i + streak_count) < len(history_str) and history_str[i : i + streak_count] == streak_pattern:
-                    # Exclude the current streak itself from the stats
                     if i == (len(history_str) - streak_count):
-                        continue 
+                        continue # Exclude the current streak itself
                             
                     if history_str[i + streak_count] == last_outcome:
                         continue_count += 1
@@ -110,12 +115,13 @@ def analyze_intuition(history_str):
             total_instances = continue_count + break_count
             if total_instances > 0:
                 if break_count > continue_count:
+                    # Dynamic confidence based on break rate (V1.14 improvement)
                     dynamic_counter_conf = min(0.85, COUNTER_PREDICTION_THRESHOLD + (break_count / total_instances) * (0.85 - COUNTER_PREDICTION_THRESHOLD))
                     return ('P' if last_outcome == 'B' else 'B'), dynamic_counter_conf, True
                 elif continue_count == 0 and total_instances >= 2:
                     return ('P' if last_outcome == 'B' else 'B'), COUNTER_PREDICTION_THRESHOLD, True
     
-    # Simple Intuition Patterns
+    # Simple Intuition Patterns (from V1.13, retained)
     if last_3 == "BBP" or last_3 == "PBB":
         return ('P' if last_3[-1] == 'B' else 'B'), 0.6, False
     if last_3 == "PPB" or last_3 == "BPP":
@@ -126,6 +132,7 @@ def analyze_intuition(history_str):
         
     return None, 0, False
 
+# Main prediction function (Updated to use V1.14 logic from sub-functions)
 def predict_outcome(history_list):
     history_str = get_latest_history_string(history_list)
     
@@ -149,6 +156,7 @@ def predict_outcome(history_list):
     if not predictions:
         return {"prediction": "ไม่พบรูปแบบ", "confidence": 0, "predicted_by": [], "is_counter": False}
 
+    # Prioritize Counter prediction if it's highly confident (V1.14 logic for this check)
     for p in predictions:
         if p.get('is_counter', False) and p['confidence'] >= COUNTER_PREDICTION_THRESHOLD:
             return {"prediction": p['outcome'], 
