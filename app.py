@@ -224,13 +224,9 @@ with st.expander("🧬 มุมมองนักพัฒนา"):
     st.write("**ผลลัพธ์จากการวิเคราะห์แต่ละส่วน (Debug):**")
     debug_history_str = get_latest_history_string(st.session_state.history)
     
-    # These functions are only for debugging here, they are part of oracle_engine's internal logic
-    # and were imported only for the purpose of displaying their intermediate results in the debug section.
-    # To avoid re-importing them and potential issues, I'm commenting them out here for clean V1.13 restore.
-    # If you specifically need these back for debugging, please let me know.
-    # st.write(f"DNA Analysis: {analyze_dna_pattern(debug_history_str)}")
-    # st.write(f"Momentum Analysis: {analyze_momentum(debug_history_str)}")
-    # st.write(f"Intuition Analysis: {analyze_intuition(debug_history_str)}")
+    st.write(f"DNA Analysis: {analyze_dna_pattern(debug_history_str)}")
+    st.write(f"Momentum Analysis: {analyze_momentum(debug_history_str)}")
+    st.write(f"Intuition Analysis: {analyze_intuition(debug_history_str)}")
 
     st.write("---")
     st.write("**Predicted by (Debugging the KeyError location):**")
