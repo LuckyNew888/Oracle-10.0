@@ -1,20 +1,21 @@
 import streamlit as st
-# Import everything needed from oracle_engine.py
+# Import ONLY the necessary functions and constants from oracle_engine for UI functionality
+# The prediction logic itself is encapsulated in predict_outcome
 from oracle_engine import (
     MIN_HISTORY_FOR_PREDICTION,
     PREDICTION_THRESHOLD,
-    COUNTER_PREDICTION_THRESHOLD,
+    COUNTER_PREDICTION_THRESHOLD, # Used for display logic related to counter preds
     get_outcome_emoji,
-    get_latest_history_string,
+    get_latest_history_string, # Used for debug/display history string
     predict_outcome
 )
 
-# --- Configuration for app.py (UI specific, derived from V1.13 original) ---
+# --- Configuration for app.py (UI specific, confirmed as V1.13 original) ---
 MAX_HISTORY_DISPLAY = 50 
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="🔮 ORACLE Final V1.13", # Set title explicitly back to V1.13
+    page_title="🔮 ORACLE Final V1.13", # Explicitly set title to V1.13
     page_icon="🔮",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -41,10 +42,9 @@ if 'counter_streak_count' not in st.session_state:
     st.session_state.counter_streak_count = 0 
 
 
-# --- UI Functions ---
+# --- UI Functions (V1.13 logic for recording/deleting outcomes and resetting) ---
 
 def record_outcome(outcome):
-    # Logic to record outcome and update prediction statistics
     if st.session_state.last_prediction_data:
         predicted_outcome = st.session_state.last_prediction_data['prediction']
         is_counter = st.session_state.last_prediction_data['is_counter']
@@ -73,22 +73,15 @@ def record_outcome(outcome):
     if len(st.session_state.history) > MAX_HISTORY_DISPLAY:
         st.session_state.history = st.session_state.history[-MAX_HISTORY_DISPLAY:]
     
-    st.session_state.last_prediction_data = None # Clear last prediction data after recording outcome
+    st.session_state.last_prediction_data = None 
 
 
 def delete_last_outcome():
-    # Logic to delete the last recorded outcome and adjust statistics
     if st.session_state.history:
-        # We need to re-evaluate the state before the last outcome was added
-        # This is a simplification; a full undo would require storing previous prediction data
-        # For now, we only adjust counts if the last outcome matched the last prediction
-        
-        # If there was a last prediction, and we're deleting the outcome it predicted
         if st.session_state.last_prediction_data:
             predicted_outcome_for_deleted_hand = st.session_state.last_prediction_data['prediction']
             is_counter_for_deleted_hand = st.session_state.last_prediction_data['is_counter']
             
-            # Only adjust if the prediction was a valid one
             if predicted_outcome_for_deleted_hand not in ["ไม่เพียงพอ", "ไม่พบรูปแบบ", "ไม่ชัดเจน"]:
                 deleted_actual_outcome = st.session_state.history[-1]['main_outcome']
 
@@ -98,7 +91,8 @@ def delete_last_outcome():
                     st.session_state.correct_predictions = max(0, st.session_state.correct_predictions - 1)
                     if is_counter_for_deleted_hand:
                         st.session_state.counter_streak_count = max(0, st.session_state.counter_streak_count - 1)
-                # else: if it was a wrong prediction, total_predictions decreased, but correct_predictions remains same. So no action needed here.
+                else:
+                    pass 
 
                 st.session_state.prediction_counts[predicted_outcome_for_deleted_hand] = \
                     max(0, st.session_state.prediction_counts.get(predicted_outcome_for_deleted_hand, 0) - 1)
@@ -111,12 +105,11 @@ def delete_last_outcome():
                     if predicted_outcome_for_deleted_hand == deleted_actual_outcome:
                         st.session_state.correct_counter_predictions = max(0, st.session_state.correct_counter_predictions - 1)
         
-        st.session_state.history.pop() # Remove the last outcome from history
-        st.session_state.last_prediction_data = None # Clear last prediction data since its outcome is removed
+        st.session_state.history.pop() 
+        st.session_state.last_prediction_data = None 
 
 
 def reset_system():
-    # Resets all session state variables to their initial values
     st.session_state.history = []
     st.session_state.total_predictions = 0
     st.session_state.correct_predictions = 0
@@ -126,10 +119,10 @@ def reset_system():
     st.session_state.prediction_counts = {}
     st.session_state.prediction_wins = {}
     st.session_state.counter_streak_count = 0
-    st.rerun() # Rerun the app to reflect the reset state
+    st.rerun() 
 
 # --- Main App Layout ---
-st.title("🔮 ORACLE Final V1.13") # UI Title
+st.title("🔮 ORACLE Final V1.13") # Explicitly set title
 st.markdown("ระบบทำนายแนวโน้มบาคาร่า (สำหรับบันทึกผลด้วยตนเอง)")
 
 # History Display
@@ -138,7 +131,7 @@ if st.session_state.history:
     history_emojis = [get_outcome_emoji(h['main_outcome']) for h in st.session_state.history]
     history_display = "".join(history_emojis)
     
-    # V1.13 style display for history (long string, no Big Road)
+    # V1.13 style: long string of emojis
     st.markdown(f"<p style='font-size: 1.5em; overflow-x: auto; white-space: nowrap;'>{history_display}</p>", unsafe_allow_html=True)
     
     st.markdown(f"**จำนวนตาที่บันทึก: {len(st.session_state.history)}**")
@@ -148,24 +141,20 @@ else:
 # Prediction Display
 st.subheader("🧠 ผลการวิเคราะห์และทำนาย")
 
-# Call predict_outcome from oracle_engine, passing the history list
 current_prediction = predict_outcome(st.session_state.history)
-st.session_state.last_prediction_data = current_prediction # Store for later use when outcome is recorded
+st.session_state.last_prediction_data = current_prediction 
 
-# Prepare prediction display text and emoji
 pred_emoji = get_outcome_emoji(current_prediction['prediction']) if current_prediction['prediction'] in ['P', 'B', 'T'] else "❓"
 confidence_percent = f"{current_prediction['confidence']*100:.1f}%"
 
 prediction_text = f"**ผลวิเคราะห์: {pred_emoji} {current_prediction['prediction']}** (ความมั่นใจ: {confidence_percent})"
 
-# Display prediction source and counter status if available
 if current_prediction.get('predicted_by'):
     predicted_by_str = ", ".join(current_prediction['predicted_by'])
     prediction_text += f"\n*ทำนายโดย: {predicted_by_str}*"
     if current_prediction.get('is_counter', False):
         prediction_text += " (สวน)"
 
-# Display appropriate message based on prediction status
 if len(st.session_state.history) < MIN_HISTORY_FOR_PREDICTION:
     st.warning(f"บันทึกประวัติอย่างน้อย {MIN_HISTORY_FOR_PREDICTION} ตา เพื่อเริ่มการทำนาย (ปัจจุบัน: {len(st.session_state.history)} ตา)")
 elif current_prediction['prediction'] == "ไม่พบรูปแบบ":
@@ -219,15 +208,9 @@ else:
 
 st.markdown("---")
 
-st.button("🔄 รีเซ็ตระบบทั้งหมด", on_on_click=reset_system)
+st.button("🔄 รีเซ็ตระบบทั้งหมด", on_click=reset_system)
 
-# Developer View (Expandable Section) - This section remains for debugging purposes
-# Note: Functions like analyze_dna_pattern, etc., are now only used internally in predict_outcome
-# For debugging them directly, you'd need to re-import them here, but for normal operation, it's not needed.
-# However, if user wants to see their individual outputs, they need to be imported here again
-# For simplicity and to avoid cluttering the UI-focused app.py, I'm removing direct calls to them here.
-# If you explicitly want to see their individual outputs in debug, let me know.
-# For now, it will show the final prediction details from predict_outcome.
+# Developer View (Expandable Section) - Only shows overall state and prediction details
 with st.expander("🧬 มุมมองนักพัฒนา"):
     st.write("---")
     st.write("**สถานะ Session State:**")
