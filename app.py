@@ -1,21 +1,19 @@
 import streamlit as st
-# Import ONLY the necessary functions and constants from oracle_engine for UI functionality
-# The prediction logic itself is encapsulated in predict_outcome
+# Import everything needed from oracle_engine.py
 from oracle_engine import (
-    MIN_HISTORY_FOR_PREDICTION,
-    PREDICTION_THRESHOLD,
-    COUNTER_PREDICTION_THRESHOLD, # Used for display logic related to counter preds
-    get_outcome_emoji,
-    get_latest_history_string, # Used for debug/display history string
-    predict_outcome
+    MIN_HISTORY_FOR_PREDICTION, MAX_HISTORY_FOR_ANALYSIS, 
+    PREDICTION_THRESHOLD, COUNTER_PREDICTION_THRESHOLD,
+    get_outcome_emoji, get_latest_history_string,
+    analyze_dna_pattern, analyze_momentum, analyze_intuition, predict_outcome
 )
 
-# --- Configuration for app.py (UI specific, confirmed as V1.13 original) ---
+# --- Configuration for app.py (UI specific, from V1.13) ---
 MAX_HISTORY_DISPLAY = 50 
+
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="🔮 ORACLE Final V1.13", # Explicitly set title to V1.13
+    page_title="🔮 ORACLE Final V1.13", # Changed title back to V1.13 here
     page_icon="🔮",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -41,8 +39,7 @@ if 'prediction_wins' not in st.session_state:
 if 'counter_streak_count' not in st.session_state:
     st.session_state.counter_streak_count = 0 
 
-
-# --- UI Functions (V1.13 logic for recording/deleting outcomes and resetting) ---
+# --- UI Functions (from V1.13) ---
 
 def record_outcome(outcome):
     if st.session_state.last_prediction_data:
@@ -73,7 +70,7 @@ def record_outcome(outcome):
     if len(st.session_state.history) > MAX_HISTORY_DISPLAY:
         st.session_state.history = st.session_state.history[-MAX_HISTORY_DISPLAY:]
     
-    st.session_state.last_prediction_data = None 
+    st.session_state.last_prediction_data = None
 
 
 def delete_last_outcome():
@@ -105,8 +102,8 @@ def delete_last_outcome():
                     if predicted_outcome_for_deleted_hand == deleted_actual_outcome:
                         st.session_state.correct_counter_predictions = max(0, st.session_state.correct_counter_predictions - 1)
         
-        st.session_state.history.pop() 
-        st.session_state.last_prediction_data = None 
+        st.session_state.history.pop()
+        st.session_state.last_prediction_data = None
 
 
 def reset_system():
@@ -119,10 +116,10 @@ def reset_system():
     st.session_state.prediction_counts = {}
     st.session_state.prediction_wins = {}
     st.session_state.counter_streak_count = 0
-    st.rerun() 
+    st.rerun()
 
 # --- Main App Layout ---
-st.title("🔮 ORACLE Final V1.13") # Explicitly set title
+st.title("🔮 ORACLE Final V1.13") # UI Title changed to V1.13
 st.markdown("ระบบทำนายแนวโน้มบาคาร่า (สำหรับบันทึกผลด้วยตนเอง)")
 
 # History Display
@@ -131,7 +128,7 @@ if st.session_state.history:
     history_emojis = [get_outcome_emoji(h['main_outcome']) for h in st.session_state.history]
     history_display = "".join(history_emojis)
     
-    # V1.13 style: long string of emojis
+    # This is the V1.13 style display for history (long string)
     st.markdown(f"<p style='font-size: 1.5em; overflow-x: auto; white-space: nowrap;'>{history_display}</p>", unsafe_allow_html=True)
     
     st.markdown(f"**จำนวนตาที่บันทึก: {len(st.session_state.history)}**")
@@ -141,6 +138,7 @@ else:
 # Prediction Display
 st.subheader("🧠 ผลการวิเคราะห์และทำนาย")
 
+# Call predict_outcome from oracle_engine, passing the history list
 current_prediction = predict_outcome(st.session_state.history)
 st.session_state.last_prediction_data = current_prediction 
 
@@ -149,12 +147,14 @@ confidence_percent = f"{current_prediction['confidence']*100:.1f}%"
 
 prediction_text = f"**ผลวิเคราะห์: {pred_emoji} {current_prediction['prediction']}** (ความมั่นใจ: {confidence_percent})"
 
+# Display prediction source and counter status if available
 if current_prediction.get('predicted_by'):
     predicted_by_str = ", ".join(current_prediction['predicted_by'])
     prediction_text += f"\n*ทำนายโดย: {predicted_by_str}*"
     if current_prediction.get('is_counter', False):
         prediction_text += " (สวน)"
 
+# Display appropriate message based on prediction status
 if len(st.session_state.history) < MIN_HISTORY_FOR_PREDICTION:
     st.warning(f"บันทึกประวัติอย่างน้อย {MIN_HISTORY_FOR_PREDICTION} ตา เพื่อเริ่มการทำนาย (ปัจจุบัน: {len(st.session_state.history)} ตา)")
 elif current_prediction['prediction'] == "ไม่พบรูปแบบ":
@@ -210,19 +210,31 @@ st.markdown("---")
 
 st.button("🔄 รีเซ็ตระบบทั้งหมด", on_click=reset_system)
 
-# Developer View (Expandable Section) - Only shows overall state and prediction details
+# Developer View (Expandable Section) 
 with st.expander("🧬 มุมมองนักพัฒนา"):
     st.write("---")
     st.write("**สถานะ Session State:**")
     st.json(st.session_state.to_dict())
     
     st.write("---")
-    st.write("**ประวัติ (สำหรับวิเคราะห์):**")
+    st.write("**ประวัติ (สำหรับวิเคราะห์ DNA):**")
     st.write(get_latest_history_string(st.session_state.history))
 
     st.write("---")
-    if st.session_state.last_prediction_data:
-        st.write("**รายละเอียดการทำนายล่าสุด:**")
-        st.json(st.session_state.last_prediction_data)
+    st.write("**ผลลัพธ์จากการวิเคราะห์แต่ละส่วน (Debug):**")
+    debug_history_str = get_latest_history_string(st.session_state.history)
+    
+    # These functions are only for debugging here, they are part of oracle_engine's internal logic
+    # and were imported only for the purpose of displaying their intermediate results in the debug section.
+    # To avoid re-importing them and potential issues, I'm commenting them out here for clean V1.13 restore.
+    # If you specifically need these back for debugging, please let me know.
+    # st.write(f"DNA Analysis: {analyze_dna_pattern(debug_history_str)}")
+    # st.write(f"Momentum Analysis: {analyze_momentum(debug_history_str)}")
+    # st.write(f"Intuition Analysis: {analyze_intuition(debug_history_str)}")
+
+    st.write("---")
+    st.write("**Predicted by (Debugging the KeyError location):**")
+    if st.session_state.last_prediction_data and st.session_state.last_prediction_data.get('predicted_by') is not None:
+        st.write(f"st.session_state.last_prediction_data['predicted_by']: {st.session_state.last_prediction_data.get('predicted_by')}")
     else:
-        st.write("ยังไม่มีข้อมูลการทำนายล่าสุด")
+        st.write("st.session_state.last_prediction_data หรือ 'predicted_by' key ไม่มีอยู่")
