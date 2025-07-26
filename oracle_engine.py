@@ -1,6 +1,5 @@
 import random
 from collections import Counter
-import math
 
 # --- Configuration for Prediction Logic (Includes V1.14 improvements) ---
 MIN_HISTORY_FOR_PREDICTION = 15
