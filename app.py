@@ -1,19 +1,19 @@
 import streamlit as st
 # Import everything needed from oracle_engine.py
 from oracle_engine import (
-    MIN_HISTORY_FOR_PREDICTION, MAX_HISTORY_FOR_ANALYSIS, 
+    MIN_HISTORY_FOR_PREDICTION, MAX_HISTORY_FOR_ANALYSIS, # MAX_HISTORY_FOR_ANALYSIS is used in get_latest_history_string
     PREDICTION_THRESHOLD, COUNTER_PREDICTION_THRESHOLD,
     get_outcome_emoji, get_latest_history_string,
     analyze_dna_pattern, analyze_momentum, analyze_intuition, predict_outcome
 )
 
 # --- Configuration for app.py (UI specific, from V1.13) ---
-MAX_HISTORY_DISPLAY = 50 
+MAX_HISTORY_DISPLAY = 50 # Max history to store and display in UI (remains in app.py)
 
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="🔮 ORACLE Final V1.13", # Changed title back to V1.13 here
+    page_title="🔮 ORACLE Final V1.13 (Split Files)", # Changed title to reflect V1.13 UI with split files
     page_icon="🔮",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -31,13 +31,13 @@ if 'correct_counter_predictions' not in st.session_state:
 if 'total_counter_predictions' not in st.session_state:
     st.session_state.total_counter_predictions = 0
 if 'last_prediction_data' not in st.session_state:
-    st.session_state.last_prediction_data = None 
+    st.session_state.last_prediction_data = None # Stores data of the last prediction made
 if 'prediction_counts' not in st.session_state:
-    st.session_state.prediction_counts = {} 
+    st.session_state.prediction_counts = {} # {'P': count, 'B': count}
 if 'prediction_wins' not in st.session_state:
-    st.session_state.prediction_wins = {} 
+    st.session_state.prediction_wins = {} # {'P': wins, 'B': wins}
 if 'counter_streak_count' not in st.session_state:
-    st.session_state.counter_streak_count = 0 
+    st.session_state.counter_streak_count = 0 # Streak of wins when countering
 
 # --- UI Functions (from V1.13) ---
 
@@ -119,7 +119,7 @@ def reset_system():
     st.rerun()
 
 # --- Main App Layout ---
-st.title("🔮 ORACLE Final V1.13") # UI Title changed to V1.13
+st.title("🔮 ORACLE Final V1.13 (Split Files)") # UI Title reflects V1.13
 st.markdown("ระบบทำนายแนวโน้มบาคาร่า (สำหรับบันทึกผลด้วยตนเอง)")
 
 # History Display
@@ -140,7 +140,7 @@ st.subheader("🧠 ผลการวิเคราะห์และทำน�
 
 # Call predict_outcome from oracle_engine, passing the history list
 current_prediction = predict_outcome(st.session_state.history)
-st.session_state.last_prediction_data = current_prediction 
+st.session_state.last_prediction_data = current_prediction # Store for later use when outcome is recorded
 
 pred_emoji = get_outcome_emoji(current_prediction['prediction']) if current_prediction['prediction'] in ['P', 'B', 'T'] else "❓"
 confidence_percent = f"{current_prediction['confidence']*100:.1f}%"
@@ -210,7 +210,7 @@ st.markdown("---")
 
 st.button("🔄 รีเซ็ตระบบทั้งหมด", on_click=reset_system)
 
-# Developer View (Expandable Section) 
+# Developer View (Expandable Section) - This section remains for debugging purposes
 with st.expander("🧬 มุมมองนักพัฒนา"):
     st.write("---")
     st.write("**สถานะ Session State:**")
